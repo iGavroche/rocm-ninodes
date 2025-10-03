@@ -525,11 +525,12 @@ class ROCMOptimizedKSampler:
                 if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                     torch.cuda.set_per_process_memory_fraction(0.9)
         
-        # Attention optimization
+        # Attention optimization for AMD GPUs
         if attention_optimization and is_amd:
-            # Enable optimized attention for AMD
+            # For AMD GPUs, be more conservative with attention backends
+            # Flash attention can cause memory issues on some AMD GPUs
             torch.backends.cuda.enable_math_sdp(True)
-            torch.backends.cuda.enable_flash_sdp(True)
+            torch.backends.cuda.enable_flash_sdp(False)  # Disable flash attention for AMD
             torch.backends.cuda.enable_mem_efficient_sdp(True)
         
         # Use the standard ksampler with optimizations
@@ -692,6 +693,14 @@ class ROCMOptimizedKSamplerAdvanced:
                     torch.cuda.empty_cache()
                     if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                         torch.cuda.set_per_process_memory_fraction(0.9)
+                
+                # Attention optimization for AMD GPUs
+                if is_amd:
+                    # For AMD GPUs, be more conservative with attention backends
+                    # Flash attention can cause memory issues on some AMD GPUs
+                    torch.backends.cuda.enable_math_sdp(True)
+                    torch.backends.cuda.enable_flash_sdp(False)  # Disable flash attention for AMD
+                    torch.backends.cuda.enable_mem_efficient_sdp(True)
         
         # Configure sampling parameters
         force_full_denoise = True
