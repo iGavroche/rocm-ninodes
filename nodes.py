@@ -63,7 +63,7 @@ class ROCMOptimizedVAEDecode:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("IMAGE",)
     FUNCTION = "decode"
-    CATEGORY = "latent/rocm_optimized"
+    CATEGORY = "RocM Ninodes/VAE"
     DESCRIPTION = "ROCM-optimized VAE Decode for AMD GPUs (gfx1151)"
     
     def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True, 
@@ -224,7 +224,7 @@ class ROCMOptimizedVAEDecodeTiled:
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("IMAGE",)
     FUNCTION = "decode"
-    CATEGORY = "latent/rocm_optimized"
+    CATEGORY = "RocM Ninodes/VAE"
     DESCRIPTION = "Advanced tiled VAE decode optimized for ROCm"
     
     def decode(self, vae, samples, tile_size=768, overlap=96, temporal_size=64, 
@@ -294,7 +294,7 @@ class ROCMVAEPerformanceMonitor:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("DEVICE_INFO", "PERFORMANCE_TIPS", "OPTIMAL_SETTINGS")
     FUNCTION = "analyze"
-    CATEGORY = "latent/rocm_optimized"
+    CATEGORY = "RocM Ninodes/VAE"
     DESCRIPTION = "Analyze VAE performance and provide optimization recommendations"
     
     def analyze(self, vae, test_resolution=1024):
@@ -421,7 +421,7 @@ class ROCMOptimizedKSampler:
     RETURN_TYPES = ("LATENT",)
     RETURN_NAMES = ("LATENT",)
     FUNCTION = "sample"
-    CATEGORY = "sampling/rocm_optimized"
+    CATEGORY = "RocM Ninodes/Sampling"
     DESCRIPTION = "ROCM-optimized KSampler for AMD GPUs (gfx1151)"
     
     def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, 
@@ -595,7 +595,7 @@ class ROCMOptimizedKSamplerAdvanced:
     RETURN_TYPES = ("LATENT",)
     RETURN_NAMES = ("LATENT",)
     FUNCTION = "sample"
-    CATEGORY = "sampling/rocm_optimized"
+    CATEGORY = "RocM Ninodes/Sampling"
     DESCRIPTION = "Advanced ROCM-optimized KSampler for AMD GPUs"
     
     def sample(self, model, add_noise, noise_seed, steps, cfg, sampler_name, scheduler, 
@@ -717,7 +717,7 @@ class ROCMSamplerPerformanceMonitor:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("DEVICE_INFO", "PERFORMANCE_TIPS", "OPTIMAL_SETTINGS")
     FUNCTION = "analyze"
-    CATEGORY = "sampling/rocm_optimized"
+    CATEGORY = "RocM Ninodes/Sampling"
     DESCRIPTION = "Analyze sampler performance and provide optimization recommendations"
     
     def analyze(self, model, test_steps=20):
