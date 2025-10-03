@@ -16,7 +16,8 @@
 *"Workflows that used to take forever to run now complete in a fraction of the time!"* - Nino, GMTek Evo-X2 Owner
 
 ### 🎯 **Try It Now!**
-**[Download Optimized Flux Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - Ready-to-use workflow with 78% performance improvement!
+- **[Flux Image Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - 78% performance improvement!
+- **[WAN 2.2 Video Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow_wan_video.json)** - Optimized video workflows!
 
 ## 🚀 **Key Features**
 
@@ -150,8 +151,9 @@ python install.py
 
 **Ready to test the optimizations?** Download the pre-configured workflow:
 
-### 📥 **Download Optimized Flux Workflow**
-- **[flux_dev_checkpoint_example_rocm_optimized.json](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - Complete Flux workflow with ROCM optimizations
+### 📥 **Download Optimized Workflows**
+- **[Flux Image Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - Complete Flux workflow with ROCM optimizations
+- **[WAN 2.2 Video Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow_wan_video.json)** - WAN 2.2 Image-to-Video workflow with ROCM optimizations
 
 **This workflow includes:**
 - ✅ **ROCM VAE Decode** (optimized for gfx1151)
