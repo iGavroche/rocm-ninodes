@@ -69,6 +69,8 @@
 
 **For gfx1151 (Strix Halo) users, follow these setup steps:**
 
+#### 🐧 **Linux (Manjaro/Ubuntu/etc.)**
+
 1. **Install ROCm PyTorch nightly build:**
 ```bash
 # Uninstall regular/CUDA PyTorch first
@@ -84,10 +86,41 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 uv run main.py --use-pytorch-cross-attention --highvram --cache-none
 ```
 
+#### 🪟 **Windows (PowerShell)**
+
+1. **Install ROCm PyTorch nightly build:**
+```powershell
+# Uninstall regular/CUDA PyTorch first
+pip uninstall torch torchaudio torchvision
+
+# Install ROCm nightly for gfx1151
+pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ --pre torch torchaudio torchvision --upgrade
+```
+
+2. **Start ComfyUI with optimized flags:**
+```powershell
+# Set environment variable
+$env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL="1"
+
+# Start ComfyUI
+python main.py --use-pytorch-cross-attention --highvram --cache-none
+```
+
+**Note for Windows users:** ROCm support on Windows is limited. For best performance, consider using WSL2 with Ubuntu or dual-booting Linux.
+
 ### Method 1: Git Clone (Recommended)
 
+#### 🐧 **Linux/Mac:**
 ```bash
 cd ComfyUI/custom_nodes
+git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
+cd ComfyUI-ROCM-Optimized-VAE
+python install.py
+```
+
+#### 🪟 **Windows (PowerShell):**
+```powershell
+cd ComfyUI\custom_nodes
 git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
 cd ComfyUI-ROCM-Optimized-VAE
 python install.py
@@ -98,6 +131,8 @@ python install.py
 1. Download the latest release from [GitHub](https://github.com/iGavroche/rocm-ninodes/releases)
 2. Extract to `ComfyUI/custom_nodes/ComfyUI-ROCM-Optimized-VAE/`
 3. Run `python install.py` to verify installation
+
+**Windows users:** Right-click the ZIP file → "Extract All" → Choose the `ComfyUI/custom_nodes/` folder
 
 ### Method 3: ComfyUI Manager (Future)
 
@@ -179,7 +214,30 @@ Based on gfx1151 architecture optimizations:
 ### ROCm Requirements:
 - PyTorch with ROCm support (nightly build recommended)
 - ROCm 6.4+ (you're using 6.4)
-- gfx1151 architecture support
+
+### Windows-Specific Issues
+
+1. **ROCm not working on Windows**: 
+   - ROCm has limited Windows support
+   - Consider using WSL2 with Ubuntu for better compatibility
+   - Or dual-boot Linux for optimal performance
+
+2. **PowerShell execution policy**:
+   ```powershell
+   # If you get execution policy errors
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+
+3. **Python path issues**:
+   ```powershell
+   # Make sure Python is in your PATH
+   python --version
+   # If not found, add Python to PATH or use full path
+   ```
+
+4. **Git not found**:
+   - Install Git for Windows from https://git-scm.com/download/win
+   - Or use GitHub Desktop for GUI-based cloning
 
 ## Technical Details
 
