@@ -10,6 +10,7 @@
 
 **Tested on GMTek Evo-X2 Strix Halo (gfx1151) with 128GB Unified RAM:**
 - **Flux 1024x1024 generation**: **500s → 110s** (78% improvement!)
+- **WAN 2.2 Video generation (2s, 320x320)**: **163s → 139s** (15% improvement!)
 - **Memory efficiency**: 25-35% better VRAM usage
 - **Stability**: Significantly reduced OOM errors
 
@@ -17,7 +18,7 @@
 
 ### 🎯 **Try It Now!**
 - **[Flux Image Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - 78% performance improvement!
-- **[WAN 2.2 Video Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow_wan_video.json)** - Optimized video workflows!
+- **[WAN 2.2 Video Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow_wan_video.json)** - 15% performance improvement!
 
 ## 🚀 **Key Features**
 
