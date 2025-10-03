@@ -1,7 +1,7 @@
 {
-  "name": "ComfyUI-ROCM-Optimized-VAE",
+  "name": "rocm-ninodes",
   "version": "1.0.0",
-  "description": "RocM-optimized ComfyUI nodes for AMD GPU performance",
+  "description": "ROCM-optimized ComfyUI nodes for AMD GPU performance",
   "author": "Nino",
   "email": "nino2k@proton.me",
   "url": "https://github.com/iGavroche/rocm-ninodes",
@@ -21,7 +21,7 @@
     "gfx1151"
   ],
   "comfyui": {
-    "id": "ComfyUI-ROCM-Optimized-VAE",
+    "id": "rocm-ninodes",
     "display_name": "RocM Ninodes",
     "description": "ROCM-optimized nodes for AMD GPU performance",
     "author": "Nino",
