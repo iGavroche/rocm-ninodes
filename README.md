@@ -9,11 +9,19 @@
 ## 🎯 **Real-World Performance Results**
 
 **Tested on GMTek Evo-X2 Strix Halo (gfx1151) with 128GB Unified RAM:**
-- **Flux 1024x1024 generation**: **500s → 110s** (78% improvement!)
-- **WAN 2.2 Video generation (2s, 320x320)**: **163s → 139s** (15% improvement!)
-- **WAN 2.2 Video generation (2s, 480x480)**: **202s** (33 frames, 16fps) ✅ **NEW!**
-- **Memory efficiency**: 25-35% better VRAM usage
+
+#### **🖼️ Image Generation (Flux)**
+- **1024x1024 generation**: **500s → 110s** (78% improvement!)
+
+#### **🎬 Image-to-Video Generation (WAN 2.2 i2v)**
+- **320x320px, 2s**: **163s → 139s** (15% improvement!)
+- **480x480px, 2s**: **202s** (33 frames, 16fps) ✅
+- **480x720px, 2s**: **303s** (33 frames, 16fps) ✅ **NEW!**
+
+#### **📊 Performance Metrics**
+- **Memory efficiency**: 50% reduction in attention memory requirements
 - **Stability**: Significantly reduced OOM errors
+- **Scalability**: Successfully handles up to 480x720px i2v generation
 
 *"Workflows that used to take forever to run now complete in a fraction of the time!"* - Nino, GMTek Evo-X2 Owner
 
