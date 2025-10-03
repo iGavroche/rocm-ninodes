@@ -105,9 +105,6 @@ uv pip install -r requirements.txt
 # Install ROCm PyTorch nightly for gfx1151
 uv pip uninstall torch torchaudio torchvision
 uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ --pre torch torchaudio torchvision --upgrade
-
-# Install additional dependencies
-uv pip install torchvision torchaudio
 ```
 
 3. **Start ComfyUI with optimized flags:**
