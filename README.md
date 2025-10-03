@@ -11,6 +11,7 @@
 **Tested on GMTek Evo-X2 Strix Halo (gfx1151) with 128GB Unified RAM:**
 - **Flux 1024x1024 generation**: **500s → 110s** (78% improvement!)
 - **WAN 2.2 Video generation (2s, 320x320)**: **163s → 139s** (15% improvement!)
+- **WAN 2.2 Video generation (2s, 480x480)**: **202s** (33 frames, 16fps) ✅ **NEW!**
 - **Memory efficiency**: 25-35% better VRAM usage
 - **Stability**: Significantly reduced OOM errors
 
@@ -388,6 +389,75 @@ cd ComfyUI-ROCM-Optimized-VAE
 
 # 6. Run the installer
 python install.py
+```
+
+### 🪟 **Windows Pagination Error Fixes**
+
+**If you encounter pagination errors on Windows:**
+
+#### **Method 1: Environment Variable (Recommended)**
+```powershell
+# Set environment variable before starting ComfyUI
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+python main.py
+```
+
+#### **Method 2: Batch File Solution**
+Create a `start_comfyui.bat` file in your ComfyUI directory:
+```batch
+@echo off
+set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+python main.py
+pause
+```
+
+#### **Method 3: PowerShell Profile (Permanent)**
+Add to your PowerShell profile:
+```powershell
+# Open PowerShell profile
+notepad $PROFILE
+
+# Add this line:
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+```
+
+#### **Method 4: System Environment Variable**
+1. Press `Win + R`, type `sysdm.cpl`, press Enter
+2. Click "Environment Variables"
+3. Under "User variables", click "New"
+4. Variable name: `PYTORCH_CUDA_ALLOC_CONF`
+5. Variable value: `expandable_segments:True`
+6. Click OK and restart ComfyUI
+
+### 🔧 **Advanced Windows Troubleshooting**
+
+#### **Memory Issues on Windows:**
+```powershell
+# Check available memory
+Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
+
+# Set additional memory management
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True,max_split_size_mb:512"
+```
+
+#### **ROCm Installation Issues:**
+```powershell
+# Verify ROCm installation
+rocm-smi
+
+# Check PyTorch ROCm support
+python -c "import torch; print(torch.cuda.is_available()); print(torch.version.hip)"
+```
+
+#### **Git Issues on Windows:**
+```powershell
+# Fix line ending issues
+git config --global core.autocrlf true
+
+# Reset repository if corrupted
+cd custom_nodes
+rmdir /s ComfyUI-ROCM-Optimized-VAE
+git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
 ```
 
 ### If you experience issues:
