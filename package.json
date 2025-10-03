@@ -1,0 +1,38 @@
+{
+  "name": "ComfyUI-ROCM-Optimized-VAE",
+  "version": "1.0.0",
+  "description": "RocM-optimized ComfyUI nodes for AMD GPU performance",
+  "author": "Nino",
+  "email": "nino2k@proton.me",
+  "url": "https://github.com/iGavroche/rocm-ninodes",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iGavroche/rocm-ninodes.git"
+  },
+  "keywords": [
+    "comfyui",
+    "rocm",
+    "amd",
+    "gpu",
+    "optimization",
+    "vae",
+    "sampling",
+    "gfx1151"
+  ],
+  "comfyui": {
+    "id": "ComfyUI-ROCM-Optimized-VAE",
+    "display_name": "RocM Ninodes",
+    "description": "ROCM-optimized nodes for AMD GPU performance",
+    "author": "Nino",
+    "version": "1.0.0",
+    "category": "Optimization",
+    "tags": ["rocm", "amd", "gpu", "optimization", "vae", "sampling"],
+    "requirements": [
+      "torch>=2.0.0",
+      "torchvision",
+      "torchaudio"
+    ],
+    "install_script": "install.py"
+  }
+}
