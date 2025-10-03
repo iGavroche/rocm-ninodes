@@ -15,6 +15,9 @@
 
 *"Workflows that used to take forever to run now complete in a fraction of the time!"* - Nino, GMTek Evo-X2 Owner
 
+### 🎯 **Try It Now!**
+**[Download Optimized Flux Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - Ready-to-use workflow with 78% performance improvement!
+
 ## 🚀 **Key Features**
 
 - **ROCM-Specific Optimizations**: Tuned specifically for AMD GPUs with ROCm 6.4+
@@ -107,6 +110,25 @@ python install.py
    - **RocM Ninodes/VAE**: VAE Decode, VAE Decode Tiled, VAE Performance Monitor
    - **RocM Ninodes/Sampling**: KSampler, KSampler Advanced, Sampler Performance Monitor
 3. **Test Performance**: Use the Performance Monitor nodes to verify optimizations
+
+## 🚀 **Quick Start - Optimized Workflow**
+
+**Ready to test the optimizations?** Download the pre-configured workflow:
+
+### 📥 **Download Optimized Flux Workflow**
+- **[flux_dev_checkpoint_example_rocm_optimized.json](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - Complete Flux workflow with ROCM optimizations
+
+**This workflow includes:**
+- ✅ **ROCM VAE Decode** (optimized for gfx1151)
+- ✅ **ROCM KSampler** (with memory optimizations)
+- ✅ **Performance Monitors** (to track improvements)
+- ✅ **Optimal Settings** (tuned for Strix Halo)
+
+**How to use:**
+1. **Download** the workflow JSON file
+2. **Open** in ComfyUI (drag & drop or File → Load)
+3. **Install missing nodes** via ComfyUI Manager (if prompted)
+4. **Run** and enjoy 78% faster generation! 🎉
 
 ## Usage
 
