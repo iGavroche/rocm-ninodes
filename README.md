@@ -65,7 +65,88 @@
 - **Optimal settings**: Suggests best samplers and settings for your GPU
 - **Performance tips**: Specific recommendations for sampling optimization
 
-## Installation
+## 🚀 ComfyUI Installation with uv
+
+### Complete Setup Guide
+
+**Tested on Manjaro Linux with GMTek Evo-X2 Strix Halo (gfx1151, 128GB Unified RAM)**
+
+#### 🐧 **Linux (Manjaro/Ubuntu/Arch/etc.)**
+
+1. **Install uv (if not already installed):**
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc  # or ~/.zshrc
+```
+
+2. **Clone and setup ComfyUI:**
+```bash
+# Clone ComfyUI
+git clone https://github.com/comfyanonymous/ComfyUI.git
+cd ComfyUI
+
+# Create virtual environment with uv
+uv venv
+source .venv/bin/activate
+
+# Install dependencies
+uv pip install -r requirements.txt
+
+# Install ROCm PyTorch nightly for gfx1151
+uv pip uninstall torch torchaudio torchvision
+uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ --pre torch torchaudio torchvision --upgrade
+
+# Install additional dependencies
+uv pip install torchvision torchaudio
+```
+
+3. **Start ComfyUI with optimized flags:**
+```bash
+export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
+uv run main.py --use-pytorch-cross-attention --highvram --cache-none
+```
+
+#### 🪟 **Windows (PowerShell)**
+
+1. **Install uv (if not already installed):**
+```powershell
+# Install uv via pip
+pip install uv
+
+# Or download from: https://github.com/astral-sh/uv/releases
+```
+
+2. **Clone and setup ComfyUI:**
+```powershell
+# Clone ComfyUI
+git clone https://github.com/comfyanonymous/ComfyUI.git
+cd ComfyUI
+
+# Create virtual environment with uv
+uv venv
+.venv\Scripts\Activate.ps1
+
+# Install dependencies
+uv pip install -r requirements.txt
+
+# Install ROCm PyTorch nightly for gfx1151
+uv pip uninstall torch torchaudio torchvision
+uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ --pre torch torchaudio torchvision --upgrade
+```
+
+3. **Start ComfyUI with optimized flags:**
+```powershell
+# Set environment variable
+$env:TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL="1"
+
+# Start ComfyUI
+uv run main.py --use-pytorch-cross-attention --highvram --cache-none
+```
+
+**Note for Windows users:** ROCm support on Windows is limited. For best performance, consider using WSL2 with Ubuntu or dual-booting Linux.
+
+## 📦 Plugin Installation
 
 ### Prerequisites
 
@@ -148,6 +229,59 @@ python install.py
    - **RocM Ninodes/Sampling**: KSampler, KSampler Advanced, Sampler Performance Monitor
 3. **Test Performance**: Use the Performance Monitor nodes to verify optimizations
 
+## 🔄 Plugin Updates
+
+### How to Update RocM Ninodes
+
+#### 🐧 **Linux (Manjaro/Ubuntu/etc.)**
+
+**Method 1: Git Pull (Recommended)**
+```bash
+cd ComfyUI/custom_nodes/ComfyUI-ROCM-Optimized-VAE
+git pull origin main
+```
+
+**Method 2: Fresh Install**
+```bash
+# Remove old version
+rm -rf ComfyUI/custom_nodes/ComfyUI-ROCM-Optimized-VAE
+
+# Install latest version
+cd ComfyUI/custom_nodes
+git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
+```
+
+#### 🪟 **Windows (PowerShell)**
+
+**Method 1: Git Pull (Recommended)**
+```powershell
+cd ComfyUI\custom_nodes\ComfyUI-ROCM-Optimized-VAE
+git pull origin main
+```
+
+**Method 2: Fresh Install**
+```powershell
+# Remove old version
+Remove-Item -Recurse -Force ComfyUI\custom_nodes\ComfyUI-ROCM-Optimized-VAE
+
+# Install latest version
+cd ComfyUI\custom_nodes
+git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
+```
+
+### After Updating
+
+1. **Restart ComfyUI** to load the updated nodes
+2. **Check for new features** in the node panel
+3. **Test workflows** to ensure compatibility
+4. **Check the [CHANGELOG](https://github.com/iGavroche/rocm-ninodes/blob/main/CHANGELOG.md)** for new features and fixes
+
+### Update Notifications
+
+- **GitHub Releases**: Watch the repository for release notifications
+- **ComfyUI Manager**: Future updates will be available through ComfyUI Manager
+- **Performance Updates**: New optimizations are regularly added based on community feedback
+
 ## 🚀 **Quick Start - Optimized Workflow**
 
 **Ready to test the optimizations?** Download the pre-configured workflow:
@@ -217,6 +351,65 @@ Based on gfx1151 architecture optimizations:
 ### ROCm Requirements:
 - PyTorch with ROCm support (nightly build recommended)
 - ROCm 6.4+ (you're using 6.4)
+
+### uv-Specific Issues
+
+#### 🐧 **Linux (Manjaro/Ubuntu/etc.)**
+
+1. **uv not found after installation**:
+   ```bash
+   # Add to your shell profile (~/.bashrc or ~/.zshrc)
+   echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+
+2. **Virtual environment not activating**:
+   ```bash
+   # Make sure you're in the ComfyUI directory
+   cd ComfyUI
+   source .venv/bin/activate
+   ```
+
+3. **PyTorch ROCm installation fails**:
+   ```bash
+   # Clear uv cache and retry
+   uv cache clean
+   uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ --pre torch torchaudio torchvision --upgrade
+   ```
+
+4. **Permission issues with uv**:
+   ```bash
+   # Install uv for current user only
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+#### 🪟 **Windows (PowerShell)**
+
+1. **uv not found after installation**:
+   ```powershell
+   # Add uv to PATH or use full path
+   $env:PATH += ";C:\Users\$env:USERNAME\.cargo\bin"
+   # Or restart PowerShell after installation
+   ```
+
+2. **Virtual environment not activating**:
+   ```powershell
+   # Make sure you're in the ComfyUI directory
+   cd ComfyUI
+   .venv\Scripts\Activate.ps1
+   ```
+
+3. **PowerShell execution policy**:
+   ```powershell
+   # If you get execution policy errors
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+
+4. **Git not found**:
+   ```powershell
+   # Install Git for Windows from: https://git-scm.com/download/win
+   # Or use GitHub Desktop
+   ```
 
 ### Windows-Specific Issues
 
