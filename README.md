@@ -74,6 +74,13 @@
 - **Optimal settings**: Suggests best samplers and settings for your GPU
 - **Performance tips**: Specific recommendations for sampling optimization
 
+### WindowsPaginationDiagnostic
+- **Error 1455 detection**: Automatically detects Windows pagination errors
+- **Memory analysis**: Checks system memory availability and usage
+- **Automatic fixes**: Applies recommended environment variables and settings
+- **Step-by-step guidance**: Provides detailed instructions for manual fixes
+- **Real-time monitoring**: Shows current memory status and recommendations
+
 ## 🚀 ComfyUI Installation with uv
 
 ### Complete Setup Guide
@@ -396,14 +403,21 @@ cd ComfyUI-ROCM-Optimized-VAE
 python install.py
 ```
 
-### 🪟 **Windows Pagination Error Fixes**
+### 🪟 **Windows Pagination Error Fixes (Error 1455)**
 
-**If you encounter pagination errors on Windows:**
+**If you encounter the error "Le fichier de pagination est insuffisant pour terminer cette opération" (os error 1455):**
 
-#### **Method 1: Environment Variable (Recommended)**
+#### **🚨 Quick Fix (Recommended)**
+Use the new **Windows Pagination Diagnostic** node in ComfyUI:
+1. Add "Windows Pagination Diagnostic" node from "RocM Ninodes/Diagnostics"
+2. Connect it to your workflow
+3. Run it to automatically diagnose and fix the issue
+
+#### **Method 1: Environment Variable (Immediate Fix)**
 ```powershell
 # Set environment variable before starting ComfyUI
-$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True,max_split_size_mb:512"
+$env:PYTORCH_HIP_ALLOC_CONF = "expandable_segments:True"
 python main.py
 ```
 
@@ -411,7 +425,8 @@ python main.py
 Create a `start_comfyui.bat` file in your ComfyUI directory:
 ```batch
 @echo off
-set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512
+set PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 python main.py
 pause
 ```
@@ -422,17 +437,58 @@ Add to your PowerShell profile:
 # Open PowerShell profile
 notepad $PROFILE
 
-# Add this line:
-$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+# Add these lines:
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True,max_split_size_mb:512"
+$env:PYTORCH_HIP_ALLOC_CONF = "expandable_segments:True"
 ```
 
-#### **Method 4: System Environment Variable**
+#### **Method 4: System Environment Variable (Permanent)**
 1. Press `Win + R`, type `sysdm.cpl`, press Enter
 2. Click "Environment Variables"
 3. Under "User variables", click "New"
 4. Variable name: `PYTORCH_CUDA_ALLOC_CONF`
-5. Variable value: `expandable_segments:True`
-6. Click OK and restart ComfyUI
+5. Variable value: `expandable_segments:True,max_split_size_mb:512`
+6. Click "New" again
+7. Variable name: `PYTORCH_HIP_ALLOC_CONF`
+8. Variable value: `expandable_segments:True`
+9. Click OK and restart ComfyUI
+
+#### **Method 5: Increase Windows Paging File (Most Effective)**
+1. Press `Win + R`, type `sysdm.cpl`, press Enter
+2. Click "Advanced" tab → "Performance Settings" → "Advanced" tab
+3. Under "Virtual memory", click "Change"
+4. Uncheck "Automatically manage paging file size for all drives"
+5. Select your system drive (usually C:)
+6. Select "Custom size"
+7. Set Initial size: `16384` MB (16 GB)
+8. Set Maximum size: `32768` MB (32 GB)
+9. Click "Set", then "OK", then restart ComfyUI
+
+#### **Method 6: PowerShell Script (Advanced)**
+Create `fix_pagination.ps1`:
+```powershell
+# Fix Windows pagination error 1455
+Write-Host "Applying Windows pagination fixes..." -ForegroundColor Green
+
+# Set environment variables
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True,max_split_size_mb:512"
+$env:PYTORCH_HIP_ALLOC_CONF = "expandable_segments:True"
+$env:PYTORCH_CUDA_MEMORY_POOL_TYPE = "expandable_segments"
+
+# Check memory
+$memory = Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
+$totalGB = [math]::Round($memory.Sum / 1GB, 2)
+Write-Host "Total RAM: $totalGB GB" -ForegroundColor Yellow
+
+if ($totalGB -lt 16) {
+    Write-Host "WARNING: Less than 16GB RAM detected. Consider increasing paging file." -ForegroundColor Red
+}
+
+Write-Host "Environment variables set. Starting ComfyUI..." -ForegroundColor Green
+python main.py
+```
+
+Run with: `powershell -ExecutionPolicy Bypass -File fix_pagination.ps1`
 
 ### 🔧 **Advanced Windows Troubleshooting**
 

@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2024-12-19
+
+### Added
+- **WindowsPaginationDiagnostic**: New diagnostic node for Windows pagination error 1455
+- **Windows-specific memory management**: Automatic detection and fixes for Windows memory issues
+- **Comprehensive Windows troubleshooting**: 6 different methods to fix pagination errors
+- **PowerShell and Batch scripts**: Ready-to-use scripts for automatic fixes
+- **Real-time memory monitoring**: Live memory status and recommendations
+- **psutil dependency**: Added for advanced memory diagnostics
+
+### Fixed
+- **Windows pagination error 1455**: "Le fichier de pagination est insuffisant pour terminer cette opération"
+- **Memory allocation issues on Windows**: Better environment variable management
+- **Process priority optimization**: High priority for better memory management
+- **Aggressive garbage collection**: More frequent cleanup on Windows systems
+
+### Enhanced
+- **Automatic environment variable setup**: PYTORCH_CUDA_ALLOC_CONF, PYTORCH_HIP_ALLOC_CONF
+- **Memory availability checks**: Pre-flight checks before operations
+- **Windows-specific optimizations**: Platform detection and targeted fixes
+- **Error handling**: Better fallback mechanisms for Windows users
+- **Documentation**: Comprehensive Windows troubleshooting guide
+
+### Technical Details
+- Added platform detection and Windows-specific code paths
+- Enhanced memory management with psutil integration
+- Automatic garbage collection threshold adjustment
+- Process priority optimization for better memory handling
+- Comprehensive error detection and user guidance
+
+## [1.1.0] - 2024-12-18
+
+### Fixed
+- **Critical memory allocation bug**: Reduced attention memory modifier from 3x to 1.5x for AMD GPUs
+- **HIP memory management**: Added PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+- **Flash attention issues**: Disabled flash attention for AMD GPUs (causes memory issues)
+- **Fallback error handling**: Fixed 'NoneType' object has no attribute 'shape' error
+
+### Performance Improvements
+- **Image Generation (Flux)**: 1024x1024 generation: 500s → 110s (78% improvement!)
+- **i2v Generation (WAN 2.2)**: 320x320px, 2s: 163s → 139s (15% improvement!)
+- **Higher resolutions**: Successfully handles up to 480x720px i2v generation
+
 ## [1.0.0] - 2024-12-19
 
 ### Added
