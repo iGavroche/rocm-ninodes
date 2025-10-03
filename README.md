@@ -253,20 +253,40 @@ git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-V
 
 #### 🪟 **Windows (PowerShell)**
 
-**Method 1: Git Pull (Recommended)**
+**Method 1: Git Pull (For Existing Installations)**
 ```powershell
+# Navigate to the plugin directory
 cd ComfyUI\custom_nodes\ComfyUI-ROCM-Optimized-VAE
+
+# Pull latest changes
 git pull origin main
 ```
 
-**Method 2: Fresh Install**
+**Method 2: Fresh Install (For New Installations)**
 ```powershell
-# Remove old version
-Remove-Item -Recurse -Force ComfyUI\custom_nodes\ComfyUI-ROCM-Optimized-VAE
-
-# Install latest version
+# Navigate to custom_nodes directory
 cd ComfyUI\custom_nodes
+
+# Clone the repository
 git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
+
+# Navigate into the plugin directory
+cd ComfyUI-ROCM-Optimized-VAE
+```
+
+**Method 3: Update Existing Installation (If git pull fails)**
+```powershell
+# Navigate to custom_nodes directory
+cd ComfyUI\custom_nodes
+
+# Remove old version
+Remove-Item -Recurse -Force ComfyUI-ROCM-Optimized-VAE
+
+# Clone fresh copy
+git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
+
+# Navigate into the plugin directory
+cd ComfyUI-ROCM-Optimized-VAE
 ```
 
 ### After Updating
@@ -342,6 +362,34 @@ Based on gfx1151 architecture optimizations:
 
 ## Troubleshooting
 
+### 🚨 **Quick Fix for Common Windows Errors**
+
+**If you see these errors:**
+- `fatal: couldn't find remote ref ComfyUI-ROCM-Optimized-VAE`
+- `does not appear to be a git repository`
+- `Le module « .venv » n'a pas pu être chargé`
+
+**Quick Solution:**
+```powershell
+# 1. Navigate to ComfyUI directory
+cd C:\ComfyUI
+
+# 2. Activate virtual environment
+.venv\Scripts\Activate.ps1
+
+# 3. Navigate to custom_nodes
+cd custom_nodes
+
+# 4. Clone the plugin (if not already installed)
+git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
+
+# 5. Navigate into the plugin directory
+cd ComfyUI-ROCM-Optimized-VAE
+
+# 6. Run the installer
+python install.py
+```
+
 ### If you experience issues:
 1. Check the Performance Monitor node for recommendations
 2. Try reducing tile size if you get OOM errors
@@ -409,6 +457,34 @@ Based on gfx1151 architecture optimizations:
    ```powershell
    # Install Git for Windows from: https://git-scm.com/download/win
    # Or use GitHub Desktop
+   ```
+
+5. **"fatal: couldn't find remote ref" error**:
+   ```powershell
+   # This happens when trying to git pull before cloning
+   # Solution: Clone the repository first
+   cd ComfyUI\custom_nodes
+   git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
+   ```
+
+6. **"does not appear to be a git repository" error**:
+   ```powershell
+   # This happens when the directory isn't a git repository
+   # Solution: Clone the repository first
+   cd ComfyUI\custom_nodes
+   git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-VAE
+   ```
+
+7. **Virtual environment activation fails**:
+   ```powershell
+   # Make sure you're in the ComfyUI directory (not custom_nodes)
+   cd C:\ComfyUI
+   
+   # Try activating the virtual environment
+   .venv\Scripts\Activate.ps1
+   
+   # If that fails, try this alternative
+   & ".venv\Scripts\Activate.ps1"
    ```
 
 ### Windows-Specific Issues
