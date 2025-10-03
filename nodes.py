@@ -7,6 +7,9 @@ import torch
 import torch.nn.functional as F
 import comfy.model_management as model_management
 import comfy.utils
+import comfy.sample
+import comfy.samplers
+import latent_preview
 import logging
 from typing import Dict, Any, Tuple, Optional
 import time
@@ -468,16 +471,46 @@ class ROCMOptimizedKSampler:
         
         # Use the standard ksampler with optimizations
         try:
-            result = comfy.samplers.common_ksampler(
-                model, seed, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image, denoise=denoise
+            # Use ComfyUI's sample function directly
+            latent_image_tensor = latent_image["samples"]
+            latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+            
+            # Prepare noise
+            batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
+            noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
+            
+            # Prepare noise mask
+            noise_mask = None
+            if "noise_mask" in latent_image:
+                noise_mask = latent_image["noise_mask"]
+            
+            # Prepare callback
+            callback = latent_preview.prepare_callback(model, steps)
+            disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+            
+            # Sample
+            samples = comfy.sample.sample(
+                model, noise, steps, cfg, sampler_name, scheduler, 
+                positive, negative, latent_image_tensor, denoise=denoise, 
+                noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed
             )
+            
+            # Wrap in latent format
+            out = latent_image.copy()
+            out["samples"] = samples
+            result = (out,)
+            
         except Exception as e:
             logging.warning(f"Optimized sampling failed, falling back to standard: {e}")
-            result = comfy.samplers.common_ksampler(
-                model, seed, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image, denoise=denoise
+            # Fallback to direct sampling
+            samples = comfy.sample.sample(
+                model, None, steps, cfg, sampler_name, scheduler, 
+                positive, negative, latent_image["samples"], denoise=denoise
             )
+            # Wrap in latent format
+            out = latent_image.copy()
+            out["samples"] = samples
+            result = (out,)
         
         sample_time = time.time() - start_time
         logging.info(f"ROCM KSampler completed in {sample_time:.2f}s")
@@ -608,20 +641,53 @@ class ROCMOptimizedKSamplerAdvanced:
         
         # Use advanced ksampler with optimizations
         try:
-            result = comfy.samplers.common_ksampler(
-                model, noise_seed, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image, denoise=denoise, 
+            # Use ComfyUI's sample function directly with advanced options
+            latent_image_tensor = latent_image["samples"]
+            latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+            
+            # Prepare noise
+            if disable_noise:
+                noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
+            else:
+                batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
+                noise = comfy.sample.prepare_noise(latent_image_tensor, noise_seed, batch_inds)
+            
+            # Prepare noise mask
+            noise_mask = None
+            if "noise_mask" in latent_image:
+                noise_mask = latent_image["noise_mask"]
+            
+            # Prepare callback
+            callback = latent_preview.prepare_callback(model, steps)
+            disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+            
+            # Sample with advanced options
+            samples = comfy.sample.sample(
+                model, noise, steps, cfg, sampler_name, scheduler, 
+                positive, negative, latent_image_tensor, denoise=denoise, 
                 disable_noise=disable_noise, start_step=start_at_step, 
-                last_step=end_at_step, force_full_denoise=force_full_denoise
+                last_step=end_at_step, force_full_denoise=force_full_denoise,
+                noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=noise_seed
             )
+            
+            # Wrap in latent format
+            out = latent_image.copy()
+            out["samples"] = samples
+            result = (out,)
+            
         except Exception as e:
             logging.warning(f"Advanced sampling failed, falling back to standard: {e}")
-            result = comfy.samplers.common_ksampler(
-                model, noise_seed, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image, denoise=denoise, 
-                disable_noise=disable_noise, start_step=start_at_step, 
-                last_step=end_at_step, force_full_denoise=force_full_denoise
+            # Fallback to direct sampling
+            samples = comfy.sample.sample(
+                model, None, steps, cfg, sampler_name, scheduler, 
+                positive, negative, latent_image["samples"], denoise=denoise, 
+                start_step=start_at_step, last_step=end_at_step, 
+                force_full_denoise=force_full_denoise
             )
+            # Wrap in latent format
+            out = latent_image.copy()
+            out["samples"] = samples
+            result = (out,)
         
         sample_time = time.time() - start_time
         logging.info(f"ROCM Advanced KSampler completed in {sample_time:.2f}s")
