@@ -103,7 +103,9 @@ python install.py
 ## Post-Installation
 
 1. **Restart ComfyUI** to load the new nodes
-2. **Verify Installation**: Check that nodes appear in "latent/rocm_optimized" and "sampling/rocm_optimized" categories
+2. **Verify Installation**: Check that nodes appear in "RocM Ninodes" folder in the node panel:
+   - **RocM Ninodes/VAE**: VAE Decode, VAE Decode Tiled, VAE Performance Monitor
+   - **RocM Ninodes/Sampling**: KSampler, KSampler Advanced, Sampler Performance Monitor
 3. **Test Performance**: Use the Performance Monitor nodes to verify optimizations
 
 ## Usage
