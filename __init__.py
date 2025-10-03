@@ -1,12 +1,12 @@
 """
-RocM-Nino: ROCM Optimized Nodes for ComfyUI
+RocM Ninodes: ROCM Optimized Nodes for ComfyUI
 Optimized operations for AMD GPUs with ROCm support
 """
 
 __version__ = "1.0.0"
 __author__ = "Nino"
-__email__ = "nino@example.com"
-__description__ = "ROCM Optimized Nodes for ComfyUI - AMD GPU Performance Optimizations"
+__email__ = "nino2k@proton.me"
+__description__ = "RocM-optimized ComfyUI nodes for AMD GPU performance"
 
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
