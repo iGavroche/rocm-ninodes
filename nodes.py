@@ -749,13 +749,34 @@ class ROCMOptimizedKSamplerAdvanced:
             
         except Exception as e:
             logging.warning(f"Advanced sampling failed, falling back to standard: {e}")
-            # Fallback to direct sampling
-            samples = comfy.sample.sample(
-                model, None, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image["samples"], denoise=denoise, 
-                start_step=start_at_step, last_step=end_at_step, 
-                force_full_denoise=force_full_denoise
-            )
+            # Clear memory before fallback
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            # Fallback to direct sampling with proper noise preparation
+            try:
+                latent_image_tensor = latent_image["samples"]
+                latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+                
+                # Prepare noise for fallback
+                if disable_noise:
+                    noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
+                else:
+                    batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
+                    noise = comfy.sample.prepare_noise(latent_image_tensor, noise_seed, batch_inds)
+                
+                samples = comfy.sample.sample(
+                    model, noise, steps, cfg, sampler_name, scheduler, 
+                    positive, negative, latent_image_tensor, denoise=denoise, 
+                    start_step=start_at_step, last_step=end_at_step, 
+                    force_full_denoise=force_full_denoise
+                )
+            except Exception as fallback_error:
+                logging.error(f"Fallback sampling also failed: {fallback_error}")
+                # Return original latent if all sampling fails
+                out = latent_image.copy()
+                result = (out,)
+                return result
             # Wrap in latent format
             out = latent_image.copy()
             out["samples"] = samples
