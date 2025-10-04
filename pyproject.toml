@@ -14,6 +14,4 @@ Repository = "https://github.com/iGavroche/rocm-ninodes"
 [tool.comfy]
 PublisherId = "iGavroche"
 DisplayName = "RocM Ninodes"
-Icon = "https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/icon.jpg"
-
-
+Icon = "https://raw.githubusercontent.com/iGavroche/rocm-ninodes/refs/heads/main/icon.jpg"
