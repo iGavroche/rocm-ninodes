@@ -1,0 +1,86 @@
+[project]
+name = "rocm-ninodes"
+description = "ROCM Optimized Nodes for ComfyUI - High-performance VAE decode and sampling nodes specifically tuned for AMD GPUs with ROCm support, particularly targeting gfx1151 architecture"
+version = "1.0.0"
+license = {file = "LICENSE"}
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+    {name = "iGavroche", email = "nino2k@proton.me"}
+]
+maintainers = [
+    {name = "iGavroche", email = "nino2k@proton.me"}
+]
+keywords = [
+    "comfyui",
+    "rocm",
+    "amd",
+    "gpu",
+    "optimization",
+    "vae",
+    "sampling",
+    "gfx1151",
+    "pytorch",
+    "ai",
+    "machine-learning"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Environment :: GPU :: AMD ROCm",
+    "Environment :: GPU :: NVIDIA CUDA",
+]
+
+dependencies = [
+    "numpy>=1.20.0",
+    "Pillow>=8.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/iGavroche/rocm-ninodes"
+#  Used by Comfy Registry https://registry.comfy.org
+Documentation = "https://github.com/iGavroche/rocm-ninodes/blob/main/README.md"
+"Bug Tracker" = "https://github.com/iGavroche/rocm-ninodes/issues"
+
+[tool.comfy]
+PublisherId = "iGavroche"
+DisplayName = "RocM Ninodes"
+Icon = ""
+includes = ["nodes.py", "web/"]
+requires-comfyui = ">=1.0.0"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "black>=22.0",
+    "flake8>=4.0",
+    "mypy>=0.900",
+]
+test = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+exclude = ["tests*", "docs*", "examples*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.js", "*.md", "*.txt", "*.toml"]
+
