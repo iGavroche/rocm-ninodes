@@ -15,3 +15,23 @@ Repository = "https://github.com/iGavroche/rocm-ninodes"
 PublisherId = "igavroche"
 DisplayName = "RocM Ninodes"
 Icon = "https://raw.githubusercontent.com/iGavroche/rocm-ninodes/refs/heads/main/icon.jpg"
+includes = ["nodes.py", "web/", "comfyui_manager.json"]
+requires-comfyui = ">=1.0.0"
+
+[tool.comfyui-manager]
+name = "rocm-ninodes"
+display_name = "RocM Ninodes"
+description = "ROCM Optimized Nodes for ComfyUI - High-performance VAE decode and sampling nodes specifically tuned for AMD GPUs with ROCm support"
+version = "1.0.4"
+author = "iGavroche"
+author_email = "nino2k@proton.me"
+repository = "https://github.com/iGavroche/rocm-ninodes"
+license = "MIT"
+nodes = [
+    "ROCMOptimizedVAEDecode",
+    "ROCMOptimizedVAEDecodeTiled", 
+    "ROCMVAEPerformanceMonitor",
+    "ROCMOptimizedKSampler",
+    "ROCMOptimizedKSamplerAdvanced",
+    "ROCMSamplerPerformanceMonitor"
+]

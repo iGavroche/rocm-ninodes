@@ -25,13 +25,20 @@
     "display_name": "RocM Ninodes",
     "description": "ROCM-optimized nodes for AMD GPU performance",
     "author": "Nino",
-    "version": "1.0.0",
+    "version": "1.0.4",
     "category": "Optimization",
     "tags": ["rocm", "amd", "gpu", "optimization", "vae", "sampling"],
+    "nodes": [
+      "ROCMOptimizedVAEDecode",
+      "ROCMOptimizedVAEDecodeTiled", 
+      "ROCMVAEPerformanceMonitor",
+      "ROCMOptimizedKSampler",
+      "ROCMOptimizedKSamplerAdvanced",
+      "ROCMSamplerPerformanceMonitor"
+    ],
     "requirements": [
-      "torch>=2.0.0",
-      "torchvision",
-      "torchaudio"
+      "numpy>=1.20.0",
+      "Pillow>=8.0.0"
     ],
     "install_script": "install.py"
   }
