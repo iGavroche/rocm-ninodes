@@ -154,6 +154,20 @@ uv run main.py --use-pytorch-cross-attention --highvram --cache-none
 
 ## 📦 Plugin Installation
 
+### Method 1: ComfyUI CLI (Recommended)
+
+**Install ComfyUI CLI first:**
+```bash
+pip install comfy-cli
+```
+
+**Then install the plugin:**
+```bash
+comfy node install rocm-ninodes
+```
+
+### Method 2: Manual Installation
+
 ### Prerequisites
 
 **For gfx1151 (Strix Halo) users, follow these setup steps:**
@@ -197,7 +211,7 @@ python main.py --use-pytorch-cross-attention --highvram --cache-none
 
 **Note for Windows users:** ROCm support on Windows is limited. For best performance, consider using WSL2 with Ubuntu or dual-booting Linux.
 
-### Method 1: Git Clone (Recommended)
+### Method 3: Git Clone
 
 #### 🐧 **Linux/Mac:**
 ```bash
@@ -215,7 +229,7 @@ cd ComfyUI-ROCM-Optimized-VAE
 python install.py
 ```
 
-### Method 2: Download ZIP
+### Method 4: Download ZIP
 
 1. Download the latest release from [GitHub](https://github.com/iGavroche/rocm-ninodes/releases)
 2. Extract to `ComfyUI/custom_nodes/ComfyUI-ROCM-Optimized-VAE/`
@@ -223,7 +237,7 @@ python install.py
 
 **Windows users:** Right-click the ZIP file → "Extract All" → Choose the `ComfyUI/custom_nodes/` folder
 
-### Method 3: ComfyUI Manager (Future)
+### Method 5: ComfyUI Manager (Future)
 
 *Coming soon - will be available through ComfyUI Manager*
 

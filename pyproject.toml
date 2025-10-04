@@ -12,6 +12,6 @@ dependencies = [
 Repository = "https://github.com/iGavroche/rocm-ninodes"
 
 [tool.comfy]
-PublisherId = "iGavroche"
+PublisherId = "igavroche"
 DisplayName = "RocM Ninodes"
 Icon = "https://raw.githubusercontent.com/iGavroche/rocm-ninodes/refs/heads/main/icon.jpg"
