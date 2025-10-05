@@ -15,15 +15,37 @@
 
 #### **🎬 Image-to-Video Generation (WAN 2.2 i2v)**
 - **320x320px, 2s**: **163s → 139s** (15% improvement!)
+- **320x320px, 17 frames**: **98.33s → 92.78s** (5.6% improvement!) **NEW!**
 - **480x480px, 2s**: **202s** (33 frames, 16fps) ✅
-- **480x720px, 2s**: **303s** (33 frames, 16fps) ✅ **NEW!**
+- **480x720px, 2s**: **303s** (33 frames, 16fps) ✅
 
 #### **📊 Performance Metrics**
 - **Memory efficiency**: 50% reduction in attention memory requirements
 - **Stability**: Significantly reduced OOM errors
 - **Scalability**: Successfully handles up to 480x720px i2v generation
+- **Consistency**: Stable performance across multiple runs (5.6% average improvement)
 
 *"Workflows that used to take forever to run now complete in a fraction of the time!"* - Nino, GMTek Evo-X2 Owner
+
+#### **🔬 Detailed Benchmark Results (WAN 2.2 i2v, 320x320px, 17 frames)**
+
+**Test Configuration:**
+- **Model**: WAN 2.2 i2v 14B
+- **Resolution**: 320x320px
+- **Frames**: 17 frames
+- **Hardware**: GMTek Evo-X2 Strix Halo (gfx1151, 128GB Unified RAM)
+
+**With RocM Ninodes Optimizations:**
+- **Run 1**: ROCM Advanced KSampler: 20.77s | ROCM VAE Decode: 7.73s | **Total: 92.78s**
+- **Run 2**: ROCM Advanced KSampler: 21.03s | ROCM VAE Decode: 7.41s | **Total: 93.32s**
+- **Average**: **93.05s** ⚡
+
+**Without RocM Ninodes (Standard ComfyUI):**
+- **Run 1**: Standard KSampler: 22.06s | Standard VAE Decode: 7.48s | **Total: 98.33s**
+- **Run 2**: Standard KSampler: 22.71s | Standard VAE Decode: 7.20s | **Total: 104.01s**
+- **Average**: **101.17s** 🐌
+
+**Performance Improvement: 8.1% faster overall, 5.6% average improvement**
 
 ### 🎯 **Try It Now!**
 - **[Flux Image Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - 78% performance improvement!
@@ -73,6 +95,13 @@
 - **Sampler analysis**: Analyzes sampling performance and provides recommendations
 - **Optimal settings**: Suggests best samplers and settings for your GPU
 - **Performance tips**: Specific recommendations for sampling optimization
+
+### WindowsPaginationDiagnostic
+- **Error 1455 detection**: Automatically detects Windows pagination errors
+- **Memory analysis**: Checks system memory availability and usage
+- **Automatic fixes**: Applies recommended environment variables and settings
+- **Step-by-step guidance**: Provides detailed instructions for manual fixes
+- **Real-time monitoring**: Shows current memory status and recommendations
 
 ## 🚀 ComfyUI Installation with uv
 
@@ -410,14 +439,21 @@ cd ComfyUI-ROCM-Optimized-VAE
 python install.py
 ```
 
-### 🪟 **Windows Pagination Error Fixes**
+### 🪟 **Windows Pagination Error Fixes (Error 1455)**
 
-**If you encounter pagination errors on Windows:**
+**If you encounter the error "Le fichier de pagination est insuffisant pour terminer cette opération" (os error 1455):**
 
-#### **Method 1: Environment Variable (Recommended)**
+#### **🚨 Quick Fix (Recommended)**
+Use the new **Windows Pagination Diagnostic** node in ComfyUI:
+1. Add "Windows Pagination Diagnostic" node from "RocM Ninodes/Diagnostics"
+2. Connect it to your workflow
+3. Run it to automatically diagnose and fix the issue
+
+#### **Method 1: Environment Variable (Immediate Fix)**
 ```powershell
 # Set environment variable before starting ComfyUI
-$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True,max_split_size_mb:512"
+$env:PYTORCH_HIP_ALLOC_CONF = "expandable_segments:True"
 python main.py
 ```
 
@@ -425,7 +461,8 @@ python main.py
 Create a `start_comfyui.bat` file in your ComfyUI directory:
 ```batch
 @echo off
-set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512
+set PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 python main.py
 pause
 ```
@@ -436,17 +473,58 @@ Add to your PowerShell profile:
 # Open PowerShell profile
 notepad $PROFILE
 
-# Add this line:
-$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+# Add these lines:
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True,max_split_size_mb:512"
+$env:PYTORCH_HIP_ALLOC_CONF = "expandable_segments:True"
 ```
 
-#### **Method 4: System Environment Variable**
+#### **Method 4: System Environment Variable (Permanent)**
 1. Press `Win + R`, type `sysdm.cpl`, press Enter
 2. Click "Environment Variables"
 3. Under "User variables", click "New"
 4. Variable name: `PYTORCH_CUDA_ALLOC_CONF`
-5. Variable value: `expandable_segments:True`
-6. Click OK and restart ComfyUI
+5. Variable value: `expandable_segments:True,max_split_size_mb:512`
+6. Click "New" again
+7. Variable name: `PYTORCH_HIP_ALLOC_CONF`
+8. Variable value: `expandable_segments:True`
+9. Click OK and restart ComfyUI
+
+#### **Method 5: Increase Windows Paging File (Most Effective)**
+1. Press `Win + R`, type `sysdm.cpl`, press Enter
+2. Click "Advanced" tab → "Performance Settings" → "Advanced" tab
+3. Under "Virtual memory", click "Change"
+4. Uncheck "Automatically manage paging file size for all drives"
+5. Select your system drive (usually C:)
+6. Select "Custom size"
+7. Set Initial size: `16384` MB (16 GB)
+8. Set Maximum size: `32768` MB (32 GB)
+9. Click "Set", then "OK", then restart ComfyUI
+
+#### **Method 6: PowerShell Script (Advanced)**
+Create `fix_pagination.ps1`:
+```powershell
+# Fix Windows pagination error 1455
+Write-Host "Applying Windows pagination fixes..." -ForegroundColor Green
+
+# Set environment variables
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True,max_split_size_mb:512"
+$env:PYTORCH_HIP_ALLOC_CONF = "expandable_segments:True"
+$env:PYTORCH_CUDA_MEMORY_POOL_TYPE = "expandable_segments"
+
+# Check memory
+$memory = Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
+$totalGB = [math]::Round($memory.Sum / 1GB, 2)
+Write-Host "Total RAM: $totalGB GB" -ForegroundColor Yellow
+
+if ($totalGB -lt 16) {
+    Write-Host "WARNING: Less than 16GB RAM detected. Consider increasing paging file." -ForegroundColor Red
+}
+
+Write-Host "Environment variables set. Starting ComfyUI..." -ForegroundColor Green
+python main.py
+```
+
+Run with: `powershell -ExecutionPolicy Bypass -File fix_pagination.ps1`
 
 ### 🔧 **Advanced Windows Troubleshooting**
 

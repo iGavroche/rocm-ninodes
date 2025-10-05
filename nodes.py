@@ -13,7 +13,6 @@ import latent_preview
 import logging
 from typing import Dict, Any, Tuple, Optional
 import time
-import math
 
 class ROCMOptimizedVAEDecode:
     """
@@ -526,82 +525,12 @@ class ROCMOptimizedKSampler:
                 if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                     torch.cuda.set_per_process_memory_fraction(0.9)
         
-        # Attention optimization for AMD GPUs
+        # Attention optimization
         if attention_optimization and is_amd:
-            # For AMD GPUs, be more conservative with attention backends
-            # Flash attention can cause memory issues on some AMD GPUs
+            # Enable optimized attention for AMD
             torch.backends.cuda.enable_math_sdp(True)
-            torch.backends.cuda.enable_flash_sdp(False)  # Disable flash attention for AMD
+            torch.backends.cuda.enable_flash_sdp(True)
             torch.backends.cuda.enable_mem_efficient_sdp(True)
-            
-            # Set HIP-specific memory management
-            import os
-            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-            
-            # Override attention memory calculation for AMD GPUs
-            import comfy.ldm.modules.attention as attention_module
-            if hasattr(attention_module, 'attention_split'):
-                # Patch the attention_split function to use more conservative memory calculation
-                original_attention_split = attention_module.attention_split
-                
-                def patched_attention_split(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
-                    # Use more conservative memory calculation for AMD GPUs
-                    attn_precision = attention_module.get_attn_precision(attn_precision, q.dtype)
-                    
-                    if skip_reshape:
-                        b, _, _, dim_head = q.shape
-                    else:
-                        b, _, dim_head = q.shape
-                        dim_head //= heads
-                    
-                    scale = dim_head ** -0.5
-                    
-                    if skip_reshape:
-                         q, k, v = map(
-                            lambda t: t.reshape(b * heads, -1, dim_head),
-                            (q, k, v),
-                        )
-                    else:
-                        q, k, v = map(
-                            lambda t: t.unsqueeze(3)
-                            .reshape(b, -1, heads, dim_head)
-                            .permute(0, 2, 1, 3)
-                            .reshape(b * heads, -1, dim_head)
-                            .contiguous(),
-                            (q, k, v),
-                        )
-                    
-                    r1 = torch.zeros(q.shape[0], q.shape[1], v.shape[2], device=q.device, dtype=q.dtype)
-                    
-                    mem_free_total = model_management.get_free_memory(q.device)
-                    
-                    if attn_precision == torch.float32:
-                        element_size = 4
-                        upcast = True
-                    else:
-                        element_size = q.element_size()
-                        upcast = False
-                    
-                    gb = 1024 ** 3
-                    tensor_size = q.shape[0] * q.shape[1] * k.shape[1] * element_size
-                    # Use more conservative modifier for AMD GPUs (1.5 instead of 3)
-                    modifier = 1.5 if is_amd else 3
-                    mem_required = tensor_size * modifier
-                    steps = 1
-                    
-                    if mem_required > mem_free_total:
-                        steps = 2**(math.ceil(math.log(mem_required / mem_free_total, 2)))
-                    
-                    if steps > 64:
-                        max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
-                        raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
-                                        f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
-                    
-                    # Rest of the function remains the same...
-                    return original_attention_split(q, k, v, heads, mask, attn_precision, skip_reshape, skip_output_reshape, **kwargs)
-                
-                # Apply the patch
-                attention_module.attention_split = patched_attention_split
         
         # Use the standard ksampler with optimizations
         try:
@@ -763,83 +692,6 @@ class ROCMOptimizedKSamplerAdvanced:
                     torch.cuda.empty_cache()
                     if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                         torch.cuda.set_per_process_memory_fraction(0.9)
-                
-                # Attention optimization for AMD GPUs
-                if is_amd:
-                    # For AMD GPUs, be more conservative with attention backends
-                    # Flash attention can cause memory issues on some AMD GPUs
-                    torch.backends.cuda.enable_math_sdp(True)
-                    torch.backends.cuda.enable_flash_sdp(False)  # Disable flash attention for AMD
-                    torch.backends.cuda.enable_mem_efficient_sdp(True)
-                    
-                    # Set HIP-specific memory management
-                    import os
-                    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-                    
-                    # Override attention memory calculation for AMD GPUs
-                    import comfy.ldm.modules.attention as attention_module
-                    if hasattr(attention_module, 'attention_split'):
-                        # Patch the attention_split function to use more conservative memory calculation
-                        original_attention_split = attention_module.attention_split
-                        
-                        def patched_attention_split(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
-                            # Use more conservative memory calculation for AMD GPUs
-                            attn_precision = attention_module.get_attn_precision(attn_precision, q.dtype)
-                            
-                            if skip_reshape:
-                                b, _, _, dim_head = q.shape
-                            else:
-                                b, _, dim_head = q.shape
-                                dim_head //= heads
-                            
-                            scale = dim_head ** -0.5
-                            
-                            if skip_reshape:
-                                 q, k, v = map(
-                                    lambda t: t.reshape(b * heads, -1, dim_head),
-                                    (q, k, v),
-                                )
-                            else:
-                                q, k, v = map(
-                                    lambda t: t.unsqueeze(3)
-                                    .reshape(b, -1, heads, dim_head)
-                                    .permute(0, 2, 1, 3)
-                                    .reshape(b * heads, -1, dim_head)
-                                    .contiguous(),
-                                    (q, k, v),
-                                )
-                            
-                            r1 = torch.zeros(q.shape[0], q.shape[1], v.shape[2], device=q.device, dtype=q.dtype)
-                            
-                            mem_free_total = model_management.get_free_memory(q.device)
-                            
-                            if attn_precision == torch.float32:
-                                element_size = 4
-                                upcast = True
-                            else:
-                                element_size = q.element_size()
-                                upcast = False
-                            
-                            gb = 1024 ** 3
-                            tensor_size = q.shape[0] * q.shape[1] * k.shape[1] * element_size
-                            # Use more conservative modifier for AMD GPUs (1.5 instead of 3)
-                            modifier = 1.5 if is_amd else 3
-                            mem_required = tensor_size * modifier
-                            steps = 1
-                            
-                            if mem_required > mem_free_total:
-                                steps = 2**(math.ceil(math.log(mem_required / mem_free_total, 2)))
-                            
-                            if steps > 64:
-                                max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
-                                raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
-                                                f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
-                            
-                            # Rest of the function remains the same...
-                            return original_attention_split(q, k, v, heads, mask, attn_precision, skip_reshape, skip_output_reshape, **kwargs)
-                        
-                        # Apply the patch
-                        attention_module.attention_split = patched_attention_split
         
         # Configure sampling parameters
         force_full_denoise = True
@@ -888,34 +740,13 @@ class ROCMOptimizedKSamplerAdvanced:
             
         except Exception as e:
             logging.warning(f"Advanced sampling failed, falling back to standard: {e}")
-            # Clear memory before fallback
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            
-            # Fallback to direct sampling with proper noise preparation
-            try:
-                latent_image_tensor = latent_image["samples"]
-                latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
-                
-                # Prepare noise for fallback
-                if disable_noise:
-                    noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
-                else:
-                    batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
-                    noise = comfy.sample.prepare_noise(latent_image_tensor, noise_seed, batch_inds)
-                
-                samples = comfy.sample.sample(
-                    model, noise, steps, cfg, sampler_name, scheduler, 
-                    positive, negative, latent_image_tensor, denoise=denoise, 
-                    start_step=start_at_step, last_step=end_at_step, 
-                    force_full_denoise=force_full_denoise
-                )
-            except Exception as fallback_error:
-                logging.error(f"Fallback sampling also failed: {fallback_error}")
-                # Return original latent if all sampling fails
-                out = latent_image.copy()
-                result = (out,)
-                return result
+            # Fallback to direct sampling
+            samples = comfy.sample.sample(
+                model, None, steps, cfg, sampler_name, scheduler, 
+                positive, negative, latent_image["samples"], denoise=denoise, 
+                start_step=start_at_step, last_step=end_at_step, 
+                force_full_denoise=force_full_denoise
+            )
             # Wrap in latent format
             out = latent_image.copy()
             out["samples"] = samples
