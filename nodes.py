@@ -13,95 +13,6 @@ import latent_preview
 import logging
 from typing import Dict, Any, Tuple, Optional
 import time
-import math
-import os
-import platform
-import psutil
-import gc
-
-def setup_windows_pagination_fixes():
-    """
-    Setup Windows-specific pagination fixes to prevent error 1455
-    """
-    if platform.system() == "Windows":
-        try:
-            # Set environment variables for better memory management
-            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:512'
-            os.environ['PYTORCH_HIP_ALLOC_CONF'] = 'expandable_segments:True'
-            
-            # Additional Windows-specific memory management
-            os.environ['PYTORCH_CUDA_MEMORY_POOL_TYPE'] = 'expandable_segments'
-            
-            # Force garbage collection more frequently on Windows
-            gc.set_threshold(100, 10, 10)  # More aggressive garbage collection
-            
-            logging.info("Windows pagination fixes applied successfully")
-            return True
-        except Exception as e:
-            logging.warning(f"Failed to apply Windows pagination fixes: {e}")
-            return False
-    return True
-
-def check_memory_availability():
-    """
-    Check available memory and provide warnings for Windows users
-    """
-    if platform.system() == "Windows":
-        try:
-            # Get system memory info
-            memory = psutil.virtual_memory()
-            available_gb = memory.available / (1024**3)
-            total_gb = memory.total / (1024**3)
-            
-            # Check if we have enough memory for typical ComfyUI operations
-            if available_gb < 8.0:  # Less than 8GB available
-                logging.warning(f"Low memory warning: {available_gb:.1f}GB available out of {total_gb:.1f}GB total")
-                logging.warning("Consider closing other applications or increasing virtual memory")
-                
-                # Suggest pagination file increase
-                if available_gb < 4.0:
-                    logging.error("CRITICAL: Very low memory available. Please increase Windows paging file size:")
-                    logging.error("1. Press Win+R, type 'sysdm.cpl', press Enter")
-                    logging.error("2. Advanced tab → Performance Settings → Advanced tab")
-                    logging.error("3. Virtual memory → Change → Custom size")
-                    logging.error("4. Set initial size to 16384 MB, maximum to 32768 MB")
-                    return False
-            return True
-        except Exception as e:
-            logging.warning(f"Could not check memory availability: {e}")
-            return True
-    return True
-
-def apply_windows_memory_optimizations():
-    """
-    Apply Windows-specific memory optimizations
-    """
-    if platform.system() == "Windows":
-        try:
-            # Clear Python garbage collection
-            gc.collect()
-            
-            # Clear PyTorch cache if available
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()
-            
-            # Set process priority to high for better memory management
-            try:
-                import psutil
-                current_process = psutil.Process()
-                current_process.nice(psutil.HIGH_PRIORITY_CLASS)
-            except:
-                pass  # Ignore if we can't set priority
-            
-            return True
-        except Exception as e:
-            logging.warning(f"Failed to apply Windows memory optimizations: {e}")
-            return False
-    return True
-
-# Initialize Windows fixes on module load
-setup_windows_pagination_fixes()
 
 class ROCMOptimizedVAEDecode:
     """
@@ -161,14 +72,6 @@ class ROCMOptimizedVAEDecode:
         Optimized VAE decode for ROCm/AMD GPUs
         """
         start_time = time.time()
-        
-        # Apply Windows memory optimizations
-        apply_windows_memory_optimizations()
-        
-        # Check memory availability on Windows
-        if not check_memory_availability():
-            logging.error("Insufficient memory available. Please increase Windows paging file size.")
-            raise RuntimeError("Insufficient memory available. Please increase Windows paging file size.")
         
         # Get device information
         device = vae.device
@@ -592,14 +495,6 @@ class ROCMOptimizedKSampler:
         """
         start_time = time.time()
         
-        # Apply Windows memory optimizations
-        apply_windows_memory_optimizations()
-        
-        # Check memory availability on Windows
-        if not check_memory_availability():
-            logging.error("Insufficient memory available. Please increase Windows paging file size.")
-            raise RuntimeError("Insufficient memory available. Please increase Windows paging file size.")
-        
         # Get device information
         device = model.model_dtype()
         is_amd = hasattr(device, 'type') and device.type == 'cuda'
@@ -630,82 +525,12 @@ class ROCMOptimizedKSampler:
                 if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                     torch.cuda.set_per_process_memory_fraction(0.9)
         
-        # Attention optimization for AMD GPUs
+        # Attention optimization
         if attention_optimization and is_amd:
-            # For AMD GPUs, be more conservative with attention backends
-            # Flash attention can cause memory issues on some AMD GPUs
+            # Enable optimized attention for AMD
             torch.backends.cuda.enable_math_sdp(True)
-            torch.backends.cuda.enable_flash_sdp(False)  # Disable flash attention for AMD
+            torch.backends.cuda.enable_flash_sdp(True)
             torch.backends.cuda.enable_mem_efficient_sdp(True)
-            
-            # Set HIP-specific memory management
-            import os
-            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-            
-            # Override attention memory calculation for AMD GPUs
-            import comfy.ldm.modules.attention as attention_module
-            if hasattr(attention_module, 'attention_split'):
-                # Patch the attention_split function to use more conservative memory calculation
-                original_attention_split = attention_module.attention_split
-                
-                def patched_attention_split(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
-                    # Use more conservative memory calculation for AMD GPUs
-                    attn_precision = attention_module.get_attn_precision(attn_precision, q.dtype)
-                    
-                    if skip_reshape:
-                        b, _, _, dim_head = q.shape
-                    else:
-                        b, _, dim_head = q.shape
-                        dim_head //= heads
-                    
-                    scale = dim_head ** -0.5
-                    
-                    if skip_reshape:
-                         q, k, v = map(
-                            lambda t: t.reshape(b * heads, -1, dim_head),
-                            (q, k, v),
-                        )
-                    else:
-                        q, k, v = map(
-                            lambda t: t.unsqueeze(3)
-                            .reshape(b, -1, heads, dim_head)
-                            .permute(0, 2, 1, 3)
-                            .reshape(b * heads, -1, dim_head)
-                            .contiguous(),
-                            (q, k, v),
-                        )
-                    
-                    r1 = torch.zeros(q.shape[0], q.shape[1], v.shape[2], device=q.device, dtype=q.dtype)
-                    
-                    mem_free_total = model_management.get_free_memory(q.device)
-                    
-                    if attn_precision == torch.float32:
-                        element_size = 4
-                        upcast = True
-                    else:
-                        element_size = q.element_size()
-                        upcast = False
-                    
-                    gb = 1024 ** 3
-                    tensor_size = q.shape[0] * q.shape[1] * k.shape[1] * element_size
-                    # Use more conservative modifier for AMD GPUs (1.5 instead of 3)
-                    modifier = 1.5 if is_amd else 3
-                    mem_required = tensor_size * modifier
-                    steps = 1
-                    
-                    if mem_required > mem_free_total:
-                        steps = 2**(math.ceil(math.log(mem_required / mem_free_total, 2)))
-                    
-                    if steps > 64:
-                        max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
-                        raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
-                                        f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
-                    
-                    # Rest of the function remains the same...
-                    return original_attention_split(q, k, v, heads, mask, attn_precision, skip_reshape, skip_output_reshape, **kwargs)
-                
-                # Apply the patch
-                attention_module.attention_split = patched_attention_split
         
         # Use the standard ksampler with optimizations
         try:
@@ -845,14 +670,6 @@ class ROCMOptimizedKSamplerAdvanced:
         """
         start_time = time.time()
         
-        # Apply Windows memory optimizations
-        apply_windows_memory_optimizations()
-        
-        # Check memory availability on Windows
-        if not check_memory_availability():
-            logging.error("Insufficient memory available. Please increase Windows paging file size.")
-            raise RuntimeError("Insufficient memory available. Please increase Windows paging file size.")
-        
         # ROCm optimizations
         if use_rocm_optimizations:
             device = model.model_dtype()
@@ -875,83 +692,6 @@ class ROCMOptimizedKSamplerAdvanced:
                     torch.cuda.empty_cache()
                     if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                         torch.cuda.set_per_process_memory_fraction(0.9)
-                
-                # Attention optimization for AMD GPUs
-                if is_amd:
-                    # For AMD GPUs, be more conservative with attention backends
-                    # Flash attention can cause memory issues on some AMD GPUs
-                    torch.backends.cuda.enable_math_sdp(True)
-                    torch.backends.cuda.enable_flash_sdp(False)  # Disable flash attention for AMD
-                    torch.backends.cuda.enable_mem_efficient_sdp(True)
-                    
-                    # Set HIP-specific memory management
-                    import os
-                    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-                    
-                    # Override attention memory calculation for AMD GPUs
-                    import comfy.ldm.modules.attention as attention_module
-                    if hasattr(attention_module, 'attention_split'):
-                        # Patch the attention_split function to use more conservative memory calculation
-                        original_attention_split = attention_module.attention_split
-                        
-                        def patched_attention_split(q, k, v, heads, mask=None, attn_precision=None, skip_reshape=False, skip_output_reshape=False, **kwargs):
-                            # Use more conservative memory calculation for AMD GPUs
-                            attn_precision = attention_module.get_attn_precision(attn_precision, q.dtype)
-                            
-                            if skip_reshape:
-                                b, _, _, dim_head = q.shape
-                            else:
-                                b, _, dim_head = q.shape
-                                dim_head //= heads
-                            
-                            scale = dim_head ** -0.5
-                            
-                            if skip_reshape:
-                                 q, k, v = map(
-                                    lambda t: t.reshape(b * heads, -1, dim_head),
-                                    (q, k, v),
-                                )
-                            else:
-                                q, k, v = map(
-                                    lambda t: t.unsqueeze(3)
-                                    .reshape(b, -1, heads, dim_head)
-                                    .permute(0, 2, 1, 3)
-                                    .reshape(b * heads, -1, dim_head)
-                                    .contiguous(),
-                                    (q, k, v),
-                                )
-                            
-                            r1 = torch.zeros(q.shape[0], q.shape[1], v.shape[2], device=q.device, dtype=q.dtype)
-                            
-                            mem_free_total = model_management.get_free_memory(q.device)
-                            
-                            if attn_precision == torch.float32:
-                                element_size = 4
-                                upcast = True
-                            else:
-                                element_size = q.element_size()
-                                upcast = False
-                            
-                            gb = 1024 ** 3
-                            tensor_size = q.shape[0] * q.shape[1] * k.shape[1] * element_size
-                            # Use more conservative modifier for AMD GPUs (1.5 instead of 3)
-                            modifier = 1.5 if is_amd else 3
-                            mem_required = tensor_size * modifier
-                            steps = 1
-                            
-                            if mem_required > mem_free_total:
-                                steps = 2**(math.ceil(math.log(mem_required / mem_free_total, 2)))
-                            
-                            if steps > 64:
-                                max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
-                                raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
-                                                f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
-                            
-                            # Rest of the function remains the same...
-                            return original_attention_split(q, k, v, heads, mask, attn_precision, skip_reshape, skip_output_reshape, **kwargs)
-                        
-                        # Apply the patch
-                        attention_module.attention_split = patched_attention_split
         
         # Configure sampling parameters
         force_full_denoise = True
@@ -1000,34 +740,13 @@ class ROCMOptimizedKSamplerAdvanced:
             
         except Exception as e:
             logging.warning(f"Advanced sampling failed, falling back to standard: {e}")
-            # Clear memory before fallback
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            
-            # Fallback to direct sampling with proper noise preparation
-            try:
-                latent_image_tensor = latent_image["samples"]
-                latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
-                
-                # Prepare noise for fallback
-                if disable_noise:
-                    noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
-                else:
-                    batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
-                    noise = comfy.sample.prepare_noise(latent_image_tensor, noise_seed, batch_inds)
-                
-                samples = comfy.sample.sample(
-                    model, noise, steps, cfg, sampler_name, scheduler, 
-                    positive, negative, latent_image_tensor, denoise=denoise, 
-                    start_step=start_at_step, last_step=end_at_step, 
-                    force_full_denoise=force_full_denoise
-                )
-            except Exception as fallback_error:
-                logging.error(f"Fallback sampling also failed: {fallback_error}")
-                # Return original latent if all sampling fails
-                out = latent_image.copy()
-                result = (out,)
-                return result
+            # Fallback to direct sampling
+            samples = comfy.sample.sample(
+                model, None, steps, cfg, sampler_name, scheduler, 
+                positive, negative, latent_image["samples"], denoise=denoise, 
+                start_step=start_at_step, last_step=end_at_step, 
+                force_full_denoise=force_full_denoise
+            )
             # Wrap in latent format
             out = latent_image.copy()
             out["samples"] = samples
@@ -1118,149 +837,6 @@ class ROCMSamplerPerformanceMonitor:
         )
 
 
-class WindowsPaginationDiagnostic:
-    """
-    Windows-specific diagnostic tool for pagination errors (error 1455)
-    """
-    
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "check_memory": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Check system memory availability"
-                }),
-                "check_paging_file": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Check Windows paging file configuration"
-                }),
-                "apply_fixes": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Automatically apply recommended fixes"
-                })
-            }
-        }
-    
-    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("SYSTEM_INFO", "MEMORY_STATUS", "RECOMMENDATIONS", "FIXES_APPLIED")
-    FUNCTION = "diagnose"
-    CATEGORY = "RocM Ninodes/Diagnostics"
-    DESCRIPTION = "Windows pagination error diagnostic and fix tool"
-    
-    def diagnose(self, check_memory=True, check_paging_file=True, apply_fixes=True):
-        """
-        Diagnose Windows pagination issues and apply fixes
-        """
-        system_info = []
-        memory_status = []
-        recommendations = []
-        fixes_applied = []
-        
-        # System information
-        system_info.append(f"Operating System: {platform.system()} {platform.release()}")
-        system_info.append(f"Python Version: {platform.python_version()}")
-        system_info.append(f"PyTorch Version: {torch.__version__}")
-        
-        if platform.system() == "Windows":
-            try:
-                # Memory information
-                if check_memory:
-                    memory = psutil.virtual_memory()
-                    total_gb = memory.total / (1024**3)
-                    available_gb = memory.available / (1024**3)
-                    used_gb = memory.used / (1024**3)
-                    percent_used = memory.percent
-                    
-                    memory_status.append(f"Total RAM: {total_gb:.1f} GB")
-                    memory_status.append(f"Available RAM: {available_gb:.1f} GB")
-                    memory_status.append(f"Used RAM: {used_gb:.1f} GB ({percent_used:.1f}%)")
-                    
-                    # Check if memory is low
-                    if available_gb < 8.0:
-                        memory_status.append("⚠️ WARNING: Low available memory!")
-                        recommendations.append("• Close unnecessary applications")
-                        recommendations.append("• Increase Windows paging file size")
-                    
-                    if available_gb < 4.0:
-                        memory_status.append("🚨 CRITICAL: Very low memory available!")
-                        recommendations.append("• URGENT: Increase paging file to 16-32 GB")
-                        recommendations.append("• Restart ComfyUI after increasing paging file")
-                
-                # Paging file information
-                if check_paging_file:
-                    try:
-                        # Get paging file info (Windows specific)
-                        import subprocess
-                        result = subprocess.run(['wmic', 'pagefile', 'list', '/format:list'], 
-                                              capture_output=True, text=True, timeout=10)
-                        if result.returncode == 0:
-                            memory_status.append("Paging file information retrieved")
-                        else:
-                            memory_status.append("Could not retrieve paging file info")
-                    except:
-                        memory_status.append("Could not check paging file configuration")
-                
-                # Apply fixes
-                if apply_fixes:
-                    # Apply environment variables
-                    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:512'
-                    os.environ['PYTORCH_HIP_ALLOC_CONF'] = 'expandable_segments:True'
-                    os.environ['PYTORCH_CUDA_MEMORY_POOL_TYPE'] = 'expandable_segments'
-                    
-                    fixes_applied.append("✅ Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512")
-                    fixes_applied.append("✅ Set PYTORCH_HIP_ALLOC_CONF=expandable_segments:True")
-                    fixes_applied.append("✅ Set PYTORCH_CUDA_MEMORY_POOL_TYPE=expandable_segments")
-                    
-                    # Force garbage collection
-                    gc.collect()
-                    fixes_applied.append("✅ Forced garbage collection")
-                    
-                    # Clear PyTorch cache
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                        fixes_applied.append("✅ Cleared PyTorch CUDA cache")
-                    
-                    # Set aggressive garbage collection
-                    gc.set_threshold(100, 10, 10)
-                    fixes_applied.append("✅ Set aggressive garbage collection thresholds")
-                
-                # Generate recommendations
-                if not recommendations:
-                    recommendations.append("✅ System appears to have adequate memory")
-                    recommendations.append("• Current settings should work well")
-                    recommendations.append("• Monitor memory usage during generation")
-                else:
-                    recommendations.append("")
-                    recommendations.append("📋 Manual Steps to Fix Pagination Error:")
-                    recommendations.append("1. Press Win+R, type 'sysdm.cpl', press Enter")
-                    recommendations.append("2. Advanced tab → Performance Settings → Advanced tab")
-                    recommendations.append("3. Virtual memory → Change → Custom size")
-                    recommendations.append("4. Set initial size to 16384 MB, maximum to 32768 MB")
-                    recommendations.append("5. Click Set, then OK, then restart ComfyUI")
-                    recommendations.append("")
-                    recommendations.append("🔧 Alternative: Use PowerShell to set environment variables:")
-                    recommendations.append("$env:PYTORCH_CUDA_ALLOC_CONF = 'expandable_segments:True'")
-                    recommendations.append("python main.py")
-                
-            except Exception as e:
-                system_info.append(f"Error during diagnosis: {e}")
-                recommendations.append("• Check that psutil is installed: pip install psutil")
-                recommendations.append("• Try running ComfyUI as administrator")
-        else:
-            system_info.append("This diagnostic is designed for Windows systems")
-            memory_status.append("Non-Windows system detected")
-            recommendations.append("• This tool is specifically for Windows pagination errors")
-            recommendations.append("• On Linux, check available memory with: free -h")
-        
-        return (
-            "\n".join(system_info),
-            "\n".join(memory_status),
-            "\n".join(recommendations),
-            "\n".join(fixes_applied)
-        )
-
-
 # Node mappings
 NODE_CLASS_MAPPINGS = {
     "ROCMOptimizedVAEDecode": ROCMOptimizedVAEDecode,
@@ -1269,7 +845,6 @@ NODE_CLASS_MAPPINGS = {
     "ROCMOptimizedKSampler": ROCMOptimizedKSampler,
     "ROCMOptimizedKSamplerAdvanced": ROCMOptimizedKSamplerAdvanced,
     "ROCMSamplerPerformanceMonitor": ROCMSamplerPerformanceMonitor,
-    "WindowsPaginationDiagnostic": WindowsPaginationDiagnostic,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1279,5 +854,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMOptimizedKSampler": "ROCM KSampler",
     "ROCMOptimizedKSamplerAdvanced": "ROCM KSampler Advanced",
     "ROCMSamplerPerformanceMonitor": "ROCM Sampler Performance Monitor",
-    "WindowsPaginationDiagnostic": "Windows Pagination Diagnostic",
 }
