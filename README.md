@@ -15,15 +15,37 @@
 
 #### **🎬 Image-to-Video Generation (WAN 2.2 i2v)**
 - **320x320px, 2s**: **163s → 139s** (15% improvement!)
+- **320x320px, 17 frames**: **98.33s → 92.78s** (5.6% improvement!) **NEW!**
 - **480x480px, 2s**: **202s** (33 frames, 16fps) ✅
-- **480x720px, 2s**: **303s** (33 frames, 16fps) ✅ **NEW!**
+- **480x720px, 2s**: **303s** (33 frames, 16fps) ✅
 
 #### **📊 Performance Metrics**
 - **Memory efficiency**: 50% reduction in attention memory requirements
 - **Stability**: Significantly reduced OOM errors
 - **Scalability**: Successfully handles up to 480x720px i2v generation
+- **Consistency**: Stable performance across multiple runs (5.6% average improvement)
 
 *"Workflows that used to take forever to run now complete in a fraction of the time!"* - Nino, GMTek Evo-X2 Owner
+
+#### **🔬 Detailed Benchmark Results (WAN 2.2 i2v, 320x320px, 17 frames)**
+
+**Test Configuration:**
+- **Model**: WAN 2.2 i2v 14B
+- **Resolution**: 320x320px
+- **Frames**: 17 frames
+- **Hardware**: GMTek Evo-X2 Strix Halo (gfx1151, 128GB Unified RAM)
+
+**With RocM Ninodes Optimizations:**
+- **Run 1**: ROCM Advanced KSampler: 20.77s | ROCM VAE Decode: 7.73s | **Total: 92.78s**
+- **Run 2**: ROCM Advanced KSampler: 21.03s | ROCM VAE Decode: 7.41s | **Total: 93.32s**
+- **Average**: **93.05s** ⚡
+
+**Without RocM Ninodes (Standard ComfyUI):**
+- **Run 1**: Standard KSampler: 22.06s | Standard VAE Decode: 7.48s | **Total: 98.33s**
+- **Run 2**: Standard KSampler: 22.71s | Standard VAE Decode: 7.20s | **Total: 104.01s**
+- **Average**: **101.17s** 🐌
+
+**Performance Improvement: 8.1% faster overall, 5.6% average improvement**
 
 ### 🎯 **Try It Now!**
 - **[Flux Image Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - 78% performance improvement!
