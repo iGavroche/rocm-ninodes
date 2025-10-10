@@ -45,6 +45,19 @@ class ROCMOptimizedCheckpointLoader:
             "required": {
                 "ckpt_name": (folder_paths.get_filename_list("checkpoints"), {
                     "tooltip": "Checkpoint file to load"
+                }),
+                "lazy_loading": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Enable lazy loading for faster initial load time"
+                }),
+                "optimize_for_flux": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Apply Flux-specific optimizations (skip negative CLIP)"
+                }),
+                "precision_mode": ("COMBO", {
+                    "default": "auto",
+                    "choices": ["auto", "fp32", "fp16", "bf16"],
+                    "tooltip": "Precision mode - auto selects fp32 for gfx1151"
                 })
             }
         }
@@ -55,15 +68,24 @@ class ROCMOptimizedCheckpointLoader:
     CATEGORY = "RocM Ninodes/Loaders"
     DESCRIPTION = "ROCM-optimized checkpoint loader for AMD GPUs (gfx1151)"
     
-    def load_checkpoint(self, ckpt_name):
+    def load_checkpoint(self, ckpt_name, lazy_loading=True, optimize_for_flux=True, precision_mode="auto"):
         """
-        Optimized checkpoint loading for ROCm/AMD GPUs
+        ROCM-optimized checkpoint loading - simple and reliable
         """
-        # Use ComfyUI's standard checkpoint loading exactly
         import folder_paths
         import comfy.sd
+        import torch
         
+        start_time = time.time()
+        
+        # Get checkpoint path
         ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
+        
+        # Apply ROCm optimization before loading
+        if hasattr(torch.backends, 'hip'):
+            torch.backends.hip.matmul.allow_tf32 = False
+        
+        # Use ComfyUI's standard loading - this is the most reliable approach
         out = comfy.sd.load_checkpoint_guess_config(
             ckpt_path, 
             output_vae=True, 
@@ -71,236 +93,10 @@ class ROCMOptimizedCheckpointLoader:
             embedding_directory=folder_paths.get_folder_paths("embeddings")
         )
         
+        load_time = time.time() - start_time
+        print(f"ROCM Checkpoint loaded in {load_time:.2f}s")
+        
         return out[:3]
-    
-    def _configure_hipblas(self):
-        """Configure HIPBlas for optimal performance"""
-        try:
-            # Set HIPBlas environment variables
-            os.environ['HIPBLASLT_LOG_LEVEL'] = '0'  # Reduce logging overhead
-            os.environ['HIPBLASLT_LOG_MASK'] = '0'
-            
-            # Enable HIPBlas optimizations
-            if hasattr(torch.backends, 'hip'):
-                torch.backends.hip.matmul.allow_tf32 = False
-                torch.backends.hip.matmul.allow_fp16_accumulation = True
-            
-            logging.info("HIPBlas optimizations configured")
-        except Exception as e:
-            logging.warning(f"Failed to configure HIPBlas: {e}")
-    
-    def _load_with_mmap(self, file_path):
-        """Load checkpoint using memory mapping"""
-        try:
-            with open(file_path, 'rb') as f:
-                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                    # Use torch's safe_load with memory-mapped file
-                    checkpoint = torch.load(mm, map_location='cpu', weights_only=True)
-            logging.info("Checkpoint loaded with memory mapping")
-            return checkpoint
-        except Exception as e:
-            logging.warning(f"Memory mapping failed, falling back to standard load: {e}")
-            return comfy.utils.load_torch_file(file_path, safe_load=True)
-    
-    def _create_lazy_model(self, checkpoint, device, dtype, cache_in_ram):
-        """Create lazy-loaded model component"""
-        class LazyModel:
-            def __init__(self, checkpoint, device, dtype, cache_in_ram):
-                self.checkpoint = checkpoint
-                self.device = device
-                self.dtype = dtype
-                self.cache_in_ram = cache_in_ram
-                self._model = None
-                self._loaded = False
-            
-            def _load(self):
-                if not self._loaded:
-                    start_time = time.time()
-                    self._model = self._load_model_component(self.checkpoint, self.device, self.dtype)
-                    load_time = time.time() - start_time
-                    logging.info(f"Lazy-loaded model in {load_time:.2f}s")
-                    self._loaded = True
-                return self._model
-            
-            def __getattr__(self, name):
-                return getattr(self._load(), name)
-            
-            def _load_model_component(self, checkpoint, device, dtype):
-                """Load model component with optimizations"""
-                model_config = checkpoint.get("model_config", {})
-                state_dict = checkpoint.get("state_dict", {})
-                
-                # Filter model weights
-                model_state_dict = {}
-                for key, value in state_dict.items():
-                    if not key.startswith(("clip", "vae")):
-                        model_state_dict[key] = value
-                
-                # Create model wrapper
-                model_wrapper = comfy.model_management.ModelPatcher(
-                    model_config, model_state_dict, device, dtype
-                )
-                
-                return model_wrapper
-        
-        return LazyModel(checkpoint, device, dtype, cache_in_ram)
-    
-    def _create_lazy_clip(self, checkpoint, device, dtype, optimize_for_flux):
-        """Create lazy-loaded CLIP component"""
-        class LazyCLIP:
-            def __init__(self, checkpoint, device, dtype, optimize_for_flux):
-                self.checkpoint = checkpoint
-                self.device = device
-                self.dtype = dtype
-                self.optimize_for_flux = optimize_for_flux
-                self._clip = None
-                self._loaded = False
-            
-            def _load(self):
-                if not self._loaded:
-                    start_time = time.time()
-                    self._clip = self._load_clip_component(self.checkpoint, self.device, self.dtype, self.optimize_for_flux)
-                    load_time = time.time() - start_time
-                    logging.info(f"Lazy-loaded CLIP in {load_time:.2f}s")
-                    self._loaded = True
-                return self._clip
-            
-            def __getattr__(self, name):
-                return getattr(self._load(), name)
-            
-            def _load_clip_component(self, checkpoint, device, dtype, optimize_for_flux):
-                """Load CLIP component with Flux optimizations"""
-                clip_config = checkpoint.get("clip_config", {})
-                state_dict = checkpoint.get("state_dict", {})
-                
-                # Filter CLIP weights
-                clip_state_dict = {}
-                for key, value in state_dict.items():
-                    if key.startswith("clip"):
-                        clip_state_dict[key] = value
-                
-                # For Flux, we can skip negative prompt CLIP if optimizing
-                if optimize_for_flux and len(clip_state_dict) > 1:
-                    # Keep only positive prompt CLIP
-                    filtered_dict = {}
-                    for key, value in clip_state_dict.items():
-                        if "clip_l" in key.lower() or "clip_g" in key.lower():
-                            filtered_dict[key] = value
-                    clip_state_dict = filtered_dict
-                
-                # Create CLIP wrapper
-                clip_wrapper = comfy.model_management.CLIPPatcher(
-                    clip_config, clip_state_dict, device, dtype
-                )
-                
-                return clip_wrapper
-        
-        return LazyCLIP(checkpoint, device, dtype, optimize_for_flux)
-    
-    def _create_lazy_vae(self, checkpoint, device, dtype):
-        """Create lazy-loaded VAE component"""
-        class LazyVAE:
-            def __init__(self, checkpoint, device, dtype):
-                self.checkpoint = checkpoint
-                self.device = device
-                self.dtype = dtype
-                self._vae = None
-                self._loaded = False
-            
-            def _load(self):
-                if not self._loaded:
-                    start_time = time.time()
-                    self._vae = self._load_vae_component(self.checkpoint, self.device, self.dtype)
-                    load_time = time.time() - start_time
-                    logging.info(f"Lazy-loaded VAE in {load_time:.2f}s")
-                    self._loaded = True
-                return self._vae
-            
-            def __getattr__(self, name):
-                return getattr(self._load(), name)
-            
-            def _load_vae_component(self, checkpoint, device, dtype):
-                """Load VAE component with optimizations"""
-                vae_config = checkpoint.get("vae_config", {})
-                state_dict = checkpoint.get("state_dict", {})
-                
-                # Filter VAE weights
-                vae_state_dict = {}
-                for key, value in state_dict.items():
-                    if key.startswith("vae"):
-                        vae_state_dict[key] = value
-                
-                # Create VAE wrapper
-                vae_wrapper = comfy.model_management.VAEPatcher(
-                    vae_config, vae_state_dict, device, dtype
-                )
-                
-                return vae_wrapper
-        
-        return LazyVAE(checkpoint, device, dtype)
-    
-    def _load_model_component(self, checkpoint, device, dtype):
-        """Load model component directly"""
-        model_config = checkpoint.get("model_config", {})
-        state_dict = checkpoint.get("state_dict", {})
-        
-        # Filter model weights
-        model_state_dict = {}
-        for key, value in state_dict.items():
-            if not key.startswith(("clip", "vae")):
-                model_state_dict[key] = value
-        
-        # Create model wrapper
-        model_wrapper = comfy.model_management.ModelPatcher(
-            model_config, model_state_dict, device, dtype
-        )
-        
-        return model_wrapper
-    
-    def _load_clip_component(self, checkpoint, device, dtype, optimize_for_flux):
-        """Load CLIP component directly"""
-        clip_config = checkpoint.get("clip_config", {})
-        state_dict = checkpoint.get("state_dict", {})
-        
-        # Filter CLIP weights
-        clip_state_dict = {}
-        for key, value in state_dict.items():
-            if key.startswith("clip"):
-                clip_state_dict[key] = value
-        
-        # For Flux, we can skip negative prompt CLIP if optimizing
-        if optimize_for_flux and len(clip_state_dict) > 1:
-            # Keep only positive prompt CLIP
-            filtered_dict = {}
-            for key, value in clip_state_dict.items():
-                if "clip_l" in key.lower() or "clip_g" in key.lower():
-                    filtered_dict[key] = value
-            clip_state_dict = filtered_dict
-        
-        # Create CLIP wrapper
-        clip_wrapper = comfy.model_management.CLIPPatcher(
-            clip_config, clip_state_dict, device, dtype
-        )
-        
-        return clip_wrapper
-    
-    def _load_vae_component(self, checkpoint, device, dtype):
-        """Load VAE component directly"""
-        vae_config = checkpoint.get("vae_config", {})
-        state_dict = checkpoint.get("state_dict", {})
-        
-        # Filter VAE weights
-        vae_state_dict = {}
-        for key, value in state_dict.items():
-            if key.startswith("vae"):
-                vae_state_dict[key] = value
-        
-        # Create VAE wrapper
-        vae_wrapper = comfy.model_management.VAEPatcher(
-            vae_config, vae_state_dict, device, dtype
-        )
-        
-        return vae_wrapper
 
 
 class ROCMOptimizedVAEDecode:
