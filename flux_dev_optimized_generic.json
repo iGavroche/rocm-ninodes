@@ -1,0 +1,1012 @@
+{
+  "id": "f16cb480-6e86-4952-9400-f4e1a767ff37",
+  "revision": 0,
+  "last_node_id": 41,
+  "last_link_id": 69,
+  "nodes": [
+    {
+      "id": 33,
+      "type": "CLIPTextEncode",
+      "pos": [
+        390,
+        400
+      ],
+      "size": [
+        422.8500061035156,
+        164.30999755859375
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 68
+        },
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            61
+          ]
+        }
+      ],
+      "title": "CLIP Text Encode (Negative Prompt)",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.60",
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        ""
+      ],
+      "color": "#322",
+      "bgcolor": "#533"
+    },
+    {
+      "id": 35,
+      "type": "FluxGuidance",
+      "pos": [
+        576,
+        96
+      ],
+      "size": [
+        211.60000610351562,
+        58
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "conditioning",
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 56
+        },
+        {
+          "localized_name": "guidance",
+          "name": "guidance",
+          "type": "FLOAT",
+          "widget": {
+            "name": "guidance"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            60
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.60",
+        "Node name for S&R": "FluxGuidance"
+      },
+      "widgets_values": [
+        3.5
+      ]
+    },
+    {
+      "id": 34,
+      "type": "Note",
+      "pos": [
+        825,
+        510
+      ],
+      "size": [
+        282.8599853515625,
+        164.0800018310547
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "Note that Flux dev and schnell do not have any negative prompt so CFG should be set to 1.0. Setting CFG to 1.0 means the negative prompt is ignored."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 6,
+      "type": "CLIPTextEncode",
+      "pos": [
+        384,
+        192
+      ],
+      "size": [
+        422.8500061035156,
+        164.30999755859375
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "clip",
+          "name": "clip",
+          "type": "CLIP",
+          "link": 67
+        },
+        {
+          "localized_name": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            56
+          ]
+        }
+      ],
+      "title": "CLIP Text Encode (Positive Prompt)",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.60",
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "A portrait view of a beautiful blond girl with long hair and blue eyes looking in love"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 38,
+      "type": "ROCMOptimizedKSampler",
+      "pos": [
+        139.31509399414062,
+        637.1577758789062
+      ],
+      "size": [
+        293.392578125,
+        430
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": null
+        },
+        {
+          "localized_name": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": null
+        },
+        {
+          "localized_name": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": null
+        },
+        {
+          "localized_name": "latent_image",
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": null
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "steps",
+          "name": "steps",
+          "type": "INT",
+          "widget": {
+            "name": "steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "cfg",
+          "name": "cfg",
+          "type": "FLOAT",
+          "widget": {
+            "name": "cfg"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "sampler_name",
+          "name": "sampler_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "sampler_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "scheduler",
+          "name": "scheduler",
+          "type": "COMBO",
+          "widget": {
+            "name": "scheduler"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "denoise",
+          "name": "denoise",
+          "type": "FLOAT",
+          "widget": {
+            "name": "denoise"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "use_rocm_optimizations",
+          "name": "use_rocm_optimizations",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "use_rocm_optimizations"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "precision_mode",
+          "name": "precision_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "memory_optimization",
+          "name": "memory_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "memory_optimization"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "attention_optimization",
+          "name": "attention_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "attention_optimization"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "flux_optimization",
+          "name": "flux_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "flux_optimization"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "resolution_adaptive_batching",
+          "name": "resolution_adaptive_batching",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "resolution_adaptive_batching"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "hipblas_matrix_ops",
+          "name": "hipblas_matrix_ops",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "hipblas_matrix_ops"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "rocm-ninodes",
+        "ver": "6901a226a75371807bea51aa46e23955138ac35a",
+        "Node name for S&R": "ROCMOptimizedKSampler"
+      },
+      "widgets_values": [
+        813485113100655,
+        "randomize",
+        20,
+        8,
+        "euler",
+        "simple",
+        1,
+        true,
+        "auto",
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": 39,
+      "type": "ROCMOptimizedKSampler",
+      "pos": [
+        834.939453125,
+        82.99036407470703
+      ],
+      "size": [
+        293.392578125,
+        430
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 66
+        },
+        {
+          "localized_name": "positive",
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 60
+        },
+        {
+          "localized_name": "negative",
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 61
+        },
+        {
+          "localized_name": "latent_image",
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 62
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "steps",
+          "name": "steps",
+          "type": "INT",
+          "widget": {
+            "name": "steps"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "cfg",
+          "name": "cfg",
+          "type": "FLOAT",
+          "widget": {
+            "name": "cfg"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "sampler_name",
+          "name": "sampler_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "sampler_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "scheduler",
+          "name": "scheduler",
+          "type": "COMBO",
+          "widget": {
+            "name": "scheduler"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "denoise",
+          "name": "denoise",
+          "type": "FLOAT",
+          "widget": {
+            "name": "denoise"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "use_rocm_optimizations",
+          "name": "use_rocm_optimizations",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "use_rocm_optimizations"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "precision_mode",
+          "name": "precision_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "memory_optimization",
+          "name": "memory_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "memory_optimization"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "attention_optimization",
+          "name": "attention_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "attention_optimization"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "flux_optimization",
+          "name": "flux_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "flux_optimization"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "resolution_adaptive_batching",
+          "name": "resolution_adaptive_batching",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "resolution_adaptive_batching"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "hipblas_matrix_ops",
+          "name": "hipblas_matrix_ops",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "hipblas_matrix_ops"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            63
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "rocm-ninodes",
+        "ver": "6901a226a75371807bea51aa46e23955138ac35a",
+        "Node name for S&R": "ROCMOptimizedKSampler"
+      },
+      "widgets_values": [
+        474265890514319,
+        "randomize",
+        20,
+        1,
+        "euler",
+        "simple",
+        1,
+        true,
+        "auto",
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": 9,
+      "type": "SaveImage",
+      "pos": [
+        1453.245849609375,
+        160.69737243652344
+      ],
+      "size": [
+        985.2999877929688,
+        1060.3800048828125
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 65
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.60",
+        "Node name for S&R": "SaveImage"
+      },
+      "widgets_values": [
+        "ComfyUI"
+      ]
+    },
+    {
+      "id": 40,
+      "type": "ROCMOptimizedVAEDecode",
+      "pos": [
+        1142.886962890625,
+        154.4676971435547
+      ],
+      "size": [
+        293.392578125,
+        246
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "samples",
+          "name": "samples",
+          "type": "LATENT",
+          "link": 63
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 69
+        },
+        {
+          "localized_name": "tile_size",
+          "name": "tile_size",
+          "type": "INT",
+          "widget": {
+            "name": "tile_size"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "overlap",
+          "name": "overlap",
+          "type": "INT",
+          "widget": {
+            "name": "overlap"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "use_rocm_optimizations",
+          "name": "use_rocm_optimizations",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "use_rocm_optimizations"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "precision_mode",
+          "name": "precision_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision_mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "batch_optimization",
+          "name": "batch_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "batch_optimization"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "flux_vae_optimization",
+          "name": "flux_vae_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "flux_vae_optimization"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "adaptive_tile_sizing",
+          "name": "adaptive_tile_sizing",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "adaptive_tile_sizing"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "fp8_latent_optimization",
+          "name": "fp8_latent_optimization",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "fp8_latent_optimization"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            65
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "rocm-ninodes",
+        "ver": "6901a226a75371807bea51aa46e23955138ac35a",
+        "Node name for S&R": "ROCMOptimizedVAEDecode"
+      },
+      "widgets_values": [
+        768,
+        96,
+        true,
+        "auto",
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": 37,
+      "type": "MarkdownNote",
+      "pos": [
+        52.00000762939453,
+        472.515625
+      ],
+      "size": [
+        225,
+        88
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "\ud83d\udec8 [Learn more about this workflow](https://comfyanonymous.github.io/ComfyUI_examples/flux/#flux-dev-1)"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 41,
+      "type": "ROCMOptimizedCheckpointLoader",
+      "pos": [
+        41.50813293457031,
+        109.27128601074219
+      ],
+      "size": [
+        286.0625,
+        242
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "ckpt_name",
+          "name": "ckpt_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "ckpt_name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "lazy_loading",
+          "name": "lazy_loading",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "lazy_loading"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "optimize_for_flux",
+          "name": "optimize_for_flux",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "optimize_for_flux"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "precision_mode",
+          "name": "precision_mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision_mode"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            66
+          ]
+        },
+        {
+          "localized_name": "CLIP",
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            67,
+            68
+          ]
+        },
+        {
+          "localized_name": "VAE",
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            69
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "rocm-ninodes",
+        "ver": "6901a226a75371807bea51aa46e23955138ac35a",
+        "Node name for S&R": "ROCMOptimizedCheckpointLoader"
+      },
+      "widgets_values": [
+        "",
+        true,
+        true,
+        "auto"
+      ]
+    },
+    {
+      "id": 27,
+      "type": "EmptySD3LatentImage",
+      "pos": [
+        471,
+        455
+      ],
+      "size": [
+        315,
+        106
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "batch_size",
+          "name": "batch_size",
+          "type": "INT",
+          "widget": {
+            "name": "batch_size"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "LATENT",
+          "name": "LATENT",
+          "type": "LATENT",
+          "slot_index": 0,
+          "links": [
+            62
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.3.60",
+        "Node name for S&R": "EmptySD3LatentImage"
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        1
+      ],
+      "color": "#323",
+      "bgcolor": "#535"
+    }
+  ],
+  "links": [
+    [
+      56,
+      6,
+      0,
+      35,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      60,
+      35,
+      0,
+      39,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      61,
+      33,
+      0,
+      39,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      62,
+      27,
+      0,
+      39,
+      3,
+      "LATENT"
+    ],
+    [
+      63,
+      39,
+      0,
+      40,
+      0,
+      "LATENT"
+    ],
+    [
+      65,
+      40,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      66,
+      41,
+      0,
+      39,
+      0,
+      "MODEL"
+    ],
+    [
+      67,
+      41,
+      1,
+      6,
+      0,
+      "CLIP"
+    ],
+    [
+      68,
+      41,
+      1,
+      33,
+      0,
+      "CLIP"
+    ],
+    [
+      69,
+      41,
+      2,
+      40,
+      1,
+      "VAE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.8000000000000034,
+      "offset": [
+        329.26928221807356,
+        190.85371626634605
+      ]
+    }
+  },
+  "version": 0.4
+}

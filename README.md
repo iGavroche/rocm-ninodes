@@ -109,6 +109,28 @@ This workflow has been extensively tested and optimized on the GMTek Evo-X2 Stri
 **[📥 Download Blessed Flux Dev Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized.json)**  
 *Alternative: [GitHub Web Interface](https://github.com/iGavroche/rocm-ninodes/blob/main/flux_dev_optimized.json)*
 
+**[📥 Download Generic Version](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized_generic.json)** *(No hardcoded checkpoint)*
+
+## 🔧 **Troubleshooting**
+
+### **CLIP Input Invalid Error**
+If you get `ERROR: clip input is invalid: None`, this usually means:
+
+1. **Missing Checkpoint**: The checkpoint file specified in the workflow doesn't exist
+2. **Invalid Checkpoint**: The checkpoint file is corrupted or doesn't contain a valid CLIP model
+3. **Wrong Path**: The checkpoint isn't in the correct ComfyUI checkpoints folder
+
+**Solutions:**
+- Use the **Generic Version** workflow (no hardcoded checkpoint) and select your own checkpoint
+- Ensure your checkpoint file is in `ComfyUI/models/checkpoints/`
+- Try with a different checkpoint file (SD1.5, SDXL, Flux, etc.)
+- Check ComfyUI console for detailed error messages
+
+### **Performance Issues**
+- Ensure you're using ROCm 6.4+ with PyTorch nightly builds
+- Check that `--cache-none` flag isn't needed (ROCMMemoryOptimizer should handle this)
+- Verify gfx1151 architecture detection in ComfyUI startup logs
+
 ## 🚀 **Key Features**
 
 - **ROCM-Specific Optimizations**: Tuned specifically for AMD GPUs with ROCm 6.4+
