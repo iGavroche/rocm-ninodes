@@ -78,25 +78,57 @@ class ROCMOptimizedCheckpointLoader:
         
         start_time = time.time()
         
-        # Get checkpoint path
-        ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
-        
-        # Apply ROCm optimization before loading
-        if hasattr(torch.backends, 'hip'):
-            torch.backends.hip.matmul.allow_tf32 = False
-        
-        # Use ComfyUI's standard loading - this is the most reliable approach
-        out = comfy.sd.load_checkpoint_guess_config(
-            ckpt_path, 
-            output_vae=True, 
-            output_clip=True, 
-            embedding_directory=folder_paths.get_folder_paths("embeddings")
-        )
-        
-        load_time = time.time() - start_time
-        print(f"ROCM Checkpoint loaded in {load_time:.2f}s")
-        
-        return out[:3]
+        try:
+            # Get checkpoint path
+            ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
+            
+            # Apply ROCm optimization before loading
+            if hasattr(torch.backends, 'hip'):
+                torch.backends.hip.matmul.allow_tf32 = False
+            
+            # Use ComfyUI's standard loading - this is the most reliable approach
+            out = comfy.sd.load_checkpoint_guess_config(
+                ckpt_path, 
+                output_vae=True, 
+                output_clip=True, 
+                embedding_directory=folder_paths.get_folder_paths("embeddings")
+            )
+            
+            # Validate the output
+            if len(out) < 3:
+                raise ValueError(f"Checkpoint loading failed: expected 3 outputs, got {len(out)}")
+            
+            model, clip, vae = out[:3]
+            
+            # Validate that we have valid models
+            if model is None:
+                raise ValueError("Model is None - checkpoint may be corrupted")
+            if clip is None:
+                raise ValueError("CLIP is None - checkpoint may not contain a valid CLIP model")
+            if vae is None:
+                raise ValueError("VAE is None - checkpoint may not contain a valid VAE model")
+            
+            load_time = time.time() - start_time
+            print(f"ROCM Checkpoint loaded in {load_time:.2f}s")
+            print(f"Model: {type(model)}, CLIP: {type(clip)}, VAE: {type(vae)}")
+            
+            return (model, clip, vae)
+            
+        except Exception as e:
+            print(f"ROCM checkpoint loading failed: {e}")
+            # Fallback to standard loading
+            try:
+                ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
+                out = comfy.sd.load_checkpoint_guess_config(
+                    ckpt_path, 
+                    output_vae=True, 
+                    output_clip=True, 
+                    embedding_directory=folder_paths.get_folder_paths("embeddings")
+                )
+                return out[:3]
+            except Exception as e2:
+                print(f"Fallback loading also failed: {e2}")
+                raise e2
 
 
 class ROCMOptimizedVAEDecode:
