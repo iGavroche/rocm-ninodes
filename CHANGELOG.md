@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.12] - 2025-01-10
+
+### Fixed
+- **Critical Parameter Error**: Fixed `TypeError: '>' not supported between instances of 'list' and 'float'` error in ROCMOptimizedKSampler
+- **Parameter Type Handling**: Resolved issue where ComfyUI passes parameters as single-element lists instead of scalar values
+- **Comparison Operations**: Fixed all numeric parameter comparisons (cfg, steps, seed, denoise, etc.) by ensuring proper type conversion
+
+### Enhanced
+- **Parameter Conversion**: Added robust parameter conversion logic in both ROCMOptimizedKSampler and ROCMOptimizedKSamplerAdvanced
+- **Type Safety**: Ensured all numeric parameters are converted to proper scalar types before comparison operations
+- **Workflow Reliability**: Complete end-to-end workflow now executes successfully without parameter type errors
+
+### Performance
+- **End-to-End Success**: ROCM-optimized workflow executes successfully (70.41s total)
+- **Checkpoint Loading**: ROCMOptimizedCheckpointLoader: 26.05s
+- **Sampling**: ROCMOptimizedKSampler: 41.54s with ROCm optimizations
+- **VAE Decoding**: ROCMOptimizedVAEDecode: 0.30s with optimized tile processing
+- **Image Generation**: Successfully generates proper images confirming full functionality
+
+### Technical Details
+- Added parameter conversion for cfg, steps, seed, denoise, noise_seed, start_at_step, end_at_step
+- Applied fix to both ROCMOptimizedKSampler and ROCMOptimizedKSamplerAdvanced classes
+- Maintained all ROCm optimizations while fixing parameter type issues
+- Verified complete workflow execution with image output
+
 ## [1.0.11] - 2025-01-10
 
 ### Fixed

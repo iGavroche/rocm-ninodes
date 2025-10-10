@@ -18,6 +18,7 @@ try:
     import json
     import psutil
     import gc
+    import torch
     from pathlib import Path
     from typing import Dict, Any, Tuple, Optional
 except ImportError:
@@ -41,6 +42,29 @@ class ROCMOptimizedCheckpointLoader:
     
     @classmethod
     def INPUT_TYPES(cls):
+        # Handle case where folder_paths is not available (e.g., during import)
+        if folder_paths is None:
+            return {
+                "required": {
+                    "ckpt_name": ("COMBO", {
+                        "tooltip": "Checkpoint file to load"
+                    }),
+                    "lazy_loading": ("BOOLEAN", {
+                        "default": True,
+                        "tooltip": "Enable lazy loading for faster initial load time"
+                    }),
+                    "optimize_for_flux": ("BOOLEAN", {
+                        "default": True,
+                        "tooltip": "Apply Flux-specific optimizations (skip negative CLIP)"
+                    }),
+                    "precision_mode": ("COMBO", {
+                        "default": "auto",
+                        "choices": ["auto", "fp32", "fp16", "bf16"],
+                        "tooltip": "Precision mode - auto selects fp32 for gfx1151"
+                    })
+                }
+            }
+        
         return {
             "required": {
                 "ckpt_name": (folder_paths.get_filename_list("checkpoints"), {
@@ -592,7 +616,7 @@ class ROCMOptimizedVAEDecodeSimple:
             overlap=overlap_adj,
             upscale_amount=getattr(vae, 'upscale_ratio', 8),
             out_channels=getattr(vae, 'latent_channels', 4),
-            output_device=getattr(vae, 'output_device', device)
+            output_device=getattr(vae, 'output_device', vae.device)
         )
         
         # Handle WAN VAE output format - ensure correct shape and channels
@@ -680,7 +704,7 @@ class ROCMFluxBenchmark:
         cfg_values = [float(cfg.strip()) for cfg in test_cfg_values.split(',')]
         
         # Get device information
-        device = model_management.get_torch_device()
+        device = comfy.model_management.get_torch_device()
         is_amd = hasattr(device, 'type') and device.type == 'cuda'
         
         results = {
@@ -1613,6 +1637,16 @@ class ROCMOptimizedKSampler:
         
         # ROCm-specific optimizations
         if use_rocm_optimizations and is_amd:
+            # Ensure parameters are not lists (ComfyUI sometimes passes lists)
+            if isinstance(cfg, list):
+                cfg = cfg[0]
+            if isinstance(steps, list):
+                steps = steps[0]
+            if isinstance(seed, list):
+                seed = seed[0]
+            if isinstance(denoise, list):
+                denoise = denoise[0]
+            
             # Set optimal precision for gfx1151
             if precision_mode == "auto":
                 optimal_dtype = torch.float32  # fp32 is often faster on ROCm 6.4
@@ -1646,8 +1680,11 @@ class ROCMOptimizedKSampler:
         
         # Flux-specific optimizations
         if flux_optimization and is_amd:
+            # Ensure cfg is a float for comparison
+            cfg_value = cfg[0] if isinstance(cfg, list) else cfg
+            
             # Optimize for Flux guidance values (typically 3.5)
-            if cfg <= 4.0:
+            if cfg_value <= 4.0:
                 # Lower CFG values benefit from reduced memory modifier
                 memory_modifier = 1.2  # Reduced from 1.5x
             else:
@@ -1673,7 +1710,7 @@ class ROCMOptimizedKSampler:
             
             # Adjust memory allocation based on resolution
             if memory_optimization:
-                free_memory = model_management.get_free_memory(device)
+                free_memory = comfy.model_management.get_free_memory(device)
                 adjusted_memory = free_memory * batch_size_multiplier
                 if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                     torch.cuda.set_per_process_memory_fraction(min(0.95, adjusted_memory / free_memory))
@@ -1716,7 +1753,7 @@ class ROCMOptimizedKSampler:
             # Sample
             samples = comfy.sample.sample(
                 model, noise, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image_tensor, denoise=denoise, 
+                positive, negative, latent_image_tensor, 
                 noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed
             )
             
@@ -1727,15 +1764,27 @@ class ROCMOptimizedKSampler:
             
         except Exception as e:
             logging.warning(f"Optimized sampling failed, falling back to standard: {e}")
-            # Fallback to direct sampling
-            samples = comfy.sample.sample(
-                model, None, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image["samples"], denoise=denoise
-            )
-            # Wrap in latent format
-            out = latent_image.copy()
-            out["samples"] = samples
-            result = (out,)
+            # Fallback to direct sampling with proper noise handling
+            try:
+                # Prepare noise for fallback
+                latent_image_tensor = latent_image["samples"]
+                batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
+                noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
+                
+                samples = comfy.sample.sample(
+                    model, noise, steps, cfg, sampler_name, scheduler, 
+                    positive, negative, latent_image_tensor
+                )
+                # Wrap in latent format
+                out = latent_image.copy()
+                out["samples"] = samples
+                result = (out,)
+            except Exception as e2:
+                logging.error(f"Fallback sampling also failed: {e2}")
+                # Final fallback: return empty latent
+                out = latent_image.copy()
+                out["samples"] = latent_image["samples"]  # Return original latent
+                result = (out,)
         
         sample_time = time.time() - start_time
         logging.info(f"ROCM KSampler completed in {sample_time:.2f}s")
@@ -1838,6 +1887,20 @@ class ROCMOptimizedKSamplerAdvanced:
             is_amd = hasattr(device, 'type') and device.type == 'cuda'
             
             if is_amd:
+                # Ensure parameters are not lists (ComfyUI sometimes passes lists)
+                if isinstance(cfg, list):
+                    cfg = cfg[0]
+                if isinstance(steps, list):
+                    steps = steps[0]
+                if isinstance(noise_seed, list):
+                    noise_seed = noise_seed[0]
+                if isinstance(start_at_step, list):
+                    start_at_step = start_at_step[0]
+                if isinstance(end_at_step, list):
+                    end_at_step = end_at_step[0]
+                if isinstance(denoise, list):
+                    denoise = denoise[0]
+                
                 # Set optimal precision
                 if precision_mode == "auto":
                     optimal_dtype = torch.float32
@@ -1889,7 +1952,7 @@ class ROCMOptimizedKSamplerAdvanced:
             # Sample with advanced options
             samples = comfy.sample.sample(
                 model, noise, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image_tensor, denoise=denoise, 
+                positive, negative, latent_image_tensor, 
                 disable_noise=disable_noise, start_step=start_at_step, 
                 last_step=end_at_step, force_full_denoise=force_full_denoise,
                 noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=noise_seed
@@ -1902,17 +1965,32 @@ class ROCMOptimizedKSamplerAdvanced:
             
         except Exception as e:
             logging.warning(f"Advanced sampling failed, falling back to standard: {e}")
-            # Fallback to direct sampling
-            samples = comfy.sample.sample(
-                model, None, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image["samples"], denoise=denoise, 
-                start_step=start_at_step, last_step=end_at_step, 
-                force_full_denoise=force_full_denoise
-            )
-            # Wrap in latent format
-            out = latent_image.copy()
-            out["samples"] = samples
-            result = (out,)
+            # Fallback to direct sampling with proper noise handling
+            try:
+                # Prepare noise for fallback
+                latent_image_tensor = latent_image["samples"]
+                if disable_noise:
+                    noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
+                else:
+                    batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
+                    noise = comfy.sample.prepare_noise(latent_image_tensor, noise_seed, batch_inds)
+                
+                samples = comfy.sample.sample(
+                    model, noise, steps, cfg, sampler_name, scheduler, 
+                    positive, negative, latent_image_tensor, 
+                    start_step=start_at_step, last_step=end_at_step, 
+                    force_full_denoise=force_full_denoise
+                )
+                # Wrap in latent format
+                out = latent_image.copy()
+                out["samples"] = samples
+                result = (out,)
+            except Exception as e2:
+                logging.error(f"Fallback sampling also failed: {e2}")
+                # Final fallback: return empty latent
+                out = latent_image.copy()
+                out["samples"] = latent_image["samples"]  # Return original latent
+                result = (out,)
         
         sample_time = time.time() - start_time
         logging.info(f"ROCM Advanced KSampler completed in {sample_time:.2f}s")

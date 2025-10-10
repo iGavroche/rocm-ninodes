@@ -6,6 +6,25 @@
 
 **RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations and KSampler implementations designed to maximize performance on AMD hardware.
 
+## 🚀 **New in v1.0.12: Parameter Type Error Fix**
+
+### **Critical Fix**
+- **✅ Parameter Error Resolved**: Fixed `TypeError: '>' not supported between instances of 'list' and 'float'` error
+- **✅ Type Safety**: Added robust parameter conversion for all numeric inputs (cfg, steps, seed, denoise, etc.)
+- **✅ Workflow Success**: Complete end-to-end ROCM-optimized workflow now executes successfully
+
+### **Root Cause Identified**
+- **ComfyUI Behavior**: ComfyUI sometimes passes parameters as single-element lists instead of scalar values
+- **Comparison Operations**: Numeric comparisons fail when comparing lists to floats
+- **Parameter Handling**: Both ROCMOptimizedKSampler and ROCMOptimizedKSamplerAdvanced affected
+
+### **Performance Results**
+- **End-to-End Success**: ROCM-optimized workflow executes in 70.41s total
+- **Checkpoint Loading**: ROCMOptimizedCheckpointLoader: 26.05s
+- **Sampling**: ROCMOptimizedKSampler: 41.54s with ROCm optimizations
+- **VAE Decoding**: ROCMOptimizedVAEDecode: 0.30s with optimized tile processing
+- **Image Generation**: Successfully generates proper images confirming full functionality
+
 ## 🚀 **New in v1.0.11: Checkpoint Compatibility Fix**
 
 ### **Critical Fix**
