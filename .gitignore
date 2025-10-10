@@ -96,4 +96,3 @@ node.zip
 # Test files
 *_test.json
 test_*.py
-flux_*.json
