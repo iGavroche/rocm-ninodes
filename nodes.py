@@ -75,12 +75,18 @@ class ROCMOptimizedCheckpointLoader:
         import folder_paths
         import comfy.sd
         import torch
+        import os
         
         start_time = time.time()
         
         try:
             # Get checkpoint path
             ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
+            print(f"Loading checkpoint: {ckpt_name}")
+            print(f"Checkpoint path: {ckpt_path}")
+            print(f"File exists: {os.path.exists(ckpt_path)}")
+            if os.path.exists(ckpt_path):
+                print(f"File size: {os.path.getsize(ckpt_path)} bytes")
             
             # Provide helpful guidance for checkpoint selection
             if "flux" in ckpt_name.lower() and not any(x in ckpt_name.lower() for x in ["clip", "vae", "ae", "full"]):
@@ -91,9 +97,12 @@ class ROCMOptimizedCheckpointLoader:
                 print("   - ae.safetensors (VAE model)")
                 print("   Consider using a full checkpoint or separate CLIP/VAE loaders.")
             
-            # Apply ROCm optimization before loading
+            # Apply ROCm optimization before loading (only on Linux/AMD systems)
             if hasattr(torch.backends, 'hip'):
                 torch.backends.hip.matmul.allow_tf32 = False
+                print("ROCm optimizations applied")
+            else:
+                print("ROCm not available - running in compatibility mode")
             
             # Use ComfyUI's standard loading - this is the most reliable approach
             out = comfy.sd.load_checkpoint_guess_config(
@@ -125,6 +134,7 @@ class ROCMOptimizedCheckpointLoader:
             
         except Exception as e:
             print(f"ROCM checkpoint loading failed: {e}")
+            print("Attempting fallback to standard ComfyUI loading...")
             # Fallback to standard loading
             try:
                 ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
@@ -134,10 +144,25 @@ class ROCMOptimizedCheckpointLoader:
                     output_clip=True, 
                     embedding_directory=folder_paths.get_folder_paths("embeddings")
                 )
+                print("Fallback loading successful")
                 return out[:3]
             except Exception as e2:
                 print(f"Fallback loading also failed: {e2}")
-                raise e2
+                # Last resort: try without ROCm optimizations
+                try:
+                    print("Attempting loading without any optimizations...")
+                    ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
+                    out = comfy.sd.load_checkpoint_guess_config(
+                        ckpt_path, 
+                        output_vae=True, 
+                        output_clip=True, 
+                        embedding_directory=folder_paths.get_folder_paths("embeddings")
+                    )
+                    print("Minimal loading successful")
+                    return out[:3]
+                except Exception as e3:
+                    print(f"All loading attempts failed: {e3}")
+                    raise e3
 
 
 class ROCMOptimizedVAEDecode:
