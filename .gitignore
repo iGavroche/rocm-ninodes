@@ -88,3 +88,12 @@ logs/
 *.temp
 temp/
 tmp/
+
+# Development files
+agent_context.md
+node.zip
+
+# Test files
+*_test.json
+test_*.py
+flux_*.json

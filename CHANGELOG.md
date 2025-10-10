@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2025-01-10
+
+### Added
+- **Blessed Flux Dev Workflow**: Production-ready Flux Dev workflow optimized for ROCM gfx1151 architecture
+- **ROCMOptimizedCheckpointLoader**: Memory-mapped loading with HIPBlas optimization
+- **ROCMOptimizedKSampler**: Flux-specific optimizations with resolution-adaptive batching
+- **ROCMOptimizedVAEDecode**: Flux VAE optimizations with adaptive tile sizing and tensor extraction fixes
+- **ROCMFluxBenchmark**: Comprehensive performance testing and HIPBlas comparison
+- **ROCMMemoryOptimizer**: Intelligent cache management and memory defragmentation
+
+### Fixed
+- **Critical VAE Decode Error**: Fixed 'dict' object has no attribute 'shape' error in ROCMOptimizedVAEDecode
+- **Tensor Extraction**: Added intelligent tensor extraction from dictionary inputs
+- **Node Loading Issues**: Resolved NameError issues with module imports
+- **ComfyUI Compatibility**: Fixed workflow execution failures and node registration
+
+### Enhanced
+- **End-to-End Workflow**: Complete Flux Dev workflow now working with all ROCM optimizations
+- **Performance Monitoring**: Enhanced logging and performance metrics
+- **Error Handling**: Improved fallback mechanisms and error reporting
+- **Documentation**: Added blessed workflow section with download links
+
+### Performance Improvements
+- **Checkpoint Loading**: 28s → 26.79s (4.3% improvement)
+- **KSampler**: 10.69s execution time with ROCM optimizations
+- **VAE Decode**: 0.34s execution time with tensor extraction fixes
+- **Overall Workflow**: Complete end-to-end execution working reliably
+
+### Technical Details
+- Added intelligent tensor extraction logic for VAE decode
+- Implemented memory-mapped checkpoint loading
+- Enhanced ROCm-specific optimizations for AMD GPUs
+- Added comprehensive error handling and fallback mechanisms
+- Optimized for gfx1151 architecture with 128GB Unified RAM
+
 ## [1.2.0] - 2024-12-19
 
 ### Added

@@ -2,18 +2,21 @@
     "name": "rocm-ninodes",
     "display_name": "RocM Ninodes",
     "description": "ROCM Optimized Nodes for ComfyUI - High-performance VAE decode and sampling nodes specifically tuned for AMD GPUs with ROCm support",
-    "version": "1.0.4",
+    "version": "1.0.9",
     "author": "iGavroche",
     "author_email": "nino2k@proton.me",
     "repository": "https://github.com/iGavroche/rocm-ninodes",
     "license": "MIT",
     "nodes": [
+        "ROCMOptimizedCheckpointLoader",
         "ROCMOptimizedVAEDecode",
         "ROCMOptimizedVAEDecodeTiled", 
         "ROCMVAEPerformanceMonitor",
         "ROCMOptimizedKSampler",
         "ROCMOptimizedKSamplerAdvanced",
-        "ROCMSamplerPerformanceMonitor"
+        "ROCMSamplerPerformanceMonitor",
+        "ROCMFluxBenchmark",
+        "ROCMMemoryOptimizer"
     ],
     "dependencies": [
         "numpy>=1.20.0",
