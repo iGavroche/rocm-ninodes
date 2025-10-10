@@ -109,21 +109,26 @@ This workflow has been extensively tested and optimized on the GMTek Evo-X2 Stri
 **[📥 Download Blessed Flux Dev Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized.json)**  
 *Alternative: [GitHub Web Interface](https://github.com/iGavroche/rocm-ninodes/blob/main/flux_dev_optimized.json)*
 
-**[📥 Download Generic Version](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized_generic.json)** *(No hardcoded checkpoint)*
+> **Note**: The workflow now uses a user-selectable checkpoint. Simply choose any checkpoint you have (SD1.5, SDXL, Flux, etc.) from the dropdown.
 
 ## 🔧 **Troubleshooting**
 
 ### **CLIP Input Invalid Error**
 If you get `ERROR: clip input is invalid: None`, this usually means:
 
-1. **Missing Checkpoint**: The checkpoint file specified in the workflow doesn't exist
-2. **Invalid Checkpoint**: The checkpoint file is corrupted or doesn't contain a valid CLIP model
-3. **Wrong Path**: The checkpoint isn't in the correct ComfyUI checkpoints folder
+1. **Diffusion Model Only**: The file is a diffusion model only (no CLIP/VAE) - common with Flux models
+2. **Missing Checkpoint**: The checkpoint file doesn't exist or is corrupted
+3. **Wrong File Type**: Using a `.safetensors` file that's not a full checkpoint
+
+**Common Issue**: Flux models often come as separate files:
+- `flux1-dev.safetensors` (diffusion model only)
+- `clip_l.safetensors` (CLIP model)
+- `ae.safetensors` (VAE model)
 
 **Solutions:**
-- Use the **Generic Version** workflow (no hardcoded checkpoint) and select your own checkpoint
+- Use a **full checkpoint** that includes CLIP and VAE (SD1.5, SDXL full checkpoints)
+- For Flux: Use ComfyUI's separate CLIP and VAE loaders instead of checkpoint loader
 - Ensure your checkpoint file is in `ComfyUI/models/checkpoints/`
-- Try with a different checkpoint file (SD1.5, SDXL, Flux, etc.)
 - Check ComfyUI console for detailed error messages
 
 ### **Performance Issues**
