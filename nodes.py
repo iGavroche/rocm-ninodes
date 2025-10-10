@@ -82,6 +82,15 @@ class ROCMOptimizedCheckpointLoader:
             # Get checkpoint path
             ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
             
+            # Provide helpful guidance for checkpoint selection
+            if "flux" in ckpt_name.lower() and not any(x in ckpt_name.lower() for x in ["clip", "vae", "ae", "full"]):
+                print(f"⚠️  WARNING: '{ckpt_name}' appears to be a Flux diffusion model only file.")
+                print("   Flux models often come as separate files:")
+                print("   - flux1-dev.safetensors (diffusion model only)")
+                print("   - clip_l.safetensors (CLIP model)")
+                print("   - ae.safetensors (VAE model)")
+                print("   Consider using a full checkpoint or separate CLIP/VAE loaders.")
+            
             # Apply ROCm optimization before loading
             if hasattr(torch.backends, 'hip'):
                 torch.backends.hip.matmul.allow_tf32 = False
@@ -104,9 +113,9 @@ class ROCMOptimizedCheckpointLoader:
             if model is None:
                 raise ValueError("Model is None - checkpoint may be corrupted")
             if clip is None:
-                raise ValueError("CLIP is None - checkpoint may not contain a valid CLIP model")
+                raise ValueError("CLIP is None - This appears to be a diffusion model only file. Please use a full checkpoint that includes CLIP and VAE components, or use separate CLIP and VAE loaders for Flux models.")
             if vae is None:
-                raise ValueError("VAE is None - checkpoint may not contain a valid VAE model")
+                raise ValueError("VAE is None - This appears to be a diffusion model only file. Please use a full checkpoint that includes CLIP and VAE components, or use separate CLIP and VAE loaders for Flux models.")
             
             load_time = time.time() - start_time
             print(f"ROCM Checkpoint loaded in {load_time:.2f}s")

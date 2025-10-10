@@ -143,8 +143,10 @@ If you get `ERROR: clip input is invalid: None`, this usually means:
 - `ae.safetensors` (VAE model)
 
 **Solutions:**
-- Use a **full checkpoint** that includes CLIP and VAE (SD1.5, SDXL full checkpoints)
-- For Flux: Use ComfyUI's separate CLIP and VAE loaders instead of checkpoint loader
+- **Use a FULL checkpoint** that includes CLIP and VAE (SD1.5, SDXL full checkpoints)
+- **For Flux models**: Use ComfyUI's separate CLIP and VAE loaders instead of checkpoint loader
+- **Check file names**: Avoid files like `flux1-dev.safetensors` - use full checkpoints instead
+- **Common full checkpoints**: `v1-5-pruned-emaonly.safetensors`, `sd_xl_base_1.0.safetensors`, etc.
 - Ensure your checkpoint file is in `ComfyUI/models/checkpoints/`
 - Check ComfyUI console for detailed error messages
 
