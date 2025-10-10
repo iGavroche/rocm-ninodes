@@ -89,7 +89,8 @@
 **Performance Improvement: 8.1% faster overall, 5.6% average improvement**
 
 ### 🎯 **Try It Now!**
-- **[🚀 Flux Dev Optimized Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized.json)** - **BLESSED WORKFLOW** with ROCM optimizations!
+- **[🚀 Flux Dev Optimized Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized.json)** - **BLESSED WORKFLOW** with ROCM optimizations!  
+  *Alternative: [GitHub Web Interface](https://github.com/iGavroche/rocm-ninodes/blob/main/flux_dev_optimized.json)*
 - **[Flux Image Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - 78% performance improvement!
 - **[WAN 2.2 Video Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow_wan_video.json)** - 15% performance improvement!
 
@@ -105,7 +106,8 @@ This workflow has been extensively tested and optimized on the GMTek Evo-X2 Stri
 - ✅ **All ROCM optimizations enabled**: Maximum performance for AMD GPUs
 - ✅ **Production-ready**: Tested and verified working end-to-end
 
-**[📥 Download Blessed Flux Dev Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized.json)**
+**[📥 Download Blessed Flux Dev Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized.json)**  
+*Alternative: [GitHub Web Interface](https://github.com/iGavroche/rocm-ninodes/blob/main/flux_dev_optimized.json)*
 
 ## 🚀 **Key Features**
 
