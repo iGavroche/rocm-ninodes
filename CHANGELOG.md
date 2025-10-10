@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2025-01-10
+
+### Fixed
+- **Critical Checkpoint Issue**: Fixed blessed workflow using diffusion-model-only file instead of full checkpoint
+- **CLIP Input Error**: Resolved "clip input is invalid: None" error caused by flux1-dev-fp8.safetensors
+- **Workflow Compatibility**: Updated blessed workflow to use user-selectable checkpoint instead of hardcoded file
+
+### Enhanced
+- **Error Handling**: Added comprehensive validation for model, CLIP, and VAE outputs in ROCMOptimizedCheckpointLoader
+- **Troubleshooting Guide**: Added detailed explanation of diffusion-model-only files issue
+- **Flux Model Guidance**: Documented that Flux models often come as separate files (diffusion, CLIP, VAE)
+
+### Technical Details
+- Fixed flux_dev_optimized.json to use empty checkpoint selection (user chooses)
+- Enhanced error messages to help diagnose checkpoint loading issues
+- Added fallback loading mechanism for better reliability
+- Better handling of corrupted or invalid checkpoint files
+
 ## [1.0.10] - 2025-01-10
 
 ### Fixed

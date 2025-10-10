@@ -6,6 +6,23 @@
 
 **RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations and KSampler implementations designed to maximize performance on AMD hardware.
 
+## 🚀 **New in v1.0.11: Checkpoint Compatibility Fix**
+
+### **Critical Fix**
+- **✅ CLIP Input Error Resolved**: Fixed "clip input is invalid: None" error caused by using diffusion-model-only files
+- **✅ Blessed Workflow Fixed**: Updated to use user-selectable checkpoint instead of hardcoded flux1-dev-fp8.safetensors
+- **✅ Enhanced Error Handling**: Added comprehensive validation and better error messages for checkpoint loading
+
+### **Root Cause Identified**
+- **Diffusion Model Only**: flux1-dev-fp8.safetensors is diffusion model only (no CLIP/VAE)
+- **Flux Model Structure**: Flux models often come as separate files (diffusion, CLIP, VAE)
+- **Checkpoint Loader**: ROCMOptimizedCheckpointLoader requires full checkpoints with all components
+
+### **Enhanced Troubleshooting**
+- **Detailed Error Messages**: Now shows exactly what went wrong during checkpoint loading
+- **Flux Model Guidance**: Explains how Flux models work with separate files
+- **Compatibility Guide**: Clear instructions for using any full checkpoint
+
 ## 🚀 **New in v1.0.10: Checkpoint Loader Stability & Performance**
 
 ### **Critical Fixes**
