@@ -6,6 +6,8 @@ Optimized versions of existing nodes with Phase 1, 2, and 3 improvements
 """
 
 # Handle imports gracefully for ComfyUI
+import time  # Always import time as it's needed for performance tracking
+import logging  # Always import logging for performance tracking
 try:
     import torch
     import torch.nn.functional as F
@@ -14,10 +16,8 @@ try:
     import comfy.sample
     import comfy.samplers
     import latent_preview
-    import logging
     import folder_paths
     from typing import Dict, Any, Tuple, Optional, List
-    import time
     COMFY_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: ComfyUI modules not available: {e}")
@@ -529,10 +529,22 @@ class ROCMOptimizedVAEDecode:
             raise ValueError(f"Expected 4D tensor (B, C, H, W), got shape {samples_tensor.shape}")
         
         B, C, H, W = samples_tensor.shape
-        if C != 4:
-            raise ValueError(f"Expected 4 channels for latent, got {C}")
         
-        logging.info(f"VAE Decode input: shape={samples_tensor.shape}, dtype={samples_tensor.dtype}, device={samples_tensor.device}")
+        # Support different VAE architectures (SD, SDXL, etc.)
+        if C not in [4, 16]:
+            raise ValueError(f"Unsupported latent channels: {C}. Expected 4 (SD) or 16 (SDXL)")
+        
+        # Determine VAE type and expected output channels
+        if C == 4:
+            vae_type = "SD"
+            expected_output_channels = 3
+            upscale_factor = 8
+        elif C == 16:
+            vae_type = "SDXL"
+            expected_output_channels = 3
+            upscale_factor = 8
+        
+        logging.info(f"VAE Decode input: shape={samples_tensor.shape}, dtype={samples_tensor.dtype}, device={samples_tensor.device}, type={vae_type}")
         
         try:
             # Try direct decode first for smaller images
@@ -574,10 +586,9 @@ class ROCMOptimizedVAEDecode:
                     # Handle case where we have too many channels - take first 3
                     pixel_samples = pixel_samples[:, :3, :, :]
                 
-                # Ensure correct channel order for video processing (H, W, C)
-                if len(pixel_samples.shape) == 4 and pixel_samples.shape[1] == 3:
-                    # Convert from (B, C, H, W) to (B, H, W, C) for video processing
-                    pixel_samples = pixel_samples.permute(0, 2, 3, 1).contiguous()
+                # CRITICAL FIX: Keep standard VAE format (B, C, H, W) - don't convert to (B, H, W, C)
+                # The permute operation was causing wrong tensor dimensions
+                # Standard VAE decode should return (B, C, H, W) format
             else:
                 # Use tiled decoding for larger images
                 pixel_samples = self._decode_tiled_optimized(
@@ -611,8 +622,8 @@ class ROCMOptimizedVAEDecode:
                     logging.error(f"Standard VAE decode also failed: {fallback_error}")
                     # Create a minimal valid output to prevent complete failure
                     B, C, H, W = samples_tensor.shape
-                    expected_h, expected_w = H * 8, W * 8
-                    pixel_samples = (torch.zeros(B, 3, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device),)
+                    expected_h, expected_w = H * upscale_factor, W * upscale_factor
+                    pixel_samples = (torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device),)
                     logging.warning(f"Created minimal fallback output: {pixel_samples[0].shape}")
         
         # CRITICAL FIX: Handle pixel_samples properly
@@ -700,10 +711,9 @@ class ROCMOptimizedVAEDecode:
             # Handle case where we have too many channels - take first 3
             result = result[:, :3, :, :]
         
-        # Ensure correct channel order for video processing (H, W, C)
-        if len(result.shape) == 4 and result.shape[1] == 3:
-            # Convert from (B, C, H, W) to (B, H, W, C) for video processing
-            result = result.permute(0, 2, 3, 1).contiguous()
+        # CRITICAL FIX: Keep standard VAE format (B, C, H, W) - don't convert to (B, H, W, C)
+        # The permute operation was causing wrong tensor dimensions
+        # Standard VAE decode should return (B, C, H, W) format
             
         return result
     
