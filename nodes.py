@@ -689,20 +689,27 @@ class ROCMOptimizedVAEDecode:
         if pixel_samples.dtype != torch.float32:
             pixel_samples = pixel_samples.float()
         
+        # CRITICAL FIX: Convert from (B, C, H, W) to (B, H, W, C) for ComfyUI compatibility
+        # This is the key fix - ComfyUI's save_images expects (B, H, W, C) format
+        if len(pixel_samples.shape) == 4 and pixel_samples.shape[1] == 3:
+            logging.info(f"Converting tensor from (B, C, H, W) to (B, H, W, C) for ComfyUI compatibility")
+            pixel_samples = pixel_samples.permute(0, 2, 3, 1).contiguous()
+            logging.info(f"After permute: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+        
         # Final validation - ensure we have the right shape and dtype
         if len(pixel_samples.shape) != 4:
             logging.error(f"CRITICAL: Final tensor has wrong shape: {pixel_samples.shape}")
             # Create emergency fallback
             B, C, H, W = samples_tensor.shape
             expected_h, expected_w = H * upscale_factor, W * upscale_factor
-            pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+            pixel_samples = torch.zeros(B, expected_h, expected_w, expected_output_channels, dtype=torch.float32, device=samples_tensor.device)
         
-        if pixel_samples.shape[1] != 3:
-            logging.error(f"CRITICAL: Final tensor has wrong channels: {pixel_samples.shape[1]}")
+        if pixel_samples.shape[3] != 3:
+            logging.error(f"CRITICAL: Final tensor has wrong channels: {pixel_samples.shape[3]}")
             # Create emergency fallback
             B, C, H, W = samples_tensor.shape
             expected_h, expected_w = H * upscale_factor, W * upscale_factor
-            pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+            pixel_samples = torch.zeros(B, expected_h, expected_w, expected_output_channels, dtype=torch.float32, device=samples_tensor.device)
         
         logging.info(f"After ComfyUI format fix: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
