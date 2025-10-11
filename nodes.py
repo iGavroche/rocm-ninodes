@@ -14,6 +14,7 @@ import logging
 import folder_paths
 from typing import Dict, Any, Tuple, Optional
 import time
+from debug_config import DEBUG_MODE, save_debug_data, capture_timing, capture_memory_usage, log_debug
 
 class ROCMOptimizedVAEDecode:
     """
@@ -85,6 +86,20 @@ class ROCMOptimizedVAEDecode:
         Optimized VAE decode for ROCm/AMD GPUs with video support
         """
         start_time = time.time()
+        log_debug(f"ROCMOptimizedVAEDecode.decode started with samples shape: {samples['samples'].shape}")
+        
+        # Capture input data for debugging
+        if DEBUG_MODE:
+            save_debug_data(samples, "vae_decode_input", "flux_1024x1024", {
+                'node_type': 'ROCMOptimizedVAEDecode',
+                'tile_size': tile_size,
+                'overlap': overlap,
+                'use_rocm_optimizations': use_rocm_optimizations,
+                'precision_mode': precision_mode,
+                'batch_optimization': batch_optimization,
+                'video_chunk_size': video_chunk_size,
+                'memory_optimization_enabled': memory_optimization_enabled
+            })
         
         # Get device information
         device = vae.device
@@ -156,6 +171,27 @@ class ROCMOptimizedVAEDecode:
                     print(f"Converted to 4D format: {result.shape}")
                 
                 print(f"Video decode completed: {result.shape}")
+                
+                # Capture output data and timing for debugging
+                if DEBUG_MODE:
+                    end_time = time.time()
+                    save_debug_data(result, "vae_decode_output", "flux_1024x1024", {
+                        'node_type': 'ROCMOptimizedVAEDecode',
+                        'execution_time': end_time - start_time,
+                        'output_shape': result.shape,
+                        'output_dtype': str(result.dtype),
+                        'output_device': str(result.device)
+                    })
+                    capture_timing("vae_decode", start_time, end_time, {
+                        'node_type': 'ROCMOptimizedVAEDecode',
+                        'is_video': True,
+                        'video_chunks': len(chunk_results) if 'chunk_results' in locals() else 1
+                    })
+                    capture_memory_usage("vae_decode", {
+                        'node_type': 'ROCMOptimizedVAEDecode',
+                        'is_video': True
+                    })
+                
                 return (result,)
         
         # Set optimal precision for AMD GPUs
@@ -317,6 +353,27 @@ class ROCMOptimizedVAEDecode:
         if len(result.shape) == 4 and result.shape[1] == 3:
             # Convert from (B, C, H, W) to (B, H, W, C) for video processing
             result = result.permute(0, 2, 3, 1).contiguous()
+        
+        # Capture output data and timing for debugging
+        if DEBUG_MODE:
+            end_time = time.time()
+            save_debug_data(result, "vae_decode_output", "flux_1024x1024", {
+                'node_type': 'ROCMOptimizedVAEDecode',
+                'execution_time': end_time - start_time,
+                'output_shape': result.shape,
+                'output_dtype': str(result.dtype),
+                'output_device': str(result.device)
+            })
+            capture_timing("vae_decode", start_time, end_time, {
+                'node_type': 'ROCMOptimizedVAEDecode',
+                'is_video': False,
+                'tile_size': tile_size,
+                'overlap': overlap
+            })
+            capture_memory_usage("vae_decode", {
+                'node_type': 'ROCMOptimizedVAEDecode',
+                'is_video': False
+            })
             
         return result
 
@@ -575,6 +632,23 @@ class ROCMOptimizedKSampler:
         Optimized sampling for ROCm/AMD GPUs
         """
         start_time = time.time()
+        log_debug(f"ROCMOptimizedKSampler.sample started with latent shape: {latent_image['samples'].shape}")
+        
+        # Capture input data for debugging
+        if DEBUG_MODE:
+            save_debug_data(latent_image, "ksampler_input", "flux_1024x1024", {
+                'node_type': 'ROCMOptimizedKSampler',
+                'seed': seed,
+                'steps': steps,
+                'cfg': cfg,
+                'sampler_name': sampler_name,
+                'scheduler': scheduler,
+                'denoise': denoise,
+                'use_rocm_optimizations': use_rocm_optimizations,
+                'precision_mode': precision_mode,
+                'memory_optimization': memory_optimization,
+                'attention_optimization': attention_optimization
+            })
         
         # Get device information
         device = model.model_dtype()
@@ -658,6 +732,27 @@ class ROCMOptimizedKSampler:
         
         sample_time = time.time() - start_time
         logging.info(f"ROCM KSampler completed in {sample_time:.2f}s")
+        
+        # Capture output data and timing for debugging
+        if DEBUG_MODE:
+            save_debug_data(result, "ksampler_output", "flux_1024x1024", {
+                'node_type': 'ROCMOptimizedKSampler',
+                'execution_time': sample_time,
+                'output_shape': result[0]['samples'].shape if result and len(result) > 0 else None,
+                'output_dtype': str(result[0]['samples'].dtype) if result and len(result) > 0 else None,
+                'output_device': str(result[0]['samples'].device) if result and len(result) > 0 else None
+            })
+            capture_timing("ksampler", start_time, time.time(), {
+                'node_type': 'ROCMOptimizedKSampler',
+                'steps': steps,
+                'cfg': cfg,
+                'sampler_name': sampler_name,
+                'scheduler': scheduler
+            })
+            capture_memory_usage("ksampler", {
+                'node_type': 'ROCMOptimizedKSampler',
+                'steps': steps
+            })
         
         return result
 
