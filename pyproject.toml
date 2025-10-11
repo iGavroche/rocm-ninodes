@@ -28,10 +28,13 @@ author_email = "nino2k@proton.me"
 repository = "https://github.com/iGavroche/rocm-ninodes"
 license = "MIT"
 nodes = [
+    "ROCMOptimizedCheckpointLoader",
     "ROCMOptimizedVAEDecode",
     "ROCMOptimizedVAEDecodeTiled", 
     "ROCMVAEPerformanceMonitor",
     "ROCMOptimizedKSampler",
     "ROCMOptimizedKSamplerAdvanced",
-    "ROCMSamplerPerformanceMonitor"
+    "ROCMSamplerPerformanceMonitor",
+    "ROCMFluxBenchmark",
+    "ROCMMemoryOptimizer"
 ]

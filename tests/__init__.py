@@ -1,1 +1,1 @@
-# Empty init file to make tests a package
+# ROCM Ninodes Test Suite

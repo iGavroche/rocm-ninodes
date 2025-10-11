@@ -750,6 +750,41 @@ git clone https://github.com/iGavroche/rocm-ninodes.git ComfyUI-ROCM-Optimized-V
 - **Precision**: fp32 for best ROCm performance
 - **Batching**: AMD-optimized batch sizes
 
+## Testing
+
+ROCM Ninodes includes a comprehensive test suite to ensure performance and correctness.
+
+### Quick Start
+```bash
+cd tests
+./run_tests.sh
+```
+
+### Test Categories
+- **Performance Tests**: Validate timing targets (78% Flux improvement, 5.6% WAN improvement)
+- **Correctness Tests**: Verify tensor shapes and data formats
+- **Integration Tests**: Full ComfyUI workflow testing
+- **Mock Data Tests**: Tests using synthetic data when real data unavailable
+
+### Data Capture
+Enable debug mode to capture real workflow data for testing:
+```bash
+export ROCM_NINODES_DEBUG=1
+# Run your ComfyUI workflows
+# Data will be saved to test_data/captured/
+```
+
+### Performance Targets
+- **Flux Checkpoint Load**: <30s
+- **Flux VAE Decode**: <10s
+- **WAN Sampling**: <100s
+- **WAN VAE Decode**: <10s
+
+### Documentation
+- **[Testing Guide](TESTING_GUIDE.md)**: Comprehensive testing documentation
+- **[Architecture](ARCHITECTURE.md)**: System architecture and constraints
+- **[Rules](RULES.md)**: Development rules and best practices
+
 ## Contributing
 
 Feel free to submit issues or pull requests to improve the optimizations for your specific use case.
