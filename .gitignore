@@ -96,3 +96,8 @@ node.zip
 # Test files
 *_test.json
 test_*.py
+
+# Benchmark files
+benchmark_*.py
+*_benchmark_results*.json
+test_data/optimization/
