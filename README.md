@@ -6,89 +6,12 @@
 
 **RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations and KSampler implementations designed to maximize performance on AMD hardware.
 
-## 🚀 **New in v1.0.12: Parameter Type Error Fix**
-
-### **Critical Fix**
-- **✅ Parameter Error Resolved**: Fixed `TypeError: '>' not supported between instances of 'list' and 'float'` error
-- **✅ Type Safety**: Added robust parameter conversion for all numeric inputs (cfg, steps, seed, denoise, etc.)
-- **✅ Workflow Success**: Complete end-to-end ROCM-optimized workflow now executes successfully
-
-### **Root Cause Identified**
-- **ComfyUI Behavior**: ComfyUI sometimes passes parameters as single-element lists instead of scalar values
-- **Comparison Operations**: Numeric comparisons fail when comparing lists to floats
-- **Parameter Handling**: Both ROCMOptimizedKSampler and ROCMOptimizedKSamplerAdvanced affected
-
-### **Performance Results**
-- **End-to-End Success**: ROCM-optimized workflow executes in 70.41s total
-- **Checkpoint Loading**: ROCMOptimizedCheckpointLoader: 26.05s
-- **Sampling**: ROCMOptimizedKSampler: 41.54s with ROCm optimizations
-- **VAE Decoding**: ROCMOptimizedVAEDecode: 0.30s with optimized tile processing
-- **Image Generation**: Successfully generates proper images confirming full functionality
-
-## 🚀 **New in v1.0.11: Checkpoint Compatibility Fix**
-
-### **Critical Fix**
-- **✅ CLIP Input Error Resolved**: Fixed "clip input is invalid: None" error caused by using diffusion-model-only files
-- **✅ Blessed Workflow Fixed**: Updated to use user-selectable checkpoint instead of hardcoded flux1-dev-fp8.safetensors
-- **✅ Enhanced Error Handling**: Added comprehensive validation and better error messages for checkpoint loading
-
-### **Root Cause Identified**
-- **Diffusion Model Only**: flux1-dev-fp8.safetensors is diffusion model only (no CLIP/VAE)
-- **Flux Model Structure**: Flux models often come as separate files (diffusion, CLIP, VAE)
-- **Checkpoint Loader**: ROCMOptimizedCheckpointLoader requires full checkpoints with all components
-
-### **Enhanced Troubleshooting**
-- **Detailed Error Messages**: Now shows exactly what went wrong during checkpoint loading
-- **Flux Model Guidance**: Explains how Flux models work with separate files
-- **Compatibility Guide**: Clear instructions for using any full checkpoint
-
-## 🚀 **New in v1.0.10: Checkpoint Loader Stability & Performance**
-
-### **Critical Fixes**
-- **✅ Noise Output Resolved**: Fixed critical issues causing noise instead of proper images
-- **✅ Error Resolution**: Resolved `torch.pickle` and `comfy.model_management.ModelPatcher` errors
-- **✅ Stable Image Generation**: Confirmed proper 512x512 PNG generation with both standard and ROCM nodes
-
-### **Enhanced ROCMOptimizedCheckpointLoader**
-- **Streamlined Implementation**: Simplified to use ComfyUI's reliable loading methods
-- **Essential ROCm Optimizations**: Focused on critical `torch.backends.hip.matmul.allow_tf32 = False`
-- **New Parameters**: Added `lazy_loading`, `optimize_for_flux`, and `precision_mode` options
-- **Performance**: Within 2-3% of standard loader performance (28.32s vs 29.07s)
-
-### **Blessed Workflow Updated**
-- **Enhanced Parameters**: Updated flux_dev_optimized.json with new checkpoint loader options
-- **Production Ready**: Fully tested and verified working end-to-end
-- **ROCm Optimized**: All optimizations enabled for maximum gfx1151 performance
-
-## 🚀 **New in v1.0.8: Flux Workflow Optimization**
-
-### **New Nodes Added**
-- **ROCMOptimizedCheckpointLoader**: Memory-mapped loading, lazy initialization, HIPBlas optimization
-- **ROCMOptimizedKSampler**: Flux-specific optimizations, resolution-adaptive batching, HIPBlas matrix operations  
-- **ROCMOptimizedVAEDecode**: Flux VAE optimizations, adaptive tile sizing, fp8 latent processing
-- **ROCMFluxBenchmark**: Comprehensive performance testing and HIPBlas comparison
-- **ROCMMemoryOptimizer**: Intelligent cache management, memory defragmentation
-
-### **Key Optimizations**
-- **HIPBlas Configuration**: Optimized matrix operations for AMD GPUs
-- **Resolution-Adaptive Batching**: Dynamic batch sizing (256x320, 512x512, 1024x1024)
-- **Flux-Specific Memory Modifiers**: Reduced memory usage for Flux guidance values
-- **Adaptive Tile Sizing**: Optimal tile sizes based on resolution
-- **Memory-Mapped Loading**: Faster checkpoint loading with mmap
-- **Conservative Memory Allocation**: Better VRAM usage for AMD GPUs
-
-### **Performance Targets**
-- **Checkpoint Loading**: 28s → <10s (70% improvement target)
-- **Memory Management**: Reduce need for `--cache-none` flag
-- **HIPBlas Testing**: Clear benchmark showing optimal configuration
-
 ## 🎯 **Real-World Performance Results**
 
 **Tested on GMTek Evo-X2 Strix Halo (gfx1151) with 128GB Unified RAM:**
 
 #### **🖼️ Image Generation (Flux)**
 - **1024x1024 generation**: **500s → 110s** (78% improvement!)
-- **256x320 Flux Dev workflow**: **42.65s → 42.53s** (0.3% improvement with ROCM nodes) **NEW!**
 
 #### **🎬 Image-to-Video Generation (WAN 2.2 i2v)**
 - **320x320px, 2s**: **163s → 139s** (15% improvement!)
@@ -125,54 +48,8 @@
 **Performance Improvement: 8.1% faster overall, 5.6% average improvement**
 
 ### 🎯 **Try It Now!**
-- **[🚀 Flux Dev Optimized Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized.json)** - **BLESSED WORKFLOW** with ROCM optimizations!  
-  *Alternative: [GitHub Web Interface](https://github.com/iGavroche/rocm-ninodes/blob/main/flux_dev_optimized.json)*
 - **[Flux Image Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - 78% performance improvement!
 - **[WAN 2.2 Video Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow_wan_video.json)** - 15% performance improvement!
-
-## 🏆 **Blessed Flux Dev Workflow**
-
-**The definitive Flux Dev workflow optimized for ROCM gfx1151 architecture!**
-
-This workflow has been extensively tested and optimized on the GMTek Evo-X2 Strix Halo (gfx1151) with 128GB Unified RAM. It represents the culmination of our ROCM optimization efforts and delivers:
-
-- ✅ **ROCMOptimizedCheckpointLoader**: Memory-mapped loading with HIPBlas optimization
-- ✅ **ROCMOptimizedKSampler**: Flux-specific optimizations with resolution-adaptive batching  
-- ✅ **ROCMOptimizedVAEDecode**: Flux VAE optimizations with adaptive tile sizing
-- ✅ **All ROCM optimizations enabled**: Maximum performance for AMD GPUs
-- ✅ **Production-ready**: Tested and verified working end-to-end
-
-**[📥 Download Blessed Flux Dev Workflow](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/flux_dev_optimized.json)**  
-*Alternative: [GitHub Web Interface](https://github.com/iGavroche/rocm-ninodes/blob/main/flux_dev_optimized.json)*
-
-> **Note**: The workflow now uses a user-selectable checkpoint. Simply choose any checkpoint you have (SD1.5, SDXL, Flux, etc.) from the dropdown.
-
-## 🔧 **Troubleshooting**
-
-### **CLIP Input Invalid Error**
-If you get `ERROR: clip input is invalid: None`, this usually means:
-
-1. **Diffusion Model Only**: The file is a diffusion model only (no CLIP/VAE) - common with Flux models
-2. **Missing Checkpoint**: The checkpoint file doesn't exist or is corrupted
-3. **Wrong File Type**: Using a `.safetensors` file that's not a full checkpoint
-
-**Common Issue**: Flux models often come as separate files:
-- `flux1-dev.safetensors` (diffusion model only)
-- `clip_l.safetensors` (CLIP model)
-- `ae.safetensors` (VAE model)
-
-**Solutions:**
-- **Use a FULL checkpoint** that includes CLIP and VAE (SD1.5, SDXL full checkpoints)
-- **For Flux models**: Use ComfyUI's separate CLIP and VAE loaders instead of checkpoint loader
-- **Check file names**: Avoid files like `flux1-dev.safetensors` - use full checkpoints instead
-- **Common full checkpoints**: `v1-5-pruned-emaonly.safetensors`, `sd_xl_base_1.0.safetensors`, etc.
-- Ensure your checkpoint file is in `ComfyUI/models/checkpoints/`
-- Check ComfyUI console for detailed error messages
-
-### **Performance Issues**
-- Ensure you're using ROCm 6.4+ with PyTorch nightly builds
-- Check that `--cache-none` flag isn't needed (ROCMMemoryOptimizer should handle this)
-- Verify gfx1151 architecture detection in ComfyUI startup logs
 
 ## 🚀 **Key Features**
 
@@ -225,6 +102,63 @@ If you get `ERROR: clip input is invalid: None`, this usually means:
 - **Automatic fixes**: Applies recommended environment variables and settings
 - **Step-by-step guidance**: Provides detailed instructions for manual fixes
 - **Real-time monitoring**: Shows current memory status and recommendations
+
+## 🧪 **Testing**
+
+### **Comprehensive Test Suite**
+
+The project includes a comprehensive test suite to ensure reliability and prevent regressions:
+
+#### **Error Prevention Tests**
+```bash
+cd /path/to/ComfyUI/custom_nodes/rocm_ninodes
+source /path/to/ComfyUI/.venv/bin/activate
+python test_vae_error_scenarios.py
+```
+
+**Test Coverage:**
+- ✅ **AttributeError**: `'dict' object has no attribute 'shape'`
+- ✅ **IndexError**: `tuple index out of range` 
+- ✅ **ValueError**: `Expected numpy array with ndim 3 but got 4`
+- ✅ **VAE Decode Input Formats**: 5D vs 4D tensor handling
+- ✅ **Chunked Video Processing**: Memory-safe chunking logic
+- ✅ **Tensor Shape Conversions**: 5D→4D conversion validation
+- ✅ **Memory Calculation Edge Cases**: Various tensor sizes
+- ✅ **Error Recovery Scenarios**: Malformed input handling
+- ✅ **Performance Benchmarks**: Decode timing tests
+
+#### **Test Results**
+```
+Ran 9 tests in 0.032s
+OK
+```
+
+#### **Debug Data Collection**
+The nodes automatically collect debug data for optimization analysis:
+- **Location**: `test_data/debug/wan_vae_input_debug_{timestamp}.pkl`
+- **Content**: Tensor shapes, types, device info, and actual tensor data
+- **Usage**: Run optimization tests and analyze performance
+
+#### **Performance Testing**
+```bash
+# Run optimization tests
+python test_vae_optimization.py
+
+# Run error scenario tests  
+python test_vae_error_scenarios.py
+
+# Debug VAE decode issues
+python debug_vae_decode.py
+```
+
+### **Test Data Structure**
+```
+test_data/
+├── debug/                    # Raw debug data from workflows
+├── optimization/             # Optimization test results  
+├── benchmarks/               # Performance benchmarks
+└── README.md                # Test data documentation
+```
 
 ## 🚀 ComfyUI Installation with uv
 

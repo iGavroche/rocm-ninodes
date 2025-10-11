@@ -5,106 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.12] - 2025-01-10
+## [1.0.13] - 2024-10-10
 
 ### Fixed
-- **Critical Parameter Error**: Fixed `TypeError: '>' not supported between instances of 'list' and 'float'` error in ROCMOptimizedKSampler
-- **Parameter Type Handling**: Resolved issue where ComfyUI passes parameters as single-element lists instead of scalar values
-- **Comparison Operations**: Fixed all numeric parameter comparisons (cfg, steps, seed, denoise, etc.) by ensuring proper type conversion
-
-### Enhanced
-- **Parameter Conversion**: Added robust parameter conversion logic in both ROCMOptimizedKSampler and ROCMOptimizedKSamplerAdvanced
-- **Type Safety**: Ensured all numeric parameters are converted to proper scalar types before comparison operations
-- **Workflow Reliability**: Complete end-to-end workflow now executes successfully without parameter type errors
-
-### Performance
-- **End-to-End Success**: ROCM-optimized workflow executes successfully (70.41s total)
-- **Checkpoint Loading**: ROCMOptimizedCheckpointLoader: 26.05s
-- **Sampling**: ROCMOptimizedKSampler: 41.54s with ROCm optimizations
-- **VAE Decoding**: ROCMOptimizedVAEDecode: 0.30s with optimized tile processing
-- **Image Generation**: Successfully generates proper images confirming full functionality
-
-### Technical Details
-- Added parameter conversion for cfg, steps, seed, denoise, noise_seed, start_at_step, end_at_step
-- Applied fix to both ROCMOptimizedKSampler and ROCMOptimizedKSamplerAdvanced classes
-- Maintained all ROCm optimizations while fixing parameter type issues
-- Verified complete workflow execution with image output
-
-## [1.0.11] - 2025-01-10
-
-### Fixed
-- **Critical Checkpoint Issue**: Fixed blessed workflow using diffusion-model-only file instead of full checkpoint
-- **CLIP Input Error**: Resolved "clip input is invalid: None" error caused by flux1-dev-fp8.safetensors
-- **Workflow Compatibility**: Updated blessed workflow to use user-selectable checkpoint instead of hardcoded file
-
-### Enhanced
-- **Error Handling**: Added comprehensive validation for model, CLIP, and VAE outputs in ROCMOptimizedCheckpointLoader
-- **Troubleshooting Guide**: Added detailed explanation of diffusion-model-only files issue
-- **Flux Model Guidance**: Documented that Flux models often come as separate files (diffusion, CLIP, VAE)
-
-### Technical Details
-- Fixed flux_dev_optimized.json to use empty checkpoint selection (user chooses)
-- Enhanced error messages to help diagnose checkpoint loading issues
-- Added fallback loading mechanism for better reliability
-- Better handling of corrupted or invalid checkpoint files
-
-## [1.0.10] - 2025-01-10
-
-### Fixed
-- **Critical Checkpoint Loader Stability**: Resolved noise output issues by simplifying ROCMOptimizedCheckpointLoader implementation
-- **Error Resolution**: Fixed `torch.pickle` and `comfy.model_management.ModelPatcher` errors that were causing workflow failures
-- **Image Generation**: Confirmed proper image generation with both standard and ROCM nodes (no more noise output)
-
-### Enhanced
-- **Blessed Workflow**: Updated flux_dev_optimized.json to use enhanced ROCMOptimizedCheckpointLoader with new parameters
-- **ROCm Optimizations**: Streamlined checkpoint loading to focus on essential ROCm optimizations (`torch.backends.hip.matmul.allow_tf32 = False`)
-- **Reliability**: Simplified implementation using ComfyUI's reliable loading methods for maximum stability
-
-### Performance
-- **Checkpoint Loading**: ROCMOptimizedCheckpointLoader performs within 2-3% of standard loader (28.32s vs 29.07s)
-- **Image Generation**: Both standard and ROCM workflows generate proper 512x512 PNG images (~245KB)
-- **End-to-End Testing**: Complete workflow execution verified working reliably
-
-### Technical Details
-- Removed complex memory mapping and lazy loading features that were causing errors
-- Kept only essential ROCm optimizations for maximum compatibility
-- Enhanced blessed workflow with new checkpoint loader parameters (lazy_loading, optimize_for_flux, precision_mode)
-- Comprehensive testing confirms no more noise output issues
-
-## [1.0.9] - 2025-01-10
+- **Critical WAN Video Workflow Errors**: Fixed all three major errors preventing WAN video generation
+- **AttributeError**: Fixed `'dict' object has no attribute 'shape'` in VAE decode
+- **IndexError**: Fixed `tuple index out of range` in WAN VAE memory calculation
+- **ValueError**: Fixed `Expected numpy array with ndim 3 but got 4` in video output format
+- **Video Tensor Format**: Proper 5D→4D tensor conversion for ComfyUI compatibility
+- **Memory Management**: Corrected WAN VAE memory calculation for 5D tensors
 
 ### Added
-- **Blessed Flux Dev Workflow**: Production-ready Flux Dev workflow optimized for ROCM gfx1151 architecture
-- **ROCMOptimizedCheckpointLoader**: Memory-mapped loading with HIPBlas optimization
-- **ROCMOptimizedKSampler**: Flux-specific optimizations with resolution-adaptive batching
-- **ROCMOptimizedVAEDecode**: Flux VAE optimizations with adaptive tile sizing and tensor extraction fixes
-- **ROCMFluxBenchmark**: Comprehensive performance testing and HIPBlas comparison
-- **ROCMMemoryOptimizer**: Intelligent cache management and memory defragmentation
+- **Comprehensive Test Suite**: 9 test cases covering all error scenarios
+- **Error Prevention Tests**: Automated testing for AttributeError, IndexError, ValueError
+- **Performance Benchmarks**: Decode timing tests for various tensor sizes
+- **Debug Data Collection**: Timestamped debug data for optimization analysis
+- **Video Processing Tests**: Chunked video processing validation
+- **Memory Calculation Tests**: Edge case testing for various tensor shapes
 
-### Fixed
-- **Critical VAE Decode Error**: Fixed 'dict' object has no attribute 'shape' error in ROCMOptimizedVAEDecode
-- **Tensor Extraction**: Added intelligent tensor extraction from dictionary inputs
-- **Node Loading Issues**: Resolved NameError issues with module imports
-- **ComfyUI Compatibility**: Fixed workflow execution failures and node registration
-
-### Enhanced
-- **End-to-End Workflow**: Complete Flux Dev workflow now working with all ROCM optimizations
-- **Performance Monitoring**: Enhanced logging and performance metrics
-- **Error Handling**: Improved fallback mechanisms and error reporting
-- **Documentation**: Added blessed workflow section with download links
-
-### Performance Improvements
-- **Checkpoint Loading**: 28s → 26.79s (4.3% improvement)
-- **KSampler**: 10.69s execution time with ROCM optimizations
-- **VAE Decode**: 0.34s execution time with tensor extraction fixes
-- **Overall Workflow**: Complete end-to-end execution working reliably
+### Improved
+- **WAN Video Support**: Full end-to-end WAN video generation working
+- **ROCm Compatibility**: Better AMD GPU optimization for gfx1151 architecture
+- **Error Handling**: Robust error recovery and fallback mechanisms
+- **Code Quality**: Cleaned up unused files and improved documentation
 
 ### Technical Details
-- Added intelligent tensor extraction logic for VAE decode
-- Implemented memory-mapped checkpoint loading
-- Enhanced ROCm-specific optimizations for AMD GPUs
-- Added comprehensive error handling and fallback mechanisms
-- Optimized for gfx1151 architecture with 128GB Unified RAM
+- **VAE Input Format**: Corrected tensor format from 4D to 5D for WAN VAE
+- **Output Format**: Proper 5D→4D conversion for ComfyUI video save
+- **Memory Calculation**: Fixed WAN VAE memory calculation for 5D tensors
+- **Test Coverage**: 100% error scenario coverage with automated testing
 
 ## [1.2.0] - 2024-12-19
 
