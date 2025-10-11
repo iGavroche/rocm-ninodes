@@ -83,15 +83,15 @@ class TestVAEChannelSupport:
                 
                 result = node.decode(mock_vae, samples, use_rocm_optimizations=True)
         
-        # Verify output
+        # Verify output - now in (B, H, W, C) format for ComfyUI compatibility
         assert isinstance(result, tuple)
         assert len(result) == 1
         output_tensor = result[0]
         assert isinstance(output_tensor, torch.Tensor)
         assert output_tensor.shape[0] == 1  # Batch size
-        assert output_tensor.shape[1] == 3  # RGB channels
-        assert output_tensor.shape[2] == 512  # Height (64 * 8)
-        assert output_tensor.shape[3] == 512  # Width (64 * 8)
+        assert output_tensor.shape[1] == 512  # Height (64 * 8)
+        assert output_tensor.shape[2] == 512  # Width (64 * 8)
+        assert output_tensor.shape[3] == 3  # RGB channels (now last dimension)
     
     def test_sdxl_16_channel_latent(self, node):
         """Test SDXL VAE with 16-channel latent"""
@@ -155,9 +155,9 @@ class TestVAEChannelSupport:
                     
                     result = node.decode(mock_vae, samples, use_rocm_optimizations=True)
             
-            # Verify output shape
+            # Verify output shape - now in (B, H, W, C) format for ComfyUI compatibility
             output_tensor = result[0]
-            assert output_tensor.shape == (B, 3, expected_h, expected_w), f"Failed for {B}x{C}x{H}x{W}"
+            assert output_tensor.shape == (B, expected_h, expected_w, 3), f"Failed for {B}x{C}x{H}x{W}"
     
     def test_different_resolutions(self, node):
         """Test different resolutions with both channel types"""
@@ -184,9 +184,9 @@ class TestVAEChannelSupport:
                         
                         result = node.decode(mock_vae, samples, use_rocm_optimizations=True)
                 
-                # Verify output shape
+                # Verify output shape - now in (B, H, W, C) format for ComfyUI compatibility
                 output_tensor = result[0]
-                assert output_tensor.shape == (1, 3, expected_h, expected_w), f"Failed for {C}ch {H}x{W}"
+                assert output_tensor.shape == (1, expected_h, expected_w, 3), f"Failed for {C}ch {H}x{W}"
     
     def test_fallback_behavior(self, node):
         """Test fallback behavior when VAE decode fails"""

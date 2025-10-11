@@ -612,11 +612,11 @@ class ROCMOptimizedVAEDecode:
         if precision_mode == "auto":
             if is_amd:
                 # For gfx1151, fp32 is often faster than bf16 due to ROCm limitations
-                optimal_dtype = precision_config['compute_dtype']
+                optimal_dtype = precision_config['dtype']
             else:
                 optimal_dtype = vae.vae_dtype
         else:
-            optimal_dtype = precision_config['compute_dtype']
+            optimal_dtype = precision_config['dtype']
         
         # Ensure VAE model and samples have compatible dtypes
         if hasattr(vae.first_stage_model, 'dtype'):
@@ -816,14 +816,14 @@ class ROCMOptimizedVAEDecode:
             pixel_samples = pixel_samples[0]
         
         # Reshape if needed (match standard VAE decode behavior)
-        if len(pixel_samples.shape) == 5:
+        if hasattr(pixel_samples, 'shape') and len(pixel_samples.shape) == 5:
             pixel_samples = pixel_samples.reshape(-1, pixel_samples.shape[-3], 
                                                 pixel_samples.shape[-2], pixel_samples.shape[-1])
         
         # CRITICAL FIX: Final validation of output format
         logging.info(f"Pre-validation tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
-        if len(pixel_samples.shape) != 4:
+        if hasattr(pixel_samples, 'shape') and len(pixel_samples.shape) != 4:
             logging.error(f"Invalid output shape: {pixel_samples.shape}, expected 4D tensor")
             # Create a valid fallback
             B, C, H, W = samples_tensor.shape
@@ -831,7 +831,7 @@ class ROCMOptimizedVAEDecode:
             pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
             logging.info(f"Created fallback tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
-        if pixel_samples.shape[1] != expected_output_channels:
+        if hasattr(pixel_samples, 'shape') and pixel_samples.shape[1] != expected_output_channels:
             logging.error(f"Invalid output channels: {pixel_samples.shape[1]}, expected {expected_output_channels}")
             # Create a valid fallback
             B, C, H, W = samples_tensor.shape
@@ -863,14 +863,14 @@ class ROCMOptimizedVAEDecode:
             logging.info(f"After permute: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
         # Final validation - ensure we have the right shape and dtype
-        if len(pixel_samples.shape) != 4:
+        if hasattr(pixel_samples, 'shape') and len(pixel_samples.shape) != 4:
             logging.error(f"CRITICAL: Final tensor has wrong shape: {pixel_samples.shape}")
             # Create emergency fallback
             B, C, H, W = samples_tensor.shape
             expected_h, expected_w = H * upscale_factor, W * upscale_factor
             pixel_samples = torch.zeros(B, expected_h, expected_w, expected_output_channels, dtype=torch.float32, device=samples_tensor.device)
         
-        if pixel_samples.shape[3] != 3:
+        if hasattr(pixel_samples, 'shape') and pixel_samples.shape[3] != 3:
             logging.error(f"CRITICAL: Final tensor has wrong channels: {pixel_samples.shape[3]}")
             # Create emergency fallback
             B, C, H, W = samples_tensor.shape
