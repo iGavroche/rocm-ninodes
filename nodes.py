@@ -606,7 +606,7 @@ class ROCMOptimizedVAEDecode:
                 return (result,)
         
         # Phase 2: Get optimal precision configuration
-        precision_config = self._get_optimal_precision_config(vae, samples["samples"].shape, precision_mode)
+        precision_config = self._get_optimal_precision_config(samples["samples"].shape, vae.vae_dtype)
         
         # Set optimal precision for AMD GPUs
         if precision_mode == "auto":
@@ -713,7 +713,7 @@ class ROCMOptimizedVAEDecode:
                 
                 # Phase 2: Optimize tensor layout
                 if tensor_layout_optimization:
-                    samples_processed = self._optimize_tensor_layout(samples_processed)
+                    samples_processed = self._optimize_tensor_layout(samples_processed, device)
                 
                 # Phase 2: Prefetch if enabled
                 if memory_prefetching:
