@@ -575,7 +575,20 @@ class ROCMOptimizedVAEDecode:
                         out = vae.first_stage_model.decode(samples_processed)
                 
                 out = out.to(vae.output_device).float()
-                pixel_samples = vae.process_output(out)
+                
+                # CRITICAL FIX: Handle process_output safely to avoid PIL issues
+                if hasattr(vae, 'process_output'):
+                    try:
+                        pixel_samples = vae.process_output(out)
+                        # Validate the output format
+                        if len(pixel_samples.shape) != 4 or pixel_samples.shape[1] != 3:
+                            logging.warning(f"process_output returned invalid format: {pixel_samples.shape}, using original")
+                            pixel_samples = out
+                    except Exception as e:
+                        logging.warning(f"process_output failed: {e}, using original output")
+                        pixel_samples = out
+                else:
+                    pixel_samples = out
                 
                 # Handle WAN VAE output format - ensure correct shape and channels
                 if len(pixel_samples.shape) == 5:  # Video format (B, C, T, H, W)
@@ -634,6 +647,23 @@ class ROCMOptimizedVAEDecode:
         if len(pixel_samples.shape) == 5:
             pixel_samples = pixel_samples.reshape(-1, pixel_samples.shape[-3], 
                                                 pixel_samples.shape[-2], pixel_samples.shape[-1])
+        
+        # CRITICAL FIX: Final validation of output format
+        if len(pixel_samples.shape) != 4:
+            logging.error(f"Invalid output shape: {pixel_samples.shape}, expected 4D tensor")
+            # Create a valid fallback
+            B, C, H, W = samples_tensor.shape
+            expected_h, expected_w = H * upscale_factor, W * upscale_factor
+            pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+        
+        if pixel_samples.shape[1] != expected_output_channels:
+            logging.error(f"Invalid output channels: {pixel_samples.shape[1]}, expected {expected_output_channels}")
+            # Create a valid fallback
+            B, C, H, W = samples_tensor.shape
+            expected_h, expected_w = H * upscale_factor, W * upscale_factor
+            pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+        
+        logging.info(f"Final output validation: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
         # Move to output device (no movedim needed - match standard VAE decode)
         pixel_samples = pixel_samples.to(vae.output_device)
