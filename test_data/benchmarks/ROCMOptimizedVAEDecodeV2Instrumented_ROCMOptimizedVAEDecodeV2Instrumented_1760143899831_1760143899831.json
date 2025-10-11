@@ -1,0 +1,10 @@
+{
+  "node_name": "ROCMOptimizedVAEDecodeV2Instrumented",
+  "node_id": "ROCMOptimizedVAEDecodeV2Instrumented_1760143899831",
+  "timestamp": 1760143899831,
+  "execution_time": 0.00018978118896484375,
+  "memory_used": 0.0,
+  "session_id": "20251010_205139",
+  "start_time": 1760143899.8315232,
+  "end_time": 1760143899.831713
+}
