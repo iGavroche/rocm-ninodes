@@ -579,15 +579,21 @@ class ROCMOptimizedVAEDecode:
                 # CRITICAL FIX: Handle process_output safely to avoid PIL issues
                 if hasattr(vae, 'process_output'):
                     try:
+                        logging.info(f"Calling process_output with input: {out.shape}, {out.dtype}")
                         pixel_samples = vae.process_output(out)
+                        logging.info(f"process_output returned: {pixel_samples.shape}, {pixel_samples.dtype}")
+                        
                         # Validate the output format
                         if len(pixel_samples.shape) != 4 or pixel_samples.shape[1] != 3:
                             logging.warning(f"process_output returned invalid format: {pixel_samples.shape}, using original")
                             pixel_samples = out
+                        else:
+                            logging.info(f"process_output validation passed: {pixel_samples.shape}")
                     except Exception as e:
                         logging.warning(f"process_output failed: {e}, using original output")
                         pixel_samples = out
                 else:
+                    logging.info("No process_output method, using original output")
                     pixel_samples = out
                 
                 # Handle WAN VAE output format - ensure correct shape and channels
@@ -649,12 +655,15 @@ class ROCMOptimizedVAEDecode:
                                                 pixel_samples.shape[-2], pixel_samples.shape[-1])
         
         # CRITICAL FIX: Final validation of output format
+        logging.info(f"Pre-validation tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+        
         if len(pixel_samples.shape) != 4:
             logging.error(f"Invalid output shape: {pixel_samples.shape}, expected 4D tensor")
             # Create a valid fallback
             B, C, H, W = samples_tensor.shape
             expected_h, expected_w = H * upscale_factor, W * upscale_factor
             pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+            logging.info(f"Created fallback tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
         if pixel_samples.shape[1] != expected_output_channels:
             logging.error(f"Invalid output channels: {pixel_samples.shape[1]}, expected {expected_output_channels}")
@@ -662,6 +671,7 @@ class ROCMOptimizedVAEDecode:
             B, C, H, W = samples_tensor.shape
             expected_h, expected_w = H * upscale_factor, W * upscale_factor
             pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+            logging.info(f"Created fallback tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
         logging.info(f"Final output validation: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
