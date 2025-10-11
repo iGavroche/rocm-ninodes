@@ -7,9 +7,16 @@ Controls data capture and debugging features
 import os
 import time
 import pickle
-import torch
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+# Try to import torch, but don't fail if it's not available
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
 
 # Debug mode from environment variable
 DEBUG_MODE = os.getenv('ROCM_NINODES_DEBUG', '0') == '1'
@@ -57,14 +64,14 @@ def save_debug_data(data: Any, filename: str, subdir: str = "", metadata: Option
         }
         
         # Add tensor information if data contains tensors
-        if isinstance(data, torch.Tensor):
+        if TORCH_AVAILABLE and isinstance(data, torch.Tensor):
             save_data['tensor_info'] = {
                 'shape': data.shape,
                 'dtype': str(data.dtype),
                 'device': str(data.device),
                 'requires_grad': data.requires_grad
             }
-        elif isinstance(data, dict) and 'samples' in data:
+        elif TORCH_AVAILABLE and isinstance(data, dict) and 'samples' in data:
             # ComfyUI LATENT format
             samples = data['samples']
             if isinstance(samples, torch.Tensor):
@@ -179,8 +186,8 @@ def capture_memory_usage(func_name: str, metadata: Optional[Dict] = None) -> Non
         memory_data = {
             'function': func_name,
             'timestamp': time.time(),
-            'gpu_memory_allocated': torch.cuda.memory_allocated() if torch.cuda.is_available() else 0,
-            'gpu_memory_reserved': torch.cuda.memory_reserved() if torch.cuda.is_available() else 0,
+            'gpu_memory_allocated': torch.cuda.memory_allocated() if TORCH_AVAILABLE and torch.cuda.is_available() else 0,
+            'gpu_memory_reserved': torch.cuda.memory_reserved() if TORCH_AVAILABLE and torch.cuda.is_available() else 0,
             'metadata': metadata or {}
         }
         
