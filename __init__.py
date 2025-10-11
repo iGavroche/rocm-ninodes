@@ -10,9 +10,12 @@ __description__ = "RocM-optimized ComfyUI nodes for AMD GPU performance"
 
 # Import nodes only if comfy modules are available
 try:
-    from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
-except ImportError:
+    from .rocm_nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+except ImportError as e:
     # Fallback for testing environments
+    print(f"[ROCM Ninodes] Import error: {e}")
+    import traceback
+    traceback.print_exc()
     NODE_CLASS_MAPPINGS = {}
     NODE_DISPLAY_NAME_MAPPINGS = {}
 

@@ -193,3 +193,28 @@
 - **Monitoring**: Real-time performance monitoring
 - **Logging**: Structured logging for analysis
 - **Visualization**: Performance dashboards and reports
+
+## ComfyUI Process Management
+
+### Process Control Scripts
+- **Kill Script**: `./kill_comfyui.sh` - Properly terminates ComfyUI processes
+- **Start Script**: `/home/nino/ComfyUI/start.sh` - Existing script with ROCm optimizations
+- **Restart Script**: `./restart_comfyui.sh` - Combines kill and start for clean restarts
+
+### Process Management Rules
+- **NEVER use `pkill -f "python main.py"`** - This method does not work reliably
+- **ALWAYS use `ps aux | grep python | grep -v grep`** to find actual process IDs
+- **THEN use `kill -9 <PID>`** to forcefully terminate processes
+- **VERIFY termination** with another `ps aux` check before restarting
+
+### Debug Mode Control
+- **Production Mode**: Use existing `/home/nino/ComfyUI/start.sh` (no debug overhead)
+- **Debug Mode**: Set `ROCM_NINODES_DEBUG=1` environment variable before starting
+- **Code Changes**: Always restart ComfyUI after code changes to ensure they're loaded
+
+### Workflow Integration
+1. **Before Code Changes**: Run `./kill_comfyui.sh` to stop ComfyUI
+2. **Make Changes**: Edit code files
+3. **After Code Changes**: Use `/home/nino/ComfyUI/start.sh` to restart
+4. **For Debug**: Set `ROCM_NINODES_DEBUG=1` and restart
+5. **Verify**: Check that changes are loaded and working

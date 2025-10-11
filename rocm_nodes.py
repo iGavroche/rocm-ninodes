@@ -113,12 +113,10 @@ class ROCMOptimizedVAEDecode:
         # Check if this is video data (5D tensor: B, C, T, H, W)
         is_video = len(samples["samples"].shape) == 5
         if is_video:
-            print(f"Video decode detected: {samples['samples'].shape}")
             B, C, T, H, W = samples["samples"].shape
             
             # Memory-safe video processing
             if memory_optimization_enabled and T > video_chunk_size:
-                print(f"Processing video in chunks of {video_chunk_size} frames")
                 # Process video in chunks to avoid memory exhaustion
                 chunk_results = []
                 for i in range(0, T, video_chunk_size):
@@ -145,14 +143,12 @@ class ROCMOptimizedVAEDecode:
                 
                 # Concatenate results
                 result = torch.cat(chunk_results, dim=1)
-                print(f"Video decode completed: {result.shape}")
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
                 if len(result.shape) == 5:
                     B, T, H, W, C = result.shape
                     result = result.reshape(B * T, H, W, C)
-                    print(f"Converted to 4D format: {result.shape}")
                 
                 return (result,)
             else:
@@ -173,9 +169,6 @@ class ROCMOptimizedVAEDecode:
                 if len(result.shape) == 5:
                     B, T, H, W, C = result.shape
                     result = result.reshape(B * T, H, W, C)
-                    print(f"Converted to 4D format: {result.shape}")
-                
-                print(f"Video decode completed: {result.shape}")
                 
                 # Capture output data and timing for debugging
                 if DEBUG_MODE:
