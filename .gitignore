@@ -95,7 +95,9 @@ node.zip
 
 # Test files
 *_test.json
-test_*.py
+# Exclude specific test files but keep test framework files
+test_data/test_*.py
+test_data/*_test.py
 
 # Benchmark files
 benchmark_*.py
