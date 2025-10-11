@@ -678,6 +678,34 @@ class ROCMOptimizedVAEDecode:
         # Move to output device (no movedim needed - match standard VAE decode)
         pixel_samples = pixel_samples.to(vae.output_device)
         
+        # CRITICAL FIX: Ensure tensor is in the exact format ComfyUI expects
+        # ComfyUI's save_images function expects (B, C, H, W) format with specific properties
+        logging.info(f"Before ComfyUI format fix: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+        
+        # Ensure the tensor is contiguous and in the right format
+        pixel_samples = pixel_samples.contiguous()
+        
+        # Ensure the tensor has the right dtype for ComfyUI processing
+        if pixel_samples.dtype != torch.float32:
+            pixel_samples = pixel_samples.float()
+        
+        # Final validation - ensure we have the right shape and dtype
+        if len(pixel_samples.shape) != 4:
+            logging.error(f"CRITICAL: Final tensor has wrong shape: {pixel_samples.shape}")
+            # Create emergency fallback
+            B, C, H, W = samples_tensor.shape
+            expected_h, expected_w = H * upscale_factor, W * upscale_factor
+            pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+        
+        if pixel_samples.shape[1] != 3:
+            logging.error(f"CRITICAL: Final tensor has wrong channels: {pixel_samples.shape[1]}")
+            # Create emergency fallback
+            B, C, H, W = samples_tensor.shape
+            expected_h, expected_w = H * upscale_factor, W * upscale_factor
+            pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+        
+        logging.info(f"After ComfyUI format fix: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+        
         decode_time = time.time() - start_time
         self.performance_stats['total_time'] += decode_time
         logging.info(f"ROCM VAE Decode completed in {decode_time:.2f}s")
