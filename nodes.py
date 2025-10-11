@@ -29,12 +29,15 @@ except ImportError as e:
     List = list
     COMFY_AVAILABLE = False
 
-# Try to import instrumentation
+# Import instrumentation for data collection
 try:
-    from instrumentation import instrument_node
+    from instrumentation import instrument_node, instrumentation
+    INSTRUMENTATION_AVAILABLE = True
 except ImportError:
     def instrument_node(cls):
         return cls
+    instrumentation = None
+    INSTRUMENTATION_AVAILABLE = False
 
 class ROCMOptimizedVAEDecode:
     """
@@ -275,10 +278,15 @@ class ROCMOptimizedVAEDecode:
     def _prefetch_memory(self, tensors: List[Any]):
         """Phase 2: Prefetch tensors to GPU memory for improved performance"""
         for tensor in tensors:
-            if tensor.device.type == 'cuda':
-                # Prefetch to GPU memory
-                torch.cuda.prefetch(tensor)
-                self.performance_stats['prefetch_hits'] += 1
+            if hasattr(tensor, 'device') and tensor.device.type == 'cuda':
+                # Prefetch to GPU memory (only if available)
+                try:
+                    if hasattr(torch.cuda, 'prefetch'):
+                        torch.cuda.prefetch(tensor)
+                        self.performance_stats['prefetch_hits'] += 1
+                except AttributeError:
+                    # torch.cuda.prefetch not available, skip prefetching
+                    pass
     
     def _optimize_temporal_processing(self, samples: Any, temporal_consistency: bool) -> Any:
         """Phase 3: Optimize temporal processing for video workloads"""
@@ -345,6 +353,27 @@ class ROCMOptimizedVAEDecode:
             raise RuntimeError("ComfyUI modules not available - cannot decode")
         
         start_time = time.time()
+        
+        # Capture inputs for instrumentation
+        if INSTRUMENTATION_AVAILABLE and instrumentation:
+            inputs = {
+                'vae': str(type(vae)),
+                'samples': str(type(samples)),
+                'tile_size': tile_size,
+                'overlap': overlap,
+                'use_rocm_optimizations': use_rocm_optimizations,
+                'precision_mode': precision_mode,
+                'batch_optimization': batch_optimization,
+                'video_chunk_size': video_chunk_size,
+                'memory_optimization_enabled': memory_optimization_enabled,
+                'adaptive_tiling': adaptive_tiling,
+                'memory_prefetching': memory_prefetching,
+                'tensor_layout_optimization': tensor_layout_optimization,
+                'advanced_caching': advanced_caching,
+                'temporal_consistency': temporal_consistency,
+                'adaptive_optimization': adaptive_optimization
+            }
+            instrumentation.capture_inputs('ROCMOptimizedVAEDecode', inputs)
         
         # Store optimization settings
         self.memory_optimization_enabled = memory_optimization_enabled
@@ -479,7 +508,13 @@ class ROCMOptimizedVAEDecode:
         
         # Process in batches
         pixel_samples = None
-        samples_tensor = samples["samples"]
+        # Ensure samples is a dict with "samples" key
+        if isinstance(samples, dict) and "samples" in samples:
+            samples_tensor = samples["samples"]
+        else:
+            # If samples is already a tensor, wrap it in dict format
+            samples_tensor = samples
+            samples = {"samples": samples_tensor}
         
         try:
             # Try direct decode first for smaller images
@@ -553,6 +588,12 @@ class ROCMOptimizedVAEDecode:
         self.performance_stats['total_time'] += decode_time
         logging.info(f"ROCM VAE Decode completed in {decode_time:.2f}s")
         
+        # Capture outputs and performance for instrumentation
+        if INSTRUMENTATION_AVAILABLE and instrumentation:
+            outputs = (pixel_samples,)
+            instrumentation.capture_outputs('ROCMOptimizedVAEDecode', outputs)
+            instrumentation.capture_performance('ROCMOptimizedVAEDecode', start_time, time.time())
+        
         return (pixel_samples,)
     
     def _decode_tiled_optimized(self, vae, samples, tile_size, overlap, dtype, batch_number):
@@ -582,8 +623,14 @@ class ROCMOptimizedVAEDecode:
             
             return vae.first_stage_model.decode(samples_tile)
         
+        # Ensure samples is in the correct format for tiled_scale
+        if isinstance(samples, dict):
+            samples_tensor = samples["samples"]
+        else:
+            samples_tensor = samples
+        
         result = comfy.utils.tiled_scale(
-            samples, 
+            samples_tensor, 
             decode_fn, 
             tile_x=tile_x, 
             tile_y=tile_y, 
