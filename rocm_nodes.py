@@ -155,21 +155,65 @@ class ROCMOptimizedVAEDecode:
                     if isinstance(chunk_decoded, tuple):
                         chunk_decoded = chunk_decoded[0]
                     
-                    # CRITICAL FIX: Ensure consistent tensor format for concatenation
-                    # WAN VAE might return different formats, normalize to [B, T, H, W, C]
-                    if len(chunk_decoded.shape) == 5:
-                        # Already in correct format: [B, T, H, W, C]
-                        pass
-                    elif len(chunk_decoded.shape) == 4:
-                        # Convert from [B*T, H, W, C] to [B, T, H, W, C]
-                        B_chunk, H, W, C = chunk_decoded.shape
-                        chunk_decoded = chunk_decoded.reshape(B_chunk // actual_chunk_size, actual_chunk_size, H, W, C)
-                    else:
-                        logging.warning(f"Unexpected chunk_decoded shape: {chunk_decoded.shape}")
+                    # CRITICAL FIX: Handle actual VAE output format correctly
+                    # WAN VAE might return different frame counts than input
+                    # We need to process each chunk independently and handle variable frame counts
                     
-                    # CRITICAL FIX: Preserve original tensor values - don't convert dtype
-                    # The .float() conversion was corrupting VAE output values causing darker frames
-                    chunk_decoded = chunk_decoded.contiguous()
+                    # Log the actual VAE output format
+                    logging.info(f"VAE output for chunk {chunk_idx}: input_frames={actual_chunk_size}, "
+                               f"output_shape={chunk_decoded.shape}")
+                    
+                    # Handle different VAE output formats
+                    if len(chunk_decoded.shape) == 5:
+                        # VAE returned [B, T, H, W, C] format
+                        B_out, T_out, H, W, C = chunk_decoded.shape
+                        logging.info(f"Chunk {chunk_idx}: VAE returned {T_out} frames (expected {actual_chunk_size})")
+                        
+                        # If VAE returned more frames than expected, we need to handle this
+                        if T_out != actual_chunk_size:
+                            logging.warning(f"Chunk {chunk_idx}: Frame count mismatch! "
+                                          f"Input: {actual_chunk_size}, VAE output: {T_out}")
+                            
+                            # For now, take the first N frames to match input
+                            if T_out > actual_chunk_size:
+                                chunk_decoded = chunk_decoded[:, :actual_chunk_size, :, :, :]
+                                logging.info(f"Chunk {chunk_idx}: Truncated to {actual_chunk_size} frames")
+                            else:
+                                # If VAE returned fewer frames, pad with the last frame
+                                last_frame = chunk_decoded[:, -1:, :, :, :]
+                                padding_frames = actual_chunk_size - T_out
+                                padding = last_frame.repeat(1, padding_frames, 1, 1, 1)
+                                chunk_decoded = torch.cat([chunk_decoded, padding], dim=1)
+                                logging.info(f"Chunk {chunk_idx}: Padded to {actual_chunk_size} frames")
+                        
+                        # Ensure we have the correct shape
+                        chunk_decoded = chunk_decoded.contiguous()
+                        
+                    elif len(chunk_decoded.shape) == 4:
+                        # VAE returned [B*T, H, W, C] format - reshape to [B, T, H, W, C]
+                        B_T, H, W, C = chunk_decoded.shape
+                        T_out = B_T // 1  # Assuming batch size of 1
+                        chunk_decoded = chunk_decoded.reshape(1, T_out, H, W, C)
+                        logging.info(f"Chunk {chunk_idx}: Reshaped from 4D to 5D: {chunk_decoded.shape}")
+                        
+                        # Handle frame count mismatch
+                        if T_out != actual_chunk_size:
+                            logging.warning(f"Chunk {chunk_idx}: Frame count mismatch after reshape! "
+                                          f"Input: {actual_chunk_size}, VAE output: {T_out}")
+                            # Apply same truncation/padding logic as above
+                            if T_out > actual_chunk_size:
+                                chunk_decoded = chunk_decoded[:, :actual_chunk_size, :, :, :]
+                            else:
+                                last_frame = chunk_decoded[:, -1:, :, :, :]
+                                padding_frames = actual_chunk_size - T_out
+                                padding = last_frame.repeat(1, padding_frames, 1, 1, 1)
+                                chunk_decoded = torch.cat([chunk_decoded, padding], dim=1)
+                        
+                        chunk_decoded = chunk_decoded.contiguous()
+                    
+                    else:
+                        logging.error(f"Chunk {chunk_idx}: Unexpected VAE output shape: {chunk_decoded.shape}")
+                        continue
                     
                     # DEBUG: Log chunk information to identify batch issues and value ranges
                     logging.info(f"Chunk {chunk_idx}: shape={chunk_decoded.shape}, dtype={chunk_decoded.dtype}, "
@@ -190,17 +234,34 @@ class ROCMOptimizedVAEDecode:
                     torch.cuda.empty_cache()
                 
                 # CRITICAL FIX: Concatenate along time dimension (dim=1) with proper validation
+                # Now that all chunks have consistent frame counts, concatenation should work
                 try:
+                    # Validate all chunks have the same shape except time dimension
+                    chunk_shapes = [chunk.shape for chunk in chunk_results]
+                    logging.info(f"Concatenating chunks with shapes: {chunk_shapes}")
+                    
+                    # Check that all chunks have the same dimensions except time
+                    base_shape = chunk_results[0].shape
+                    for i, chunk in enumerate(chunk_results[1:], 1):
+                        if chunk.shape[0] != base_shape[0] or chunk.shape[2:] != base_shape[2:]:
+                            logging.error(f"Chunk {i} shape mismatch: {chunk.shape} vs {base_shape}")
+                            raise RuntimeError(f"Chunk shape mismatch: {chunk.shape} vs {base_shape}")
+                    
                     result = torch.cat(chunk_results, dim=1)
+                    logging.info(f"Successfully concatenated chunks: {result.shape}")
+                    
                 except RuntimeError as e:
                     logging.error(f"Concatenation failed: {e}")
                     logging.error(f"Chunk shapes: {[chunk.shape for chunk in chunk_results]}")
                     # Fallback: process each chunk individually and flatten
+                    logging.warning("Falling back to individual chunk processing")
                     individual_frames = []
-                    for chunk in chunk_results:
+                    for i, chunk in enumerate(chunk_results):
                         B, T, H, W, C = chunk.shape
                         individual_frames.append(chunk.reshape(B * T, H, W, C))
+                        logging.info(f"Fallback chunk {i}: {chunk.shape} -> {chunk.reshape(B * T, H, W, C).shape}")
                     result = torch.cat(individual_frames, dim=0)
+                    logging.info(f"Fallback result shape: {result.shape}")
                     return (result,)
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
