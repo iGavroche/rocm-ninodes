@@ -627,9 +627,16 @@ class ROCMOptimizedVAEDecode:
         
         # ROCm-specific optimizations
         if use_rocm_optimizations and is_amd:
-            # Enable ROCm optimizations
+            # Phase 3: More aggressive ROCm optimizations for gfx1151
             torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
             torch.backends.cuda.matmul.allow_fp16_accumulation = True
+            
+            # Phase 3: Enable more aggressive optimizations
+            torch.backends.cudnn.benchmark = True  # Enable cuDNN benchmark for consistent input sizes
+            torch.backends.cudnn.deterministic = False  # Allow non-deterministic for speed
+            
+            # Phase 3: Enable memory optimizations
+            torch.cuda.empty_cache()  # Clear cache before processing
             
             # Optimize tile size for gfx1151
             if tile_size > 1024:
@@ -1140,6 +1147,17 @@ class ROCMOptimizedKSampler:
         
         # ROCm-specific optimizations
         if use_rocm_optimizations and is_amd:
+            # Phase 3: More aggressive ROCm optimizations for gfx1151
+            torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
+            torch.backends.cuda.matmul.allow_fp16_accumulation = True
+            
+            # Phase 3: Enable more aggressive optimizations
+            torch.backends.cudnn.benchmark = True  # Enable cuDNN benchmark for consistent input sizes
+            torch.backends.cudnn.deterministic = False  # Allow non-deterministic for speed
+            
+            # Phase 3: Enable memory optimizations
+            torch.cuda.empty_cache()  # Clear cache before processing
+            
             # Set optimal precision for gfx1151
             if precision_mode == "auto":
                 optimal_dtype = torch.float32  # fp32 is often faster on ROCm 6.4
@@ -1150,10 +1168,6 @@ class ROCMOptimizedKSampler:
                     "bf16": torch.bfloat16
                 }
                 optimal_dtype = dtype_map[precision_mode]
-            
-            # Enable ROCm optimizations
-            torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
-            torch.backends.cuda.matmul.allow_fp16_accumulation = True
             
             # Memory optimization
             if memory_optimization:
@@ -1497,13 +1511,22 @@ class ROCMOptimizedCheckpointLoader:
             print(f"Loading checkpoint: {ckpt_name}")
             print(f"Checkpoint path: {ckpt_path}")
             
-            # Check if ROCm is available
+            # Check if ROCm is available and enable aggressive optimizations
             try:
                 if torch.cuda.is_available():
                     device_name = torch.cuda.get_device_name(0)
                     print(f"GPU: {device_name}")
                     if "AMD" in device_name or "Radeon" in device_name:
-                        print("AMD GPU detected - using ROCm optimizations")
+                        print("AMD GPU detected - using aggressive ROCm optimizations")
+                        
+                        # Phase 3: Enable aggressive optimizations for gfx1151
+                        torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
+                        torch.backends.cuda.matmul.allow_fp16_accumulation = True
+                        torch.backends.cudnn.benchmark = True  # Enable cuDNN benchmark
+                        torch.backends.cudnn.deterministic = False  # Allow non-deterministic for speed
+                        torch.cuda.empty_cache()  # Clear cache before loading
+                        
+                        print("Phase 3 aggressive optimizations enabled")
                     else:
                         print("Non-AMD GPU detected - using compatibility mode")
                 else:
