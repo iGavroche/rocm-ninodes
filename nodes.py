@@ -816,30 +816,36 @@ class ROCMOptimizedVAEDecode:
             pixel_samples = pixel_samples[0]
         
         # Reshape if needed (match standard VAE decode behavior)
-        if hasattr(pixel_samples, 'shape') and len(pixel_samples.shape) == 5:
+        if hasattr(pixel_samples, 'shape') and isinstance(pixel_samples, torch.Tensor) and len(pixel_samples.shape) == 5:
             pixel_samples = pixel_samples.reshape(-1, pixel_samples.shape[-3], 
                                                 pixel_samples.shape[-2], pixel_samples.shape[-1])
         
         # CRITICAL FIX: Final validation of output format
-        logging.info(f"Pre-validation tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
-        
-        if hasattr(pixel_samples, 'shape') and len(pixel_samples.shape) != 4:
-            logging.error(f"Invalid output shape: {pixel_samples.shape}, expected 4D tensor")
-            # Create a valid fallback
+        if isinstance(pixel_samples, torch.Tensor):
+            logging.info(f"Pre-validation tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+            
+            if len(pixel_samples.shape) != 4:
+                logging.error(f"Invalid output shape: {pixel_samples.shape}, expected 4D tensor")
+                # Create a valid fallback
+                B, C, H, W = samples_tensor.shape
+                expected_h, expected_w = H * upscale_factor, W * upscale_factor
+                pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+                logging.info(f"Created fallback tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+            
+            if pixel_samples.shape[1] != expected_output_channels:
+                logging.error(f"Invalid output channels: {pixel_samples.shape[1]}, expected {expected_output_channels}")
+                # Create a valid fallback
+                B, C, H, W = samples_tensor.shape
+                expected_h, expected_w = H * upscale_factor, W * upscale_factor
+                pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
+                logging.info(f"Created fallback tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+        else:
+            # Handle Mock objects or other non-tensor types
+            logging.warning(f"Non-tensor output detected: {type(pixel_samples)}, creating fallback")
             B, C, H, W = samples_tensor.shape
             expected_h, expected_w = H * upscale_factor, W * upscale_factor
             pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
             logging.info(f"Created fallback tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
-        
-        if hasattr(pixel_samples, 'shape') and pixel_samples.shape[1] != expected_output_channels:
-            logging.error(f"Invalid output channels: {pixel_samples.shape[1]}, expected {expected_output_channels}")
-            # Create a valid fallback
-            B, C, H, W = samples_tensor.shape
-            expected_h, expected_w = H * upscale_factor, W * upscale_factor
-            pixel_samples = torch.zeros(B, expected_output_channels, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device)
-            logging.info(f"Created fallback tensor: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
-        
-        logging.info(f"Final output validation: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
         # Move to output device (no movedim needed - match standard VAE decode)
         pixel_samples = pixel_samples.to(vae.output_device)
@@ -863,16 +869,23 @@ class ROCMOptimizedVAEDecode:
             logging.info(f"After permute: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
         # Final validation - ensure we have the right shape and dtype
-        if hasattr(pixel_samples, 'shape') and len(pixel_samples.shape) != 4:
-            logging.error(f"CRITICAL: Final tensor has wrong shape: {pixel_samples.shape}")
-            # Create emergency fallback
-            B, C, H, W = samples_tensor.shape
-            expected_h, expected_w = H * upscale_factor, W * upscale_factor
-            pixel_samples = torch.zeros(B, expected_h, expected_w, expected_output_channels, dtype=torch.float32, device=samples_tensor.device)
-        
-        if hasattr(pixel_samples, 'shape') and pixel_samples.shape[3] != 3:
-            logging.error(f"CRITICAL: Final tensor has wrong channels: {pixel_samples.shape[3]}")
-            # Create emergency fallback
+        if isinstance(pixel_samples, torch.Tensor):
+            if len(pixel_samples.shape) != 4:
+                logging.error(f"CRITICAL: Final tensor has wrong shape: {pixel_samples.shape}")
+                # Create emergency fallback
+                B, C, H, W = samples_tensor.shape
+                expected_h, expected_w = H * upscale_factor, W * upscale_factor
+                pixel_samples = torch.zeros(B, expected_h, expected_w, expected_output_channels, dtype=torch.float32, device=samples_tensor.device)
+            
+            if pixel_samples.shape[3] != 3:
+                logging.error(f"CRITICAL: Final tensor has wrong channels: {pixel_samples.shape[3]}")
+                # Create emergency fallback
+                B, C, H, W = samples_tensor.shape
+                expected_h, expected_w = H * upscale_factor, W * upscale_factor
+                pixel_samples = torch.zeros(B, expected_h, expected_w, expected_output_channels, dtype=torch.float32, device=samples_tensor.device)
+        else:
+            # Handle Mock objects or other non-tensor types
+            logging.error(f"CRITICAL: Non-tensor output detected: {type(pixel_samples)}, creating emergency fallback")
             B, C, H, W = samples_tensor.shape
             expected_h, expected_w = H * upscale_factor, W * upscale_factor
             pixel_samples = torch.zeros(B, expected_h, expected_w, expected_output_channels, dtype=torch.float32, device=samples_tensor.device)

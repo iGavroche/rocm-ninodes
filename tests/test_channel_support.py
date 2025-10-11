@@ -208,12 +208,12 @@ class TestVAEChannelSupport:
                 
                 result = node.decode(mock_vae, samples, use_rocm_optimizations=True)
         
-        # Should still return a valid output (fallback)
+        # Should still return a valid output (fallback) - now in (B, H, W, C) format for ComfyUI compatibility
         assert isinstance(result, tuple)
         assert len(result) == 1
         output_tensor = result[0]
         assert isinstance(output_tensor, torch.Tensor)
-        assert output_tensor.shape == (1, 3, 256, 256)  # 32 * 8 = 256
+        assert output_tensor.shape == (1, 256, 256, 3)  # 32 * 8 = 256, now in (B, H, W, C) format
     
     def test_sdxl_fallback_behavior(self, node):
         """Test fallback behavior for SDXL when VAE decode fails"""
@@ -235,12 +235,12 @@ class TestVAEChannelSupport:
                 
                 result = node.decode(mock_vae, samples, use_rocm_optimizations=True)
         
-        # Should still return a valid output (fallback)
+        # Should still return a valid output (fallback) - now in (B, H, W, C) format for ComfyUI compatibility
         assert isinstance(result, tuple)
         assert len(result) == 1
         output_tensor = result[0]
         assert isinstance(output_tensor, torch.Tensor)
-        assert output_tensor.shape == (1, 3, 512, 512)  # 64 * 8 = 512
+        assert output_tensor.shape == (1, 512, 512, 3)  # 64 * 8 = 512, now in (B, H, W, C) format
     
     def test_instrumentation_capture(self, node):
         """Test that instrumentation captures different channel types"""
