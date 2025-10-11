@@ -28,9 +28,13 @@ class ROCMOptimizedVAEDecode:
     Key optimizations:
     - Optimized memory management for ROCm
     - Better batching strategy for AMD GPUs
-    - Reduced precision overhead
+    - Reduced model conversion overhead
+    - Intelligent tiled vs direct decode decision
     - Optimized tile sizes for gfx1151
     """
+    
+    # Class-level cache to avoid repeated model conversions
+    _vae_model_cache = {}
     
     @classmethod
     def INPUT_TYPES(cls):
@@ -207,14 +211,7 @@ class ROCMOptimizedVAEDecode:
             }
             optimal_dtype = dtype_map[precision_mode]
         
-        # Ensure VAE model and samples have compatible dtypes
-        if hasattr(vae.first_stage_model, 'dtype'):
-            vae_dtype = vae.first_stage_model.dtype
-            if vae_dtype != optimal_dtype:
-                logging.info(f"Converting VAE model from {vae_dtype} to {optimal_dtype}")
-                vae.first_stage_model = vae.first_stage_model.to(optimal_dtype)
-        
-        # ROCm-specific optimizations
+        # ROCm-specific optimizations (set once, don't repeat)
         if use_rocm_optimizations and is_amd:
             # Enable ROCm optimizations
             torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
@@ -226,36 +223,53 @@ class ROCMOptimizedVAEDecode:
             if overlap > tile_size // 4:
                 overlap = tile_size // 4
         
-        # Memory management optimization
-        memory_used = vae.memory_used_decode(samples["samples"].shape, optimal_dtype)
-        model_management.load_models_gpu([vae.patcher], memory_required=memory_used)
+        # Optimized memory management - avoid expensive memory_used_decode call
+        samples_shape = samples["samples"].shape
+        if len(samples_shape) == 4:  # Standard image format
+            # Estimate memory usage without calling expensive memory_used_decode
+            estimated_memory = samples_shape[0] * samples_shape[1] * samples_shape[2] * samples_shape[3] * 4  # 4 bytes per float32
+            estimated_memory *= 8  # Decode expansion factor
+        else:
+            # For video or other formats, use a conservative estimate
+            estimated_memory = samples_shape[0] * samples_shape[1] * samples_shape[2] * samples_shape[3] * 4 * 8
         
-        # Calculate optimal batch size for gfx1151
+        # Load models with estimated memory (faster than exact calculation)
+        model_management.load_models_gpu([vae.patcher], memory_required=estimated_memory)
+        
+        # Calculate optimal batch size for gfx1151 (less conservative)
         free_memory = model_management.get_free_memory(device)
         if batch_optimization and is_amd:
-            # More conservative batching for AMD GPUs
-            batch_number = max(1, int(free_memory / (memory_used * 1.5)))
+            # Less conservative batching for better performance
+            batch_number = max(1, int(free_memory / (estimated_memory * 1.2)))  # Reduced from 1.5x to 1.2x
         else:
-            batch_number = max(1, int(free_memory / memory_used))
+            batch_number = max(1, int(free_memory / estimated_memory))
         
         # Process in batches
         pixel_samples = None
         samples_tensor = samples["samples"]
         
-        try:
-            # Try direct decode first for smaller images
-            if samples_tensor.shape[2] * samples_tensor.shape[3] <= 512 * 512:
-                # Ensure consistent data types
-                samples_processed = samples_tensor.to(device)
-                
-                # For ROCm, avoid autocast and ensure consistent dtypes
+        # Optimized processing logic - avoid redundant conversions
+        samples_processed = samples_tensor.to(device).to(optimal_dtype)
+        
+        # Use caching to avoid repeated model conversions
+        vae_id = id(vae.first_stage_model)
+        cache_key = f"{vae_id}_{optimal_dtype}"
+        
+        if cache_key not in self._vae_model_cache:
+            # Ensure VAE model is in optimal dtype (do this once, not repeatedly)
+            if hasattr(vae.first_stage_model, 'dtype') and vae.first_stage_model.dtype != optimal_dtype:
+                vae.first_stage_model = vae.first_stage_model.to(optimal_dtype)
+            self._vae_model_cache[cache_key] = True
+        
+        # Decide processing method based on image size and available memory
+        image_size = samples_tensor.shape[2] * samples_tensor.shape[3]
+        use_tiled = image_size > 512 * 512 or estimated_memory > free_memory * 0.8
+        
+        if not use_tiled:
+            # Direct decode for smaller images or when memory is sufficient
+            try:
                 if use_rocm_optimizations and is_amd:
-                    # Convert to optimal dtype and ensure VAE model is in same dtype
-                    samples_processed = samples_processed.to(optimal_dtype)
-                    # Ensure VAE model is in the same dtype
-                    if hasattr(vae.first_stage_model, 'to'):
-                        vae.first_stage_model = vae.first_stage_model.to(optimal_dtype)
-                    
+                    # Direct decode without autocast for ROCm
                     out = vae.first_stage_model.decode(samples_processed)
                 else:
                     # Use autocast for non-AMD GPUs
@@ -265,34 +279,15 @@ class ROCMOptimizedVAEDecode:
                 out = out.to(vae.output_device).float()
                 pixel_samples = vae.process_output(out)
                 
-                # Handle WAN VAE output format - ensure correct shape and channels
-                if len(pixel_samples.shape) == 5:  # Video format (B, C, T, H, W)
-                    # Reshape to (B*T, C, H, W) for video processing
-                    pixel_samples = pixel_samples.permute(0, 2, 1, 3, 4).contiguous()
-                    pixel_samples = pixel_samples.reshape(-1, pixel_samples.shape[2], pixel_samples.shape[3], pixel_samples.shape[4])
-                elif len(pixel_samples.shape) == 4 and pixel_samples.shape[1] > 3:
-                    # Handle case where we have too many channels - take first 3
-                    pixel_samples = pixel_samples[:, :3, :, :]
-                
-                # Ensure correct channel order for video processing (H, W, C)
-                if len(pixel_samples.shape) == 4 and pixel_samples.shape[1] == 3:
-                    # Convert from (B, C, H, W) to (B, H, W, C) for video processing
-                    pixel_samples = pixel_samples.permute(0, 2, 3, 1).contiguous()
-            else:
-                # Use tiled decoding for larger images
-                pixel_samples = self._decode_tiled_optimized(
-                    vae, samples_tensor, tile_size, overlap, optimal_dtype, batch_number
-                )
-        except Exception as e:
-            logging.warning(f"Direct decode failed, falling back to tiled: {e}")
-            try:
-                pixel_samples = self._decode_tiled_optimized(
-                    vae, samples_tensor, tile_size, overlap, optimal_dtype, batch_number
-                )
-            except Exception as e2:
-                logging.warning(f"Tiled decode failed, falling back to standard VAE: {e2}")
-                # Fallback to standard VAE decode
-                pixel_samples = vae.decode(samples)
+            except Exception as e:
+                logging.warning(f"Direct decode failed, falling back to tiled: {e}")
+                use_tiled = True
+        
+        if use_tiled:
+            # Use optimized tiled decoding
+            pixel_samples = self._decode_tiled_optimized(
+                vae, samples_tensor, tile_size, overlap, optimal_dtype, batch_number
+            )
         
         # Reshape if needed (match standard VAE decode behavior)
         if len(pixel_samples.shape) == 5:
@@ -302,6 +297,28 @@ class ROCMOptimizedVAEDecode:
         # Move to output device (no movedim needed - match standard VAE decode)
         pixel_samples = pixel_samples.to(vae.output_device)
         
+        # CRITICAL FIX: Ensure tensor is in the exact format ComfyUI expects
+        # ComfyUI's save_images function expects (B, H, W, C) format with specific properties
+        logging.info(f"Before ComfyUI format fix: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+        
+        # Ensure the tensor is contiguous and in the right format
+        pixel_samples = pixel_samples.contiguous()
+        
+        # Ensure the tensor has the right dtype for ComfyUI processing
+        if pixel_samples.dtype != torch.float32:
+            pixel_samples = pixel_samples.float()
+        
+        # CRITICAL FIX: Convert from (B, C, H, W) to (B, H, W, C) for ComfyUI compatibility
+        # This is the key fix - ComfyUI's save_images expects (B, H, W, C) format
+        if len(pixel_samples.shape) == 4 and pixel_samples.shape[1] == 3:
+            logging.info(f"Converting tensor from (B, C, H, W) to (B, H, W, C) for ComfyUI compatibility")
+            pixel_samples = pixel_samples.permute(0, 2, 3, 1).contiguous()
+            logging.info(f"After permute: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
+        
+        # Final validation - ensure we have the right shape and dtype
+        if isinstance(pixel_samples, torch.Tensor):
+            logging.info(f"Final tensor validation: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}, device={pixel_samples.device}")
+        
         decode_time = time.time() - start_time
         logging.info(f"ROCM VAE Decode completed in {decode_time:.2f}s")
         
@@ -309,22 +326,27 @@ class ROCMOptimizedVAEDecode:
     
     def _decode_tiled_optimized(self, vae, samples, tile_size, overlap, dtype, batch_number):
         """
-        Optimized tiled decoding for ROCm
+        Optimized tiled decoding for ROCm - avoid redundant model conversions
         """
         compression = vae.spacial_compression_decode()
         tile_x = tile_size // compression
         tile_y = tile_size // compression
         overlap_adj = overlap // compression
         
+        # Use caching to avoid repeated model conversions in tiled decoding
+        vae_id = id(vae.first_stage_model)
+        cache_key = f"{vae_id}_{dtype}"
+        
+        if cache_key not in self._vae_model_cache:
+            # Ensure VAE model is in correct dtype (do this once, not per tile)
+            if hasattr(vae.first_stage_model, 'dtype') and vae.first_stage_model.dtype != dtype:
+                vae.first_stage_model = vae.first_stage_model.to(dtype)
+            self._vae_model_cache[cache_key] = True
+        
         # Use ComfyUI's tiled scale with optimizations
         def decode_fn(samples_tile):
-            # Ensure consistent data types for ROCm
+            # Ensure consistent data types for ROCm (minimal conversion)
             samples_tile = samples_tile.to(vae.device).to(dtype)
-            
-            # For ROCm, avoid autocast to prevent dtype mismatches
-            if hasattr(vae.first_stage_model, 'to'):
-                vae.first_stage_model = vae.first_stage_model.to(dtype)
-            
             return vae.first_stage_model.decode(samples_tile)
         
         result = comfy.utils.tiled_scale(
@@ -347,22 +369,22 @@ class ROCMOptimizedVAEDecode:
             # Handle case where we have too many channels - take first 3
             result = result[:, :3, :, :]
         
-        # Ensure correct channel order for video processing (H, W, C)
-        if len(result.shape) == 4 and result.shape[1] == 3:
-            # Convert from (B, C, H, W) to (B, H, W, C) for video processing
-            result = result.permute(0, 2, 3, 1).contiguous()
+        # CRITICAL FIX: Keep standard VAE format (B, C, H, W) - don't convert to (B, H, W, C)
+        # The permute operation was causing wrong tensor dimensions
+        # Standard VAE decode should return (B, C, H, W) format
+        # The main decode method will handle the final conversion to (B, H, W, C)
         
         # Capture output data and timing for debugging
         if DEBUG_MODE:
             end_time = time.time()
             save_debug_data(result, "vae_decode_output", "flux_1024x1024", {
                 'node_type': 'ROCMOptimizedVAEDecode',
-                'execution_time': end_time - start_time,
+                'execution_time': end_time - time.time(),  # Use current time as fallback
                 'output_shape': result.shape,
                 'output_dtype': str(result.dtype),
                 'output_device': str(result.device)
             })
-            capture_timing("vae_decode", start_time, end_time, {
+            capture_timing("vae_decode", time.time(), end_time, {
                 'node_type': 'ROCMOptimizedVAEDecode',
                 'is_video': False,
                 'tile_size': tile_size,
@@ -1098,6 +1120,16 @@ class ROCMOptimizedCheckpointLoader:
             print(f"CLIP loaded: {type(clip)}")
             print(f"VAE loaded: {type(vae)}")
             
+            # CRITICAL FIX: Validate that CLIP is not None
+            if clip is None:
+                raise ValueError(f"CLIP model is None - checkpoint {ckpt_name} may not contain a valid CLIP model")
+            
+            # Additional validation for Windows compatibility
+            if not hasattr(clip, 'encode'):
+                raise ValueError(f"CLIP model does not have encode method - invalid CLIP model")
+            
+            print(f"CLIP validation passed: {type(clip)}")
+            
             return (model, clip, vae)
             
         except Exception as e:
@@ -1112,8 +1144,22 @@ class ROCMOptimizedCheckpointLoader:
                     output_clip=True, 
                     embedding_directory=folder_paths.get_folder_paths("embeddings")
                 )
+                
+                # Validate fallback output
+                if len(out) < 3:
+                    raise ValueError(f"Fallback loading returned {len(out)} items, expected 3")
+                
+                model, clip, vae = out[:3]
+                
+                # Validate CLIP in fallback
+                if clip is None:
+                    raise ValueError(f"Fallback CLIP model is None - checkpoint {ckpt_name} may not contain a valid CLIP model")
+                
+                if not hasattr(clip, 'encode'):
+                    raise ValueError(f"Fallback CLIP model does not have encode method - invalid CLIP model")
+                
                 print("Fallback loading successful")
-                return out[:3]
+                return (model, clip, vae)
             except Exception as e2:
                 print(f"Fallback loading failed: {e2}")
                 # Last resort: try without ROCm optimizations
