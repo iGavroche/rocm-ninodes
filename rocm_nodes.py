@@ -167,13 +167,22 @@ class ROCMOptimizedVAEDecode:
                     else:
                         logging.warning(f"Unexpected chunk_decoded shape: {chunk_decoded.shape}")
                     
-                    # Ensure tensor is contiguous and in correct dtype
-                    chunk_decoded = chunk_decoded.contiguous().float()
+                    # CRITICAL FIX: Preserve original tensor values - don't convert dtype
+                    # The .float() conversion was corrupting VAE output values causing darker frames
+                    chunk_decoded = chunk_decoded.contiguous()
                     
-                    # DEBUG: Log chunk information to identify batch issues
+                    # DEBUG: Log chunk information to identify batch issues and value ranges
                     logging.info(f"Chunk {chunk_idx}: shape={chunk_decoded.shape}, dtype={chunk_decoded.dtype}, "
                                f"min={chunk_decoded.min().item():.4f}, max={chunk_decoded.max().item():.4f}, "
                                f"mean={chunk_decoded.mean().item():.4f}")
+                    
+                    # Validate tensor value range - VAE should output values in [0, 1] or [-1, 1]
+                    min_val = chunk_decoded.min().item()
+                    max_val = chunk_decoded.max().item()
+                    if min_val < -1.1 or max_val > 1.1:
+                        logging.warning(f"Chunk {chunk_idx}: Unexpected value range [{min_val:.4f}, {max_val:.4f}]")
+                    else:
+                        logging.info(f"Chunk {chunk_idx}: Valid value range [{min_val:.4f}, {max_val:.4f}]")
                     
                     chunk_results.append(chunk_decoded)
                     
@@ -225,8 +234,20 @@ class ROCMOptimizedVAEDecode:
                 else:
                     logging.warning(f"Unexpected result shape: {result.shape}")
                 
-                # Ensure tensor is contiguous and in correct dtype
-                result = result.contiguous().float()
+                # CRITICAL FIX: Preserve original tensor values - don't convert dtype
+                # The .float() conversion was corrupting VAE output values causing darker frames
+                result = result.contiguous()
+                
+                # Validate tensor value range - VAE should output values in [0, 1] or [-1, 1]
+                min_val = result.min().item()
+                max_val = result.max().item()
+                logging.info(f"Non-chunked video: shape={result.shape}, dtype={result.dtype}, "
+                           f"min={min_val:.4f}, max={max_val:.4f}, mean={result.mean().item():.4f}")
+                
+                if min_val < -1.1 or max_val > 1.1:
+                    logging.warning(f"Non-chunked video: Unexpected value range [{min_val:.4f}, {max_val:.4f}]")
+                else:
+                    logging.info(f"Non-chunked video: Valid value range [{min_val:.4f}, {max_val:.4f}]")
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
@@ -357,16 +378,28 @@ class ROCMOptimizedVAEDecode:
         # Move to output device (no movedim needed - match standard VAE decode)
         pixel_samples = pixel_samples.to(vae.output_device)
         
-        # CRITICAL FIX: Ensure tensor is in the exact format ComfyUI expects
-        # ComfyUI's save_images function expects (B, H, W, C) format with specific properties
+        # CRITICAL FIX: Preserve original tensor values - don't convert dtype unnecessarily
+        # ComfyUI's save_images function expects (B, H, W, C) format with preserved values
         logging.info(f"Before ComfyUI format fix: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
-        # Ensure the tensor is contiguous and in the right format
+        # Ensure the tensor is contiguous
         pixel_samples = pixel_samples.contiguous()
         
-        # Ensure the tensor has the right dtype for ComfyUI processing
-        if pixel_samples.dtype != torch.float32:
+        # CRITICAL FIX: Only convert dtype if absolutely necessary for ComfyUI compatibility
+        # Preserve original VAE output values to prevent darker/colorless frames
+        if pixel_samples.dtype not in [torch.float32, torch.float16]:
+            logging.info(f"Converting dtype from {pixel_samples.dtype} to float32 for ComfyUI compatibility")
             pixel_samples = pixel_samples.float()
+        else:
+            logging.info(f"Preserving original dtype: {pixel_samples.dtype}")
+        
+        # Validate tensor value range before format conversion
+        min_val = pixel_samples.min().item()
+        max_val = pixel_samples.max().item()
+        logging.info(f"Before format conversion: min={min_val:.4f}, max={max_val:.4f}, mean={pixel_samples.mean().item():.4f}")
+        
+        if min_val < -1.1 or max_val > 1.1:
+            logging.warning(f"Unexpected tensor value range [{min_val:.4f}, {max_val:.4f}] - this might cause visual artifacts")
         
         # CRITICAL FIX: Convert from (B, C, H, W) to (B, H, W, C) for ComfyUI compatibility
         # This is the key fix - ComfyUI's save_images expects (B, H, W, C) format
@@ -375,9 +408,21 @@ class ROCMOptimizedVAEDecode:
             pixel_samples = pixel_samples.permute(0, 2, 3, 1).contiguous()
             logging.info(f"After permute: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}")
         
-        # Final validation - ensure we have the right shape and dtype
+        # Final validation - ensure we have the right shape, dtype, and value range
         if isinstance(pixel_samples, torch.Tensor):
+            final_min = pixel_samples.min().item()
+            final_max = pixel_samples.max().item()
+            final_mean = pixel_samples.mean().item()
             logging.info(f"Final tensor validation: shape={pixel_samples.shape}, dtype={pixel_samples.dtype}, device={pixel_samples.device}")
+            logging.info(f"Final value range: min={final_min:.4f}, max={final_max:.4f}, mean={final_mean:.4f}")
+            
+            # Validate final output quality
+            if final_min < -1.1 or final_max > 1.1:
+                logging.error(f"FINAL VALIDATION FAILED: Value range [{final_min:.4f}, {final_max:.4f}] is outside expected range!")
+            elif final_min < -0.1 or final_max > 1.1:
+                logging.warning(f"FINAL VALIDATION WARNING: Value range [{final_min:.4f}, {final_max:.4f}] might cause visual issues")
+            else:
+                logging.info(f"FINAL VALIDATION PASSED: Value range [{final_min:.4f}, {final_max:.4f}] is acceptable")
         
         decode_time = time.time() - start_time
         logging.info(f"ROCM VAE Decode completed in {decode_time:.2f}s")
