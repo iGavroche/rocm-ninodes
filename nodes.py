@@ -267,7 +267,7 @@ class ROCMOptimizedVAEDecode:
         self.performance_stats['precision_optimizations'] += 1
         return config
     
-    def _optimize_tensor_layout(self, tensor: Any) -> Any:
+    def _optimize_tensor_layout(self, tensor: Any, target_device: Any) -> Any:
         """Phase 2: Optimize tensor memory layout for gfx1151"""
         cache_key = (tensor.shape, tensor.dtype, tensor.device)
         
@@ -371,54 +371,6 @@ class ROCMOptimizedVAEDecode:
                 'accumulation_dtype': torch.float16,
                 'reason': 'large_tensor_speed'
             }
-    
-    def _optimize_tensor_layout(self, tensor: torch.Tensor, target_device: torch.device) -> torch.Tensor:
-        """
-        Phase 2: Advanced tensor memory layout optimization for gfx1151.
-        
-        Optimizations:
-        - Memory alignment for optimal GPU access patterns
-        - Contiguous memory layout for better bandwidth utilization
-        - Optimal stride patterns for AMD GPU architecture
-        """
-        if not tensor.is_contiguous():
-            tensor = tensor.contiguous()
-        
-        # Ensure optimal memory alignment for gfx1151 (16-byte alignment)
-        if tensor.element_size() * tensor.numel() % 16 != 0:
-            # Pad to 16-byte alignment
-            padding_size = 16 - (tensor.element_size() * tensor.numel() % 16)
-            if padding_size < 16:
-                tensor = F.pad(tensor, (0, padding_size // tensor.element_size()))
-        
-        # Optimize stride pattern for AMD GPU architecture
-        if len(tensor.shape) >= 2:
-            # Ensure optimal stride pattern for 2D+ tensors
-            tensor = tensor.view(tensor.shape)
-        
-        self.memory_stats['layout_optimizations'] += 1
-        return tensor
-    
-    def _prefetch_memory(self, tensors: List[torch.Tensor]) -> None:
-        """
-        Phase 2: Memory prefetching for improved GPU utilization.
-        
-        Prefetching strategies:
-        - Pre-load frequently accessed tensors
-        - Optimize memory access patterns
-        - Reduce GPU memory latency
-        """
-        for tensor in tensors:
-            if tensor.device.type == 'cuda':
-                try:
-                    # Prefetch tensor to GPU memory
-                    torch.cuda.prefetch(tensor)
-                    self.memory_stats['prefetch_hits'] += 1
-                except AttributeError:
-                    # torch.cuda.prefetch not available
-                    self.memory_stats['prefetch_misses'] += 1
-                except Exception:
-                    self.memory_stats['prefetch_misses'] += 1
     
     def _optimize_batch_processing(self, samples: torch.Tensor, vae) -> torch.Tensor:
         """
