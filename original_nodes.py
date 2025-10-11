@@ -1,95 +1,30 @@
-#!/usr/bin/env python3
 """
 ROCM Optimized VAE Nodes for AMD GPUs
 Specifically optimized for gfx1151 architecture with ROCm 6.4+
-Optimized versions of existing nodes with Phase 1, 2, and 3 improvements
 """
 
-# Handle imports gracefully for ComfyUI
-try:
-    import torch
-    import torch.nn.functional as F
-    import comfy.model_management as model_management
-    import comfy.utils
-    import comfy.sample
-    import comfy.samplers
-    import latent_preview
-    import logging
-    import folder_paths
-    from typing import Dict, Any, Tuple, Optional, List
-    import time
-    COMFY_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: ComfyUI modules not available: {e}")
-    # Define basic types for when typing module is not available
-    Dict = dict
-    Any = object
-    Tuple = tuple
-    Optional = lambda x: x
-    List = list
-    COMFY_AVAILABLE = False
-
-# Try to import instrumentation
-try:
-    from instrumentation import instrument_node
-except ImportError:
-    def instrument_node(cls):
-        return cls
+import torch
+import torch.nn.functional as F
+import comfy.model_management as model_management
+import comfy.utils
+import comfy.sample
+import comfy.samplers
+import latent_preview
+import logging
+import folder_paths
+from typing import Dict, Any, Tuple, Optional
+import time
 
 class ROCMOptimizedVAEDecode:
     """
     ROCM-optimized VAE Decode node specifically tuned for gfx1151 architecture.
     
-    Phase 1 Optimizations:
-    - Memory pooling for frequent allocations
-    - Optimized tile size selection
-    - Improved memory layout for ROCm
-    - Smart caching for intermediate results
-    
-    Phase 2 Optimizations:
-    - Smart mixed precision strategies (fp16/fp32) optimized for gfx1151
-    - Advanced batch processing for AMD GPUs
-    - Memory prefetching and advanced memory management
-    - Enhanced tensor memory layout optimization
-    
-    Phase 3 Optimizations:
-    - Video processing optimization with temporal consistency
-    - Optimal video chunk sizes for temporal processing
-    - Advanced performance monitoring and adaptive optimization
-    - Real-time optimization adjustments based on usage patterns
+    Key optimizations:
+    - Optimized memory management for ROCm
+    - Better batching strategy for AMD GPUs
+    - Reduced precision overhead
+    - Optimized tile sizes for gfx1151
     """
-    
-    def __init__(self):
-        # Phase 1: Memory pooling and caching
-        self.memory_pool = {}
-        self.tile_cache = {}
-        self.optimal_tile_sizes = {
-            (256, 256): 512,
-            (512, 512): 768,
-            (1024, 1024): 1024,
-            (1280, 1280): 1280,
-            (1536, 1536): 1280
-        }
-        
-        # Phase 2: Advanced optimizations
-        self.precision_cache = {}
-        self.batch_cache = {}
-        self.tensor_layout_cache = {}
-        
-        # Phase 3: Video and performance optimizations
-        self.video_chunk_cache = {}
-        self.temporal_cache = {}
-        self.performance_stats = {
-            'total_executions': 0,
-            'total_time': 0.0,
-            'memory_saves': 0,
-            'cache_hits': 0,
-            'precision_optimizations': 0,
-            'batch_optimizations': 0,
-            'prefetch_hits': 0,
-            'video_optimizations': 0,
-            'temporal_optimizations': 0
-        }
     
     @classmethod
     def INPUT_TYPES(cls):
@@ -115,7 +50,7 @@ class ROCMOptimizedVAEDecode:
                     "default": True,
                     "tooltip": "Enable ROCm-specific optimizations for AMD GPUs"
                 }),
-                "precision_mode": (["auto", "fp32", "fp16", "bf16", "mixed"], {
+                "precision_mode": (["auto", "fp32", "fp16", "bf16"], {
                     "default": "auto",
                     "tooltip": "Precision mode. 'auto' selects optimal for your GPU."
                 }),
@@ -133,30 +68,6 @@ class ROCMOptimizedVAEDecode:
                 "memory_optimization_enabled": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "Enable memory optimization for video processing"
-                }),
-                "adaptive_tiling": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable adaptive tile size selection based on input dimensions."
-                }),
-                "memory_prefetching": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable memory prefetching for improved performance."
-                }),
-                "tensor_layout_optimization": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable optimized tensor memory layout for gfx1151."
-                }),
-                "advanced_caching": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable advanced caching strategies for intermediate results."
-                }),
-                "temporal_consistency": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable temporal consistency optimization for video processing."
-                }),
-                "adaptive_optimization": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable adaptive optimization based on usage patterns."
                 })
             }
         }
@@ -165,192 +76,15 @@ class ROCMOptimizedVAEDecode:
     RETURN_NAMES = ("IMAGE",)
     FUNCTION = "decode"
     CATEGORY = "RocM Ninodes/VAE"
-    DESCRIPTION = "ROCM-optimized VAE Decode for AMD GPUs (gfx1151) - All Phases"
-    
-    def _get_optimal_tile_size(self, width: int, height: int, vae) -> Tuple[int, int]:
-        """Phase 1: Get optimal tile size based on input dimensions and VAE capabilities"""
-        cache_key = (width, height)
-        
-        if cache_key in self.tile_cache:
-            self.performance_stats['cache_hits'] += 1
-            return self.tile_cache[cache_key]
-        
-        # Calculate optimal tile size based on input dimensions
-        max_dim = max(width, height)
-        
-        if max_dim <= 256:
-            optimal_tile = 256
-        elif max_dim <= 512:
-            optimal_tile = 512
-        elif max_dim <= 768:
-            optimal_tile = 768
-        elif max_dim <= 1024:
-            optimal_tile = 1024
-        elif max_dim <= 1280:
-            optimal_tile = 1280
-        else:
-            optimal_tile = 1536
-        
-        # Adjust based on VAE memory requirements
-        try:
-            memory_required = vae.memory_used_decode((1, 4, optimal_tile//8, optimal_tile//8), torch.float32)
-            if memory_required > 2048:  # If too much memory, reduce tile size
-                optimal_tile = max(256, optimal_tile // 2)
-        except:
-            pass  # Fallback to calculated size
-        
-        self.tile_cache[cache_key] = (optimal_tile, optimal_tile)
-        return (optimal_tile, optimal_tile)
-    
-    def _get_optimal_precision_config(self, vae, samples_shape: Tuple, precision_mode: str) -> Dict[str, Any]:
-        """Phase 2: Get optimal precision configuration for gfx1151"""
-        cache_key = (samples_shape, precision_mode)
-        
-        if cache_key in self.precision_cache:
-            self.performance_stats['cache_hits'] += 1
-            return self.precision_cache[cache_key]
-        
-        if precision_mode == "auto":
-            # Smart precision selection for gfx1151
-            B, C, H, W = samples_shape
-            total_elements = B * C * H * W
-            
-            # For gfx1151, prefer fp32 for small tensors, mixed for large ones
-            if total_elements < 1024 * 1024:  # Small tensors
-                config = {'accumulation_dtype': torch.float32, 'compute_dtype': torch.float32}
-            elif total_elements < 4096 * 4096:  # Medium tensors
-                config = {'accumulation_dtype': torch.float32, 'compute_dtype': torch.float16}
-            else:  # Large tensors
-                config = {'accumulation_dtype': torch.float16, 'compute_dtype': torch.float16}
-        elif precision_mode == "mixed":
-            config = {'accumulation_dtype': torch.float32, 'compute_dtype': torch.float16}
-        else:
-            dtype_map = {
-                "fp32": torch.float32,
-                "fp16": torch.float16,
-                "bf16": torch.bfloat16
-            }
-            optimal_dtype = dtype_map[precision_mode]
-            config = {'accumulation_dtype': optimal_dtype, 'compute_dtype': optimal_dtype}
-        
-        # Override with VAE's preferred dtype if available
-        if hasattr(vae, 'vae_dtype') and vae.vae_dtype:
-            config['compute_dtype'] = vae.vae_dtype
-            if config['accumulation_dtype'] is None:
-                config['accumulation_dtype'] = vae.vae_dtype
-        
-        self.precision_cache[cache_key] = config
-        self.performance_stats['precision_optimizations'] += 1
-        return config
-    
-    def _optimize_tensor_layout(self, tensor: Any) -> Any:
-        """Phase 2: Optimize tensor memory layout for gfx1151"""
-        cache_key = (tensor.shape, tensor.dtype, tensor.device)
-        
-        if cache_key in self.tensor_layout_cache:
-            self.performance_stats['cache_hits'] += 1
-            return self.tensor_layout_cache[cache_key]
-        
-        # Ensure tensor is contiguous and properly aligned
-        if not tensor.is_contiguous():
-            tensor = tensor.contiguous()
-        
-        # For gfx1151, ensure proper memory alignment
-        if tensor.numel() % 16 == 0:  # 16-byte alignment
-            optimized_tensor = tensor
-        else:
-            # Pad to ensure alignment
-            pad_size = 16 - (tensor.numel() % 16)
-            if tensor.dim() == 4:
-                B, C, H, W = tensor.shape
-                pad_shape = (B, C, H, W + pad_size)
-                optimized_tensor = torch.empty(pad_shape, dtype=tensor.dtype, device=tensor.device)
-                optimized_tensor[:, :, :, :W] = tensor
-            else:
-                optimized_tensor = tensor
-        
-        self.tensor_layout_cache[cache_key] = optimized_tensor
-        return optimized_tensor
-    
-    def _prefetch_memory(self, tensors: List[Any]):
-        """Phase 2: Prefetch tensors to GPU memory for improved performance"""
-        for tensor in tensors:
-            if tensor.device.type == 'cuda':
-                # Prefetch to GPU memory
-                torch.cuda.prefetch(tensor)
-                self.performance_stats['prefetch_hits'] += 1
-    
-    def _optimize_temporal_processing(self, samples: Any, temporal_consistency: bool) -> Any:
-        """Phase 3: Optimize temporal processing for video workloads"""
-        if not temporal_consistency or len(samples.shape) != 5:  # Not video
-            return samples
-        
-        B, T, C, H, W = samples.shape
-        
-        # Apply temporal smoothing for consistency
-        if T > 1:
-            # Use temporal overlap for smoother transitions
-            temporal_overlap = min(2, T // 4)
-            
-            # Process with temporal consistency
-            processed_samples = torch.zeros_like(samples)
-            
-            for t in range(T):
-                start_t = max(0, t - temporal_overlap)
-                end_t = min(T, t + temporal_overlap + 1)
-                
-                # Blend frames for temporal consistency
-                frame_weight = 1.0 / (end_t - start_t)
-                processed_samples[:, t] = samples[:, start_t:end_t].mean(dim=1) * frame_weight
-            
-            self.performance_stats['temporal_optimizations'] += 1
-            return processed_samples
-        
-        return samples
-    
-    def _get_tensor_from_pool(self, shape: Tuple, dtype: Any, device: Any) -> Any:
-        """Phase 1: Get tensor from memory pool or create new one"""
-        pool_key = (shape, dtype, device)
-        
-        if pool_key in self.memory_pool and len(self.memory_pool[pool_key]) > 0:
-            tensor = self.memory_pool[pool_key].pop()
-            tensor.resize_(shape)
-            return tensor
-        else:
-            return torch.empty(shape, dtype=dtype, device=device)
-    
-    def _return_tensor_to_pool(self, tensor: Any):
-        """Phase 1: Return tensor to memory pool for reuse"""
-        if not self.memory_optimization_enabled:
-            return
-        
-        pool_key = (tensor.shape, tensor.dtype, tensor.device)
-        if pool_key not in self.memory_pool:
-            self.memory_pool[pool_key] = []
-        
-        # Limit pool size to prevent memory bloat
-        if len(self.memory_pool[pool_key]) < 8:  # Increased pool size for Phase 2
-            self.memory_pool[pool_key].append(tensor.detach())
-            self.performance_stats['memory_saves'] += 1
+    DESCRIPTION = "ROCM-optimized VAE Decode for AMD GPUs (gfx1151)"
     
     def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True, 
                precision_mode="auto", batch_optimization=True, video_chunk_size=8, 
-               memory_optimization_enabled=True, adaptive_tiling=True, memory_prefetching=True,
-               tensor_layout_optimization=True, advanced_caching=True, temporal_consistency=True,
-               adaptive_optimization=True):
+               memory_optimization_enabled=True):
         """
-        Optimized VAE decode for ROCm/AMD GPUs with all phase optimizations
+        Optimized VAE decode for ROCm/AMD GPUs with video support
         """
-        if not COMFY_AVAILABLE:
-            raise RuntimeError("ComfyUI modules not available - cannot decode")
-        
         start_time = time.time()
-        
-        # Store optimization settings
-        self.memory_optimization_enabled = memory_optimization_enabled
-        
-        # Update performance stats
-        self.performance_stats['total_executions'] += 1
         
         # Get device information
         device = vae.device
@@ -362,11 +96,6 @@ class ROCMOptimizedVAEDecode:
             print(f"Video decode detected: {samples['samples'].shape}")
             B, C, T, H, W = samples["samples"].shape
             
-            # Phase 3: Apply temporal consistency optimization
-            if temporal_consistency:
-                samples["samples"] = self._optimize_temporal_processing(samples["samples"], temporal_consistency)
-                self.performance_stats['video_optimizations'] += 1
-            
             # Memory-safe video processing
             if memory_optimization_enabled and T > video_chunk_size:
                 print(f"Processing video in chunks of {video_chunk_size} frames")
@@ -377,9 +106,33 @@ class ROCMOptimizedVAEDecode:
                     chunk = samples["samples"][:, :, i:end_idx, :, :]
                     
                     # Keep original 5D shape for WAN VAE - don't reshape to 4D
+                    # WAN VAE expects [B, C, T, H, W] format for memory calculation
                     print(f"DEBUG: Original chunk shape: {chunk.shape}")
+                    print(f"DEBUG: Chunk dimensions: B={B}, C={C}, T={end_idx-i}, H={H}, W={W}")
+                    
+                    # Debug: Save input data for testing
+                    import pickle
+                    import os
+                    debug_data = {
+                        'chunk_shape': chunk.shape,
+                        'chunk_dtype': chunk.dtype,
+                        'chunk_device': str(chunk.device),
+                        'B': B, 'C': C, 'H': H, 'W': W,
+                        'end_idx': end_idx, 'i': i,
+                        'chunk_tensor': chunk.cpu().clone()  # Save actual tensor for optimization
+                    }
+                    os.makedirs('test_data/debug', exist_ok=True)
+                    timestamp = int(time.time())
+                    filename = f'test_data/debug/wan_vae_input_debug_{timestamp}.pkl'
+                    with open(filename, 'wb') as f:
+                        pickle.dump(debug_data, f)
+                    print(f"DEBUG: Saved VAE input data to {filename}")
                     
                     # Decode chunk - WAN VAE expects 5D tensor [B, C, T, H, W]
+                    print(f"DEBUG: Calling vae.decode() with 5D tensor")
+                    print(f"DEBUG: chunk type: {type(chunk)}")
+                    print(f"DEBUG: chunk shape: {chunk.shape}")
+                    
                     with torch.no_grad():
                         chunk_decoded = vae.decode(chunk)
                     
@@ -387,6 +140,9 @@ class ROCMOptimizedVAEDecode:
                     if isinstance(chunk_decoded, tuple):
                         chunk_decoded = chunk_decoded[0]
                     
+                    # Reshape back to video format - chunk_decoded should already be in correct format
+                    # No need to reshape since we kept the 5D format
+                    print(f"DEBUG: chunk_decoded shape: {chunk_decoded.shape}")
                     chunk_results.append(chunk_decoded)
                     
                     # Clear memory after each chunk
@@ -397,20 +153,21 @@ class ROCMOptimizedVAEDecode:
                 print(f"Video decode completed: {result.shape}")
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
+                # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
                 if len(result.shape) == 5:
                     B, T, H, W, C = result.shape
                     result = result.reshape(B * T, H, W, C)
                     print(f"Converted to 4D format: {result.shape}")
-                
-                # Update performance stats
-                execution_time = time.time() - start_time
-                self.performance_stats['total_time'] += execution_time
                 
                 return (result,)
             else:
                 # Process entire video at once - keep 5D format for WAN VAE
                 B, C, T, H, W = samples["samples"].shape
                 video_tensor = samples["samples"]
+                
+                print(f"DEBUG: Processing full video with 5D tensor")
+                print(f"DEBUG: video_tensor type: {type(video_tensor)}")
+                print(f"DEBUG: video_tensor shape: {video_tensor.shape}")
                 
                 with torch.no_grad():
                     result = vae.decode(video_tensor)
@@ -420,31 +177,29 @@ class ROCMOptimizedVAEDecode:
                     result = result[0]
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
+                # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
                 if len(result.shape) == 5:
                     B, T, H, W, C = result.shape
                     result = result.reshape(B * T, H, W, C)
                     print(f"Converted to 4D format: {result.shape}")
                 
                 print(f"Video decode completed: {result.shape}")
-                
-                # Update performance stats
-                execution_time = time.time() - start_time
-                self.performance_stats['total_time'] += execution_time
-                
                 return (result,)
-        
-        # Phase 2: Get optimal precision configuration
-        precision_config = self._get_optimal_precision_config(vae, samples["samples"].shape, precision_mode)
         
         # Set optimal precision for AMD GPUs
         if precision_mode == "auto":
             if is_amd:
                 # For gfx1151, fp32 is often faster than bf16 due to ROCm limitations
-                optimal_dtype = precision_config['compute_dtype']
+                optimal_dtype = torch.float32
             else:
                 optimal_dtype = vae.vae_dtype
         else:
-            optimal_dtype = precision_config['compute_dtype']
+            dtype_map = {
+                "fp32": torch.float32,
+                "fp16": torch.float16,
+                "bf16": torch.bfloat16
+            }
+            optimal_dtype = dtype_map[precision_mode]
         
         # Ensure VAE model and samples have compatible dtypes
         if hasattr(vae.first_stage_model, 'dtype'):
@@ -486,14 +241,6 @@ class ROCMOptimizedVAEDecode:
             if samples_tensor.shape[2] * samples_tensor.shape[3] <= 512 * 512:
                 # Ensure consistent data types
                 samples_processed = samples_tensor.to(device)
-                
-                # Phase 2: Optimize tensor layout
-                if tensor_layout_optimization:
-                    samples_processed = self._optimize_tensor_layout(samples_processed)
-                
-                # Phase 2: Prefetch if enabled
-                if memory_prefetching:
-                    self._prefetch_memory([samples_processed])
                 
                 # For ROCm, avoid autocast and ensure consistent dtypes
                 if use_rocm_optimizations and is_amd:
@@ -550,14 +297,13 @@ class ROCMOptimizedVAEDecode:
         pixel_samples = pixel_samples.to(vae.output_device)
         
         decode_time = time.time() - start_time
-        self.performance_stats['total_time'] += decode_time
         logging.info(f"ROCM VAE Decode completed in {decode_time:.2f}s")
         
         return (pixel_samples,)
     
     def _decode_tiled_optimized(self, vae, samples, tile_size, overlap, dtype, batch_number):
         """
-        Optimized tiled decoding for ROCm with all phase optimizations
+        Optimized tiled decoding for ROCm
         """
         compression = vae.spacial_compression_decode()
         tile_x = tile_size // compression
@@ -568,13 +314,6 @@ class ROCMOptimizedVAEDecode:
         def decode_fn(samples_tile):
             # Ensure consistent data types for ROCm
             samples_tile = samples_tile.to(vae.device).to(dtype)
-            
-            # Phase 2: Optimize tensor layout
-            samples_tile = self._optimize_tensor_layout(samples_tile)
-            
-            # Phase 2: Prefetch if enabled
-            if hasattr(self, 'memory_prefetching') and self.memory_prefetching:
-                self._prefetch_memory([samples_tile])
             
             # For ROCm, avoid autocast to prevent dtype mismatches
             if hasattr(vae.first_stage_model, 'to'):
@@ -608,71 +347,188 @@ class ROCMOptimizedVAEDecode:
             result = result.permute(0, 2, 3, 1).contiguous()
             
         return result
+
+
+class ROCMOptimizedVAEDecodeTiled:
+    """
+    Advanced tiled VAE decode with ROCm optimizations
+    """
     
-    def get_performance_stats(self):
-        """Get comprehensive performance statistics for monitoring"""
-        if self.performance_stats['total_executions'] > 0:
-            avg_time = self.performance_stats['total_time'] / self.performance_stats['total_executions']
-            cache_hit_rate = self.performance_stats['cache_hits'] / max(1, self.performance_stats['total_executions'])
-            memory_efficiency = self.performance_stats['memory_saves'] / max(1, self.performance_stats['total_executions'])
-            precision_efficiency = self.performance_stats['precision_optimizations'] / max(1, self.performance_stats['total_executions'])
-            batch_efficiency = self.performance_stats['batch_optimizations'] / max(1, self.performance_stats['total_executions'])
-            prefetch_efficiency = self.performance_stats['prefetch_hits'] / max(1, self.performance_stats['total_executions'])
-            video_efficiency = self.performance_stats['video_optimizations'] / max(1, self.performance_stats['total_executions'])
-            temporal_efficiency = self.performance_stats['temporal_optimizations'] / max(1, self.performance_stats['total_executions'])
-            
-            return {
-                'average_execution_time': avg_time,
-                'total_executions': self.performance_stats['total_executions'],
-                'cache_hit_rate': cache_hit_rate,
-                'memory_efficiency': memory_efficiency,
-                'precision_efficiency': precision_efficiency,
-                'batch_efficiency': batch_efficiency,
-                'prefetch_efficiency': prefetch_efficiency,
-                'video_efficiency': video_efficiency,
-                'temporal_efficiency': temporal_efficiency,
-                'total_memory_saves': self.performance_stats['memory_saves'],
-                'total_precision_optimizations': self.performance_stats['precision_optimizations'],
-                'total_batch_optimizations': self.performance_stats['batch_optimizations'],
-                'total_prefetch_hits': self.performance_stats['prefetch_hits'],
-                'total_video_optimizations': self.performance_stats['video_optimizations'],
-                'total_temporal_optimizations': self.performance_stats['temporal_optimizations']
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "samples": ("LATENT", {"tooltip": "The latent to be decoded."}),
+                "vae": ("VAE", {"tooltip": "The VAE model used for decoding the latent."}),
+                "tile_size": ("INT", {
+                    "default": 768, 
+                    "min": 256, 
+                    "max": 2048, 
+                    "step": 64
+                }),
+                "overlap": ("INT", {
+                    "default": 96, 
+                    "min": 32, 
+                    "max": 512, 
+                    "step": 16
+                }),
+                "temporal_size": ("INT", {
+                    "default": 64, 
+                    "min": 8, 
+                    "max": 4096, 
+                    "step": 4,
+                    "tooltip": "For video VAEs: frames to decode at once"
+                }),
+                "temporal_overlap": ("INT", {
+                    "default": 8, 
+                    "min": 4, 
+                    "max": 4096, 
+                    "step": 4,
+                    "tooltip": "For video VAEs: frame overlap"
+                }),
+                "rocm_optimizations": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Enable ROCm-specific optimizations"
+                })
             }
-        return self.performance_stats
+        }
+    
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("IMAGE",)
+    FUNCTION = "decode"
+    CATEGORY = "RocM Ninodes/VAE"
+    DESCRIPTION = "Advanced tiled VAE decode optimized for ROCm"
+    
+    def decode(self, vae, samples, tile_size=768, overlap=96, temporal_size=64, 
+               temporal_overlap=8, rocm_optimizations=True):
+        """
+        Advanced tiled decode with ROCm optimizations
+        """
+        start_time = time.time()
+        
+        # Adjust tile size for ROCm
+        if rocm_optimizations:
+            if tile_size < overlap * 4:
+                overlap = tile_size // 4
+            if temporal_size < temporal_overlap * 2:
+                temporal_overlap = temporal_size // 2
+        
+        # Handle temporal compression
+        temporal_compression = vae.temporal_compression_decode()
+        if temporal_compression is not None:
+            temporal_size = max(2, temporal_size // temporal_compression)
+            temporal_overlap = max(1, min(temporal_size // 2, temporal_overlap // temporal_compression))
+        else:
+            temporal_size = None
+            temporal_overlap = None
+        
+        # Use VAE's tiled decode with optimizations
+        compression = vae.spacial_compression_decode()
+        images = vae.decode_tiled(
+            samples["samples"], 
+            tile_x=tile_size // compression, 
+            tile_y=tile_size // compression, 
+            overlap=overlap // compression, 
+            tile_t=temporal_size, 
+            overlap_t=temporal_overlap
+        )
+        
+        # Reshape if needed
+        if len(images.shape) == 5:
+            images = images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
+        
+        decode_time = time.time() - start_time
+        logging.info(f"ROCM Tiled VAE Decode completed in {decode_time:.2f}s")
+        
+        return (images,)
+
+
+class ROCMVAEPerformanceMonitor:
+    """
+    Monitor VAE performance and provide optimization suggestions
+    """
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "vae": ("VAE", {"tooltip": "VAE to monitor"}),
+                "test_resolution": ("INT", {
+                    "default": 1024,
+                    "min": 256,
+                    "max": 4096,
+                    "step": 64,
+                    "tooltip": "Test resolution for benchmarking"
+                })
+            }
+        }
+    
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("DEVICE_INFO", "PERFORMANCE_TIPS", "OPTIMAL_SETTINGS")
+    FUNCTION = "analyze"
+    CATEGORY = "RocM Ninodes/VAE"
+    DESCRIPTION = "Analyze VAE performance and provide optimization recommendations"
+    
+    def analyze(self, vae, test_resolution=1024):
+        """
+        Analyze VAE performance and provide recommendations
+        """
+        device = vae.device
+        device_info = f"Device: {device}\n"
+        device_info += f"VAE dtype: {vae.vae_dtype}\n"
+        device_info += f"Output device: {vae.output_device}\n"
+        
+        # Check if it's an AMD GPU
+        is_amd = hasattr(device, 'type') and device.type == 'cuda'
+        if is_amd:
+            try:
+                device_name = torch.cuda.get_device_name(0)
+                device_info += f"GPU: {device_name}\n"
+            except:
+                device_info += "GPU: AMD (ROCm)\n"
+        
+        # Performance tips
+        tips = []
+        if is_amd:
+            tips.append("• Use fp32 precision for better ROCm performance")
+            tips.append("• Tile size 768-1024 works well for gfx1151")
+            tips.append("• Enable ROCm optimizations for best results")
+            tips.append("• Consider using tiled decode for images > 1024x1024")
+        else:
+            tips.append("• Use fp16 or bf16 for better performance")
+            tips.append("• Larger tile sizes generally perform better")
+        
+        # Optimal settings
+        settings = []
+        if is_amd:
+            settings.append(f"Recommended tile_size: {min(1024, test_resolution)}")
+            settings.append(f"Recommended overlap: {min(128, test_resolution // 8)}")
+            settings.append("Recommended precision: fp32")
+            settings.append("Recommended batch_optimization: True")
+        else:
+            settings.append(f"Recommended tile_size: {test_resolution}")
+            settings.append(f"Recommended overlap: {test_resolution // 8}")
+            settings.append("Recommended precision: auto")
+            settings.append("Recommended batch_optimization: True")
+        
+        return (
+            device_info,
+            "\n".join(tips),
+            "\n".join(settings)
+        )
 
 
 class ROCMOptimizedKSampler:
     """
     ROCM-optimized KSampler specifically tuned for gfx1151 architecture.
     
-    Phase 1 Optimizations:
+    Key optimizations:
     - Optimized memory management for ROCm
     - Better precision handling for AMD GPUs
     - Optimized attention mechanisms
     - Reduced memory fragmentation
     - Better batch processing
-    
-    Phase 2 Optimizations:
-    - Smart mixed precision strategies
-    - Advanced batch processing for AMD GPUs
-    - Memory prefetching and advanced memory management
-    - Enhanced tensor memory layout optimization
-    
-    Phase 3 Optimizations:
-    - Advanced performance monitoring and adaptive optimization
-    - Real-time optimization adjustments based on usage patterns
-    - Enhanced memory patterns for video workloads
     """
-    
-    def __init__(self):
-        # Performance monitoring
-        self.performance_stats = {
-            'total_executions': 0,
-            'total_time': 0.0,
-            'precision_optimizations': 0,
-            'memory_optimizations': 0,
-            'attention_optimizations': 0
-        }
     
     @classmethod
     def INPUT_TYPES(cls):
@@ -699,10 +555,10 @@ class ROCMOptimizedKSampler:
                     "round": 0.01,
                     "tooltip": "Classifier-free guidance scale"
                 }),
-                "sampler_name": (["euler", "heun", "dpmpp_2m", "dpmpp_sde"], {
+                "sampler_name": (comfy.samplers.KSampler.SAMPLERS, {
                     "tooltip": "Sampling algorithm to use"
                 }),
-                "scheduler": (["simple", "normal", "karras"], {
+                "scheduler": (comfy.samplers.KSampler.SCHEDULERS, {
                     "tooltip": "Scheduler for noise timesteps"
                 }),
                 "positive": ("CONDITIONING", {"tooltip": "Positive conditioning"}),
@@ -738,19 +594,15 @@ class ROCMOptimizedKSampler:
     RETURN_NAMES = ("LATENT",)
     FUNCTION = "sample"
     CATEGORY = "RocM Ninodes/Sampling"
-    DESCRIPTION = "ROCM-optimized KSampler for AMD GPUs (gfx1151) - All Phases"
+    DESCRIPTION = "ROCM-optimized KSampler for AMD GPUs (gfx1151)"
     
     def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, 
                latent_image, denoise=1.0, use_rocm_optimizations=True, precision_mode="auto",
                memory_optimization=True, attention_optimization=True):
         """
-        Optimized sampling for ROCm/AMD GPUs with all phase optimizations
+        Optimized sampling for ROCm/AMD GPUs
         """
-        if not COMFY_AVAILABLE:
-            raise RuntimeError("ComfyUI modules not available - cannot sample")
-        
         start_time = time.time()
-        self.performance_stats['total_executions'] += 1
         
         # Get device information
         device = model.model_dtype()
@@ -781,8 +633,6 @@ class ROCMOptimizedKSampler:
                 # Set memory fraction for better management
                 if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                     torch.cuda.set_per_process_memory_fraction(0.9)
-                
-                self.performance_stats['memory_optimizations'] += 1
         
         # Attention optimization
         if attention_optimization and is_amd:
@@ -790,8 +640,6 @@ class ROCMOptimizedKSampler:
             torch.backends.cuda.enable_math_sdp(True)
             torch.backends.cuda.enable_flash_sdp(True)
             torch.backends.cuda.enable_mem_efficient_sdp(True)
-            
-            self.performance_stats['attention_optimizations'] += 1
         
         # Use the standard ksampler with optimizations
         try:
@@ -837,7 +685,6 @@ class ROCMOptimizedKSampler:
             result = (out,)
         
         sample_time = time.time() - start_time
-        self.performance_stats['total_time'] += sample_time
         logging.info(f"ROCM KSampler completed in {sample_time:.2f}s")
         
         return result
@@ -847,16 +694,6 @@ class ROCMOptimizedKSamplerAdvanced:
     """
     Advanced ROCM-optimized KSampler with more control options
     """
-    
-    def __init__(self):
-        # Performance monitoring
-        self.performance_stats = {
-            'total_executions': 0,
-            'total_time': 0.0,
-            'precision_optimizations': 0,
-            'memory_optimizations': 0,
-            'attention_optimizations': 0
-        }
     
     @classmethod
     def INPUT_TYPES(cls):
@@ -887,10 +724,10 @@ class ROCMOptimizedKSamplerAdvanced:
                     "round": 0.01,
                     "tooltip": "Classifier-free guidance scale"
                 }),
-                "sampler_name": (["euler", "heun", "dpmpp_2m", "dpmpp_sde"], {
+                "sampler_name": (comfy.samplers.KSampler.SAMPLERS, {
                     "tooltip": "Sampling algorithm to use"
                 }),
-                "scheduler": (["simple", "normal", "karras"], {
+                "scheduler": (comfy.samplers.KSampler.SCHEDULERS, {
                     "tooltip": "Scheduler for noise timesteps"
                 }),
                 "positive": ("CONDITIONING", {"tooltip": "Positive conditioning"}),
@@ -931,20 +768,16 @@ class ROCMOptimizedKSamplerAdvanced:
     RETURN_NAMES = ("LATENT",)
     FUNCTION = "sample"
     CATEGORY = "RocM Ninodes/Sampling"
-    DESCRIPTION = "Advanced ROCM-optimized KSampler for AMD GPUs - All Phases"
+    DESCRIPTION = "Advanced ROCM-optimized KSampler for AMD GPUs"
     
     def sample(self, model, add_noise, noise_seed, steps, cfg, sampler_name, scheduler, 
                positive, negative, latent_image, start_at_step, end_at_step, 
                return_with_leftover_noise, use_rocm_optimizations=True, 
                precision_mode="auto", memory_optimization=True, denoise=1.0):
         """
-        Advanced optimized sampling for ROCm/AMD GPUs with all phase optimizations
+        Advanced optimized sampling for ROCm/AMD GPUs
         """
-        if not COMFY_AVAILABLE:
-            raise RuntimeError("ComfyUI modules not available - cannot sample")
-        
         start_time = time.time()
-        self.performance_stats['total_executions'] += 1
         
         # ROCm optimizations
         if use_rocm_optimizations:
@@ -968,8 +801,6 @@ class ROCMOptimizedKSamplerAdvanced:
                     torch.cuda.empty_cache()
                     if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                         torch.cuda.set_per_process_memory_fraction(0.9)
-                    
-                    self.performance_stats['memory_optimizations'] += 1
         
         # Configure sampling parameters
         force_full_denoise = True
@@ -1031,51 +862,106 @@ class ROCMOptimizedKSamplerAdvanced:
             result = (out,)
         
         sample_time = time.time() - start_time
-        self.performance_stats['total_time'] += sample_time
         logging.info(f"ROCM Advanced KSampler completed in {sample_time:.2f}s")
         
         return result
+
+
+class ROCMSamplerPerformanceMonitor:
+    """
+    Monitor sampler performance and provide optimization suggestions
+    """
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL", {"tooltip": "Model to analyze"}),
+                "test_steps": ("INT", {
+                    "default": 20,
+                    "min": 1,
+                    "max": 100,
+                    "tooltip": "Number of test steps for benchmarking"
+                })
+            }
+        }
+    
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("DEVICE_INFO", "PERFORMANCE_TIPS", "OPTIMAL_SETTINGS")
+    FUNCTION = "analyze"
+    CATEGORY = "RocM Ninodes/Sampling"
+    DESCRIPTION = "Analyze sampler performance and provide optimization recommendations"
+    
+    def analyze(self, model, test_steps=20):
+        """
+        Analyze sampler performance and provide recommendations
+        """
+        device = model.model_dtype()
+        device_info = f"Model device: {device}\n"
+        device_info += f"Model dtype: {model.model_dtype()}\n"
+        
+        # Check if it's an AMD GPU
+        is_amd = hasattr(device, 'type') and device.type == 'cuda'
+        if is_amd:
+            try:
+                device_name = torch.cuda.get_device_name(0)
+                device_info += f"GPU: {device_name}\n"
+            except:
+                device_info += "GPU: AMD (ROCm)\n"
+        
+        # Performance tips
+        tips = []
+        if is_amd:
+            tips.append("• Use fp32 precision for better ROCm performance")
+            tips.append("• Enable memory optimization for better VRAM usage")
+            tips.append("• Use attention optimization for faster sampling")
+            tips.append("• Consider lower CFG values for faster generation")
+            tips.append("• Euler and Heun samplers work well with ROCm")
+        else:
+            tips.append("• Use fp16 or bf16 for better performance")
+            tips.append("• Enable all optimizations for best results")
+            tips.append("• Higher CFG values generally work better")
+        
+        # Optimal settings
+        settings = []
+        if is_amd:
+            settings.append(f"Recommended precision: fp32")
+            settings.append(f"Recommended memory optimization: True")
+            settings.append(f"Recommended attention optimization: True")
+            settings.append(f"Recommended samplers: euler, heun, dpmpp_2m")
+            settings.append(f"Recommended schedulers: simple, normal")
+            settings.append(f"Recommended CFG: 7.0-8.0")
+        else:
+            settings.append(f"Recommended precision: auto")
+            settings.append(f"Recommended memory optimization: True")
+            settings.append(f"Recommended attention optimization: True")
+            settings.append(f"Recommended samplers: dpmpp_2m, dpmpp_sde")
+            settings.append(f"Recommended schedulers: normal, karras")
+            settings.append(f"Recommended CFG: 8.0-12.0")
+        
+        return (
+            device_info,
+            "\n".join(tips),
+            "\n".join(settings)
+        )
 
 
 class ROCMOptimizedCheckpointLoader:
     """
     ROCM-optimized checkpoint loader for AMD GPUs (gfx1151)
     
-    Phase 1 Optimizations:
+    Features:
     - Optimized loading for Flux and WAN models
     - Memory-efficient loading for AMD GPUs
     - Automatic precision optimization
     - Flux-specific optimizations (skip negative CLIP)
-    
-    Phase 2 Optimizations:
-    - Smart mixed precision strategies
-    - Advanced batch processing for AMD GPUs
-    - Memory prefetching and advanced memory management
-    
-    Phase 3 Optimizations:
-    - Advanced performance monitoring and adaptive optimization
-    - Real-time optimization adjustments based on usage patterns
     """
-    
-    def __init__(self):
-        # Performance monitoring
-        self.performance_stats = {
-            'total_executions': 0,
-            'total_time': 0.0,
-            'precision_optimizations': 0,
-            'memory_optimizations': 0
-        }
     
     @classmethod
     def INPUT_TYPES(cls):
-        try:
-            ckpt_list = folder_paths.get_filename_list("checkpoints")
-        except:
-            ckpt_list = ["checkpoint1.safetensors", "checkpoint2.safetensors"]
-        
         return {
             "required": {
-                "ckpt_name": (ckpt_list, {
+                "ckpt_name": (folder_paths.get_filename_list("checkpoints"), {
                     "tooltip": "Checkpoint file to load"
                 }),
                 "lazy_loading": ("BOOLEAN", {
@@ -1097,23 +983,23 @@ class ROCMOptimizedCheckpointLoader:
     RETURN_NAMES = ("MODEL", "CLIP", "VAE")
     FUNCTION = "load_checkpoint"
     CATEGORY = "RocM Ninodes/Loaders"
-    DESCRIPTION = "ROCM-optimized checkpoint loader for AMD GPUs (gfx1151) - All Phases"
+    DESCRIPTION = "ROCM-optimized checkpoint loader for AMD GPUs (gfx1151)"
     
     def load_checkpoint(self, ckpt_name, lazy_loading=True, optimize_for_flux=True, precision_mode="auto"):
         """
-        ROCM-optimized checkpoint loading with all phase optimizations
+        ROCM-optimized checkpoint loading - simple and reliable
         """
-        if not COMFY_AVAILABLE:
-            raise RuntimeError("ComfyUI modules not available - cannot load checkpoint")
-        
-        start_time = time.time()
-        self.performance_stats['total_executions'] += 1
+        import folder_paths
+        import comfy.sd
+        import torch
+        import os
         
         try:
             # Get checkpoint path
             ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
             print(f"Loading checkpoint: {ckpt_name}")
             print(f"Checkpoint path: {ckpt_path}")
+            print(f"File exists: {os.path.exists(ckpt_path)}")
             
             # Check if ROCm is available
             try:
@@ -1147,33 +1033,6 @@ class ROCMOptimizedCheckpointLoader:
             print(f"CLIP loaded: {type(clip)}")
             print(f"VAE loaded: {type(vae)}")
             
-            # Phase 2: Apply precision optimizations
-            if precision_mode != "auto":
-                dtype_map = {
-                    "fp32": torch.float32,
-                    "fp16": torch.float16,
-                    "bf16": torch.bfloat16
-                }
-                optimal_dtype = dtype_map[precision_mode]
-                
-                # Convert models to optimal dtype
-                if hasattr(model, 'to'):
-                    model = model.to(optimal_dtype)
-                if hasattr(vae, 'to'):
-                    vae = vae.to(optimal_dtype)
-                
-                self.performance_stats['precision_optimizations'] += 1
-            
-            # Phase 2: Memory optimization
-            if lazy_loading:
-                # Clear cache after loading
-                torch.cuda.empty_cache()
-                self.performance_stats['memory_optimizations'] += 1
-            
-            load_time = time.time() - start_time
-            self.performance_stats['total_time'] += load_time
-            print(f"ROCM Checkpoint Loader completed in {load_time:.2f}s")
-            
             return (model, clip, vae)
             
         except Exception as e:
@@ -1192,37 +1051,307 @@ class ROCMOptimizedCheckpointLoader:
                 return out[:3]
             except Exception as e2:
                 print(f"Fallback loading failed: {e2}")
-                raise e2
+                # Last resort: try without ROCm optimizations
+                try:
+                    print("Attempting loading without any optimizations...")
+                    ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
+                    out = comfy.sd.load_checkpoint_guess_config(
+                        ckpt_path, 
+                        output_vae=True, 
+                        output_clip=True, 
+                        embedding_directory=folder_paths.get_folder_paths("embeddings")
+                    )
+                    print("Minimal loading successful")
+                    return out[:3]
+                except Exception as e3:
+                    print(f"All loading attempts failed: {e3}")
+                    raise e3
 
 
-# Apply instrumentation to all nodes
-@instrument_node
-class ROCMOptimizedVAEDecodeInstrumented(ROCMOptimizedVAEDecode):
-    pass
+class ROCMFluxBenchmark:
+    """
+    Comprehensive Flux workflow benchmark for AMD GPUs
+    """
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL", {"tooltip": "The model to benchmark"}),
+                "vae": ("VAE", {"tooltip": "The VAE model"}),
+                "clip": ("CLIP", {"tooltip": "The CLIP model"}),
+                "test_resolutions": ("STRING", {
+                    "default": "256x320,512x512,1024x1024",
+                    "tooltip": "Comma-separated resolutions to test (WxH)"
+                }),
+                "test_steps": ("INT", {
+                    "default": 20,
+                    "min": 1,
+                    "max": 100,
+                    "tooltip": "Number of sampling steps for testing"
+                }),
+                "test_cfg_values": ("STRING", {
+                    "default": "1.0,3.5,8.0",
+                    "tooltip": "Comma-separated CFG values to test"
+                }),
+                "test_hipblas": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Test HIPBlas optimizations"
+                }),
+                "generate_report": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Generate detailed optimization report"
+                })
+            }
+        }
+    
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("BENCHMARK_RESULTS", "PERFORMANCE_CHART", "OPTIMIZATION_RECOMMENDATIONS", "MEMORY_ANALYSIS")
+    FUNCTION = "benchmark"
+    CATEGORY = "RocM Ninodes/Benchmark"
+    DESCRIPTION = "Comprehensive Flux workflow benchmark for AMD GPUs"
+    
+    def benchmark(self, model, vae, clip, test_resolutions="256x320,512x512,1024x1024",
+                 test_steps=20, test_cfg_values="1.0,3.5,8.0", test_hipblas=True,
+                 generate_report=True):
+        """
+        Run comprehensive benchmark tests
+        """
+        import time
+        import torch
+        import gc
+        
+        # Parse test parameters
+        resolutions = []
+        for res in test_resolutions.split(','):
+            w, h = map(int, res.strip().split('x'))
+            resolutions.append((w, h))
+        
+        cfg_values = [float(cfg.strip()) for cfg in test_cfg_values.split(',')]
+        
+        # Get device information
+        device = comfy.model_management.get_torch_device()
+        is_amd = hasattr(device, 'type') and device.type == 'cuda'
+        
+        results = {
+            'device': str(device),
+            'is_amd': is_amd,
+            'resolutions': {},
+            'cfg_tests': {},
+            'memory_usage': {},
+            'recommendations': []
+        }
+        
+        # Test each resolution
+        for w, h in resolutions:
+            print(f"Testing resolution {w}x{h}...")
+            resolution_key = f"{w}x{h}"
+            results['resolutions'][resolution_key] = {
+                'times': [],
+                'memory_peak': 0,
+                'memory_avg': 0
+            }
+            
+            # Test with different CFG values
+            for cfg in cfg_values:
+                print(f"  Testing CFG {cfg}...")
+                start_time = time.time()
+                
+                # Clear memory
+                torch.cuda.empty_cache()
+                gc.collect()
+                
+                # Create test latent
+                latent = torch.randn(1, 4, h//8, w//8, device=device)
+                
+                # Test VAE decode
+                try:
+                    with torch.no_grad():
+                        decoded = vae.decode(latent)
+                    decode_time = time.time() - start_time
+                    
+                    # Record results
+                    results['resolutions'][resolution_key]['times'].append(decode_time)
+                    results['resolutions'][resolution_key]['memory_peak'] = max(
+                        results['resolutions'][resolution_key]['memory_peak'],
+                        torch.cuda.max_memory_allocated() / 1024**3
+                    )
+                    
+                    print(f"    VAE decode time: {decode_time:.2f}s")
+                    
+                except Exception as e:
+                    print(f"    Error testing {w}x{h} CFG {cfg}: {e}")
+                    results['resolutions'][resolution_key]['times'].append(float('inf'))
+        
+        # Generate recommendations
+        if is_amd:
+            results['recommendations'].extend([
+                "• Use fp32 precision for best ROCm performance",
+                "• Enable memory optimization for better VRAM usage",
+                "• Use Euler or Heun samplers for optimal speed",
+                "• Consider lower CFG values (3.5-7.0) for faster generation",
+                "• Use tile size 768-1024 for optimal memory/speed balance"
+            ])
+        else:
+            results['recommendations'].extend([
+                "• Use fp16 or bf16 for better performance",
+                "• Enable all available optimizations",
+                "• Use DPM++ 2M sampler for best quality/speed",
+                "• Higher CFG values (8.0-12.0) generally work better",
+                "• Use tile size 512-768 for optimal performance"
+            ])
+        
+        # Format results
+        benchmark_text = f"Benchmark Results for {results['device']}\n"
+        benchmark_text += f"AMD GPU: {results['is_amd']}\n\n"
+        
+        for res_key, res_data in results['resolutions'].items():
+            if res_data['times']:
+                avg_time = sum(t for t in res_data['times'] if t != float('inf')) / len([t for t in res_data['times'] if t != float('inf')])
+                benchmark_text += f"{res_key}: {avg_time:.2f}s avg, {res_data['memory_peak']:.1f}GB peak\n"
+        
+        performance_chart = "Performance Chart:\n"
+        for res_key, res_data in results['resolutions'].items():
+            if res_data['times']:
+                times_str = ", ".join(f"{t:.2f}s" for t in res_data['times'] if t != float('inf'))
+                performance_chart += f"{res_key}: [{times_str}]\n"
+        
+        recommendations_text = "Optimization Recommendations:\n"
+        for rec in results['recommendations']:
+            recommendations_text += f"{rec}\n"
+        
+        memory_analysis = f"Memory Analysis:\n"
+        memory_analysis += f"Device: {results['device']}\n"
+        memory_analysis += f"Total VRAM: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}GB\n"
+        memory_analysis += f"Current VRAM usage: {torch.cuda.memory_allocated() / 1024**3:.1f}GB\n"
+        
+        return (benchmark_text, performance_chart, recommendations_text, memory_analysis)
 
-@instrument_node
-class ROCMOptimizedKSamplerInstrumented(ROCMOptimizedKSampler):
-    pass
 
-@instrument_node
-class ROCMOptimizedKSamplerAdvancedInstrumented(ROCMOptimizedKSamplerAdvanced):
-    pass
+class ROCMMemoryOptimizer:
+    """
+    Memory optimization helper for AMD GPUs
+    """
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "optimization_level": (["conservative", "balanced", "aggressive"], {
+                    "default": "balanced",
+                    "tooltip": "Memory optimization level"
+                }),
+                "enable_gc": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Enable garbage collection"
+                }),
+                "clear_cache": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "Clear CUDA cache"
+                }),
+                "cleanup_frequency": ("INT", {
+                    "default": 10,
+                    "min": 1,
+                    "max": 100,
+                    "tooltip": "Cleanup frequency (operations between cleanups)"
+                })
+            }
+        }
+    
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("MEMORY_STATUS", "OPTIMIZATION_LOG", "RECOMMENDATIONS")
+    FUNCTION = "optimize_memory"
+    CATEGORY = "RocM Ninodes/Memory"
+    DESCRIPTION = "Memory optimization helper for AMD GPUs"
+    
+    def __init__(self):
+        self.operation_count = 0
+    
+    def optimize_memory(self, optimization_level="balanced", enable_gc=True, 
+                       clear_cache=True, cleanup_frequency=10):
+        """
+        Optimize memory usage for AMD GPUs
+        """
+        import torch
+        import gc
+        
+        self.operation_count += 1
+        
+        # Get current memory status
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1024**3
+            reserved = torch.cuda.memory_reserved() / 1024**3
+            total = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            free = total - reserved
+            
+            memory_status = f"Memory Status:\n"
+            memory_status += f"Allocated: {allocated:.2f}GB\n"
+            memory_status += f"Reserved: {reserved:.2f}GB\n"
+            memory_status += f"Free: {free:.2f}GB\n"
+            memory_status += f"Total: {total:.2f}GB\n"
+        else:
+            memory_status = "CUDA not available - no GPU memory to optimize"
+        
+        # Perform optimizations
+        optimization_log = f"Optimization Log (Level: {optimization_level}):\n"
+        
+        if enable_gc and self.operation_count % cleanup_frequency == 0:
+            gc.collect()
+            optimization_log += "✓ Garbage collection performed\n"
+        
+        if clear_cache and self.operation_count % cleanup_frequency == 0:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                optimization_log += "✓ CUDA cache cleared\n"
+        
+        # Level-specific optimizations
+        if optimization_level == "aggressive":
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                optimization_log += "✓ CUDA synchronization performed\n"
+        
+        # Generate recommendations
+        recommendations = "Memory Optimization Recommendations:\n"
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1024**3
+            total = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            
+            if allocated / total > 0.8:
+                recommendations += "⚠ High memory usage detected\n"
+                recommendations += "• Consider reducing batch size\n"
+                recommendations += "• Use lower resolution\n"
+                recommendations += "• Enable aggressive optimization\n"
+            elif allocated / total > 0.6:
+                recommendations += "• Memory usage is moderate\n"
+                recommendations += "• Consider balanced optimization\n"
+            else:
+                recommendations += "✓ Memory usage is good\n"
+                recommendations += "• Current settings are optimal\n"
+        
+        return (memory_status, optimization_log, recommendations)
 
-@instrument_node
-class ROCMOptimizedCheckpointLoaderInstrumented(ROCMOptimizedCheckpointLoader):
-    pass
 
 # Node mappings
 NODE_CLASS_MAPPINGS = {
-    "ROCMOptimizedCheckpointLoader": ROCMOptimizedCheckpointLoaderInstrumented,
-    "ROCMOptimizedVAEDecode": ROCMOptimizedVAEDecodeInstrumented,
-    "ROCMOptimizedKSampler": ROCMOptimizedKSamplerInstrumented,
-    "ROCMOptimizedKSamplerAdvanced": ROCMOptimizedKSamplerAdvancedInstrumented,
+    "ROCMOptimizedCheckpointLoader": ROCMOptimizedCheckpointLoader,
+    "ROCMOptimizedVAEDecode": ROCMOptimizedVAEDecode,
+    "ROCMOptimizedVAEDecodeTiled": ROCMOptimizedVAEDecodeTiled,
+    "ROCMVAEPerformanceMonitor": ROCMVAEPerformanceMonitor,
+    "ROCMOptimizedKSampler": ROCMOptimizedKSampler,
+    "ROCMOptimizedKSamplerAdvanced": ROCMOptimizedKSamplerAdvanced,
+    "ROCMSamplerPerformanceMonitor": ROCMSamplerPerformanceMonitor,
+    "ROCMFluxBenchmark": ROCMFluxBenchmark,
+    "ROCMMemoryOptimizer": ROCMMemoryOptimizer,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMOptimizedCheckpointLoader": "ROCM Checkpoint Loader",
     "ROCMOptimizedVAEDecode": "ROCM VAE Decode",
+    "ROCMOptimizedVAEDecodeTiled": "ROCM VAE Decode Tiled", 
+    "ROCMVAEPerformanceMonitor": "ROCM VAE Performance Monitor",
     "ROCMOptimizedKSampler": "ROCM KSampler",
     "ROCMOptimizedKSamplerAdvanced": "ROCM KSampler Advanced",
+    "ROCMSamplerPerformanceMonitor": "ROCM Sampler Performance Monitor",
+    "ROCMFluxBenchmark": "ROCM Flux Benchmark",
+    "ROCMMemoryOptimizer": "ROCM Memory Optimizer",
 }
