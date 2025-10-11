@@ -107,31 +107,7 @@ class ROCMOptimizedVAEDecode:
                     
                     # Keep original 5D shape for WAN VAE - don't reshape to 4D
                     # WAN VAE expects [B, C, T, H, W] format for memory calculation
-                    print(f"DEBUG: Original chunk shape: {chunk.shape}")
-                    print(f"DEBUG: Chunk dimensions: B={B}, C={C}, T={end_idx-i}, H={H}, W={W}")
-                    
-                    # Debug: Save input data for testing
-                    import pickle
-                    import os
-                    debug_data = {
-                        'chunk_shape': chunk.shape,
-                        'chunk_dtype': chunk.dtype,
-                        'chunk_device': str(chunk.device),
-                        'B': B, 'C': C, 'H': H, 'W': W,
-                        'end_idx': end_idx, 'i': i,
-                        'chunk_tensor': chunk.cpu().clone()  # Save actual tensor for optimization
-                    }
-                    os.makedirs('test_data/debug', exist_ok=True)
-                    timestamp = int(time.time())
-                    filename = f'test_data/debug/wan_vae_input_debug_{timestamp}.pkl'
-                    with open(filename, 'wb') as f:
-                        pickle.dump(debug_data, f)
-                    print(f"DEBUG: Saved VAE input data to {filename}")
-                    
                     # Decode chunk - WAN VAE expects 5D tensor [B, C, T, H, W]
-                    print(f"DEBUG: Calling vae.decode() with 5D tensor")
-                    print(f"DEBUG: chunk type: {type(chunk)}")
-                    print(f"DEBUG: chunk shape: {chunk.shape}")
                     
                     with torch.no_grad():
                         chunk_decoded = vae.decode(chunk)
@@ -142,7 +118,6 @@ class ROCMOptimizedVAEDecode:
                     
                     # Reshape back to video format - chunk_decoded should already be in correct format
                     # No need to reshape since we kept the 5D format
-                    print(f"DEBUG: chunk_decoded shape: {chunk_decoded.shape}")
                     chunk_results.append(chunk_decoded)
                     
                     # Clear memory after each chunk
@@ -165,9 +140,6 @@ class ROCMOptimizedVAEDecode:
                 B, C, T, H, W = samples["samples"].shape
                 video_tensor = samples["samples"]
                 
-                print(f"DEBUG: Processing full video with 5D tensor")
-                print(f"DEBUG: video_tensor type: {type(video_tensor)}")
-                print(f"DEBUG: video_tensor shape: {video_tensor.shape}")
                 
                 with torch.no_grad():
                     result = vae.decode(video_tensor)
