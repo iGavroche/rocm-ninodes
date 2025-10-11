@@ -123,9 +123,26 @@ class ROCMOptimizedVAEDecode:
             if memory_optimization_enabled and T > video_chunk_size:
                 # Process video in chunks to avoid memory exhaustion
                 chunk_results = []
-                for i in range(0, T, video_chunk_size):
-                    end_idx = min(i + video_chunk_size, T)
-                    chunk = samples["samples"][:, :, i:end_idx, :, :]
+                
+                # CRITICAL FIX: Ensure chunk size aligns properly with video length
+                # This prevents the last chunk from being smaller and potentially causing issues
+                effective_chunk_size = min(video_chunk_size, T)
+                num_chunks = (T + effective_chunk_size - 1) // effective_chunk_size  # Ceiling division
+                
+                logging.info(f"Video processing: T={T}, chunk_size={effective_chunk_size}, num_chunks={num_chunks}")
+                
+                for chunk_idx in range(num_chunks):
+                    start_idx = chunk_idx * effective_chunk_size
+                    end_idx = min(start_idx + effective_chunk_size, T)
+                    
+                    # Ensure we don't exceed the video length
+                    if start_idx >= T:
+                        break
+                        
+                    chunk = samples["samples"][:, :, start_idx:end_idx, :, :]
+                    actual_chunk_size = end_idx - start_idx
+                    
+                    logging.info(f"Processing chunk {chunk_idx}: frames {start_idx}-{end_idx-1} (size={actual_chunk_size})")
                     
                     # Keep original 5D shape for WAN VAE - don't reshape to 4D
                     # WAN VAE expects [B, C, T, H, W] format for memory calculation
@@ -138,15 +155,44 @@ class ROCMOptimizedVAEDecode:
                     if isinstance(chunk_decoded, tuple):
                         chunk_decoded = chunk_decoded[0]
                     
-                    # Reshape back to video format - chunk_decoded should already be in correct format
-                    # No need to reshape since we kept the 5D format
+                    # CRITICAL FIX: Ensure consistent tensor format for concatenation
+                    # WAN VAE might return different formats, normalize to [B, T, H, W, C]
+                    if len(chunk_decoded.shape) == 5:
+                        # Already in correct format: [B, T, H, W, C]
+                        pass
+                    elif len(chunk_decoded.shape) == 4:
+                        # Convert from [B*T, H, W, C] to [B, T, H, W, C]
+                        B_chunk, H, W, C = chunk_decoded.shape
+                        chunk_decoded = chunk_decoded.reshape(B_chunk // actual_chunk_size, actual_chunk_size, H, W, C)
+                    else:
+                        logging.warning(f"Unexpected chunk_decoded shape: {chunk_decoded.shape}")
+                    
+                    # Ensure tensor is contiguous and in correct dtype
+                    chunk_decoded = chunk_decoded.contiguous().float()
+                    
+                    # DEBUG: Log chunk information to identify batch issues
+                    logging.info(f"Chunk {chunk_idx}: shape={chunk_decoded.shape}, dtype={chunk_decoded.dtype}, "
+                               f"min={chunk_decoded.min().item():.4f}, max={chunk_decoded.max().item():.4f}, "
+                               f"mean={chunk_decoded.mean().item():.4f}")
+                    
                     chunk_results.append(chunk_decoded)
                     
                     # Clear memory after each chunk
                     torch.cuda.empty_cache()
                 
-                # Concatenate results
-                result = torch.cat(chunk_results, dim=1)
+                # CRITICAL FIX: Concatenate along time dimension (dim=1) with proper validation
+                try:
+                    result = torch.cat(chunk_results, dim=1)
+                except RuntimeError as e:
+                    logging.error(f"Concatenation failed: {e}")
+                    logging.error(f"Chunk shapes: {[chunk.shape for chunk in chunk_results]}")
+                    # Fallback: process each chunk individually and flatten
+                    individual_frames = []
+                    for chunk in chunk_results:
+                        B, T, H, W, C = chunk.shape
+                        individual_frames.append(chunk.reshape(B * T, H, W, C))
+                    result = torch.cat(individual_frames, dim=0)
+                    return (result,)
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
@@ -160,13 +206,27 @@ class ROCMOptimizedVAEDecode:
                 B, C, T, H, W = samples["samples"].shape
                 video_tensor = samples["samples"]
                 
-                
                 with torch.no_grad():
                     result = vae.decode(video_tensor)
                 
                 # VAE decode returns a tuple, extract the tensor
                 if isinstance(result, tuple):
                     result = result[0]
+                
+                # CRITICAL FIX: Ensure consistent tensor format for video processing
+                # WAN VAE might return different formats, normalize to [B, T, H, W, C]
+                if len(result.shape) == 5:
+                    # Already in correct format: [B, T, H, W, C]
+                    pass
+                elif len(result.shape) == 4:
+                    # Convert from [B*T, H, W, C] to [B, T, H, W, C]
+                    B_result, H, W, C = result.shape
+                    result = result.reshape(B_result // T, T, H, W, C)
+                else:
+                    logging.warning(f"Unexpected result shape: {result.shape}")
+                
+                # Ensure tensor is contiguous and in correct dtype
+                result = result.contiguous().float()
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
