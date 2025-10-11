@@ -1,0 +1,14 @@
+{
+  "node_name": "ROCMOptimizedVAEDecode",
+  "total_samples": 7,
+  "average_time": 0.0004268033163888114,
+  "median_time": 0.00019860267639160156,
+  "min_time": 0.00017881393432617188,
+  "max_time": 0.0010755062103271484,
+  "std_dev": 0.00040111823162825884,
+  "performance_distribution": {
+    "fast": 7,
+    "medium": 0,
+    "slow": 0
+  }
+}

@@ -14,7 +14,9 @@ import logging
 import folder_paths
 from typing import Dict, Any, Tuple, Optional
 import time
+from instrumentation import instrument_node
 
+@instrument_node
 class ROCMOptimizedVAEDecode:
     """
     ROCM-optimized VAE Decode node specifically tuned for gfx1151 architecture.
@@ -349,6 +351,7 @@ class ROCMOptimizedVAEDecode:
         return result
 
 
+@instrument_node
 class ROCMOptimizedVAEDecodeTiled:
     """
     Advanced tiled VAE decode with ROCm optimizations
@@ -443,6 +446,7 @@ class ROCMOptimizedVAEDecodeTiled:
         return (images,)
 
 
+@instrument_node
 class ROCMVAEPerformanceMonitor:
     """
     Monitor VAE performance and provide optimization suggestions
@@ -518,6 +522,7 @@ class ROCMVAEPerformanceMonitor:
         )
 
 
+@instrument_node
 class ROCMOptimizedKSampler:
     """
     ROCM-optimized KSampler specifically tuned for gfx1151 architecture.
@@ -690,6 +695,7 @@ class ROCMOptimizedKSampler:
         return result
 
 
+@instrument_node
 class ROCMOptimizedKSamplerAdvanced:
     """
     Advanced ROCM-optimized KSampler with more control options
@@ -867,6 +873,7 @@ class ROCMOptimizedKSamplerAdvanced:
         return result
 
 
+@instrument_node
 class ROCMSamplerPerformanceMonitor:
     """
     Monitor sampler performance and provide optimization suggestions
@@ -946,6 +953,7 @@ class ROCMSamplerPerformanceMonitor:
         )
 
 
+@instrument_node
 class ROCMOptimizedCheckpointLoader:
     """
     ROCM-optimized checkpoint loader for AMD GPUs (gfx1151)
@@ -1068,6 +1076,7 @@ class ROCMOptimizedCheckpointLoader:
                     raise e3
 
 
+@instrument_node
 class ROCMFluxBenchmark:
     """
     Comprehensive Flux workflow benchmark for AMD GPUs
@@ -1228,6 +1237,7 @@ class ROCMFluxBenchmark:
         return (benchmark_text, performance_chart, recommendations_text, memory_analysis)
 
 
+@instrument_node
 class ROCMMemoryOptimizer:
     """
     Memory optimization helper for AMD GPUs
