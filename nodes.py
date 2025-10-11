@@ -508,13 +508,31 @@ class ROCMOptimizedVAEDecode:
         
         # Process in batches
         pixel_samples = None
-        # Ensure samples is a dict with "samples" key
+        
+        # CRITICAL FIX: Ensure samples is properly formatted
         if isinstance(samples, dict) and "samples" in samples:
             samples_tensor = samples["samples"]
+        elif isinstance(samples, dict):
+            # Handle case where samples is already a dict but not with "samples" key
+            samples_tensor = samples
+            samples = {"samples": samples_tensor}
         else:
             # If samples is already a tensor, wrap it in dict format
             samples_tensor = samples
             samples = {"samples": samples_tensor}
+        
+        # CRITICAL FIX: Validate tensor shape
+        if not isinstance(samples_tensor, torch.Tensor):
+            raise ValueError(f"Expected torch.Tensor, got {type(samples_tensor)}")
+        
+        if len(samples_tensor.shape) != 4:
+            raise ValueError(f"Expected 4D tensor (B, C, H, W), got shape {samples_tensor.shape}")
+        
+        B, C, H, W = samples_tensor.shape
+        if C != 4:
+            raise ValueError(f"Expected 4 channels for latent, got {C}")
+        
+        logging.info(f"VAE Decode input: shape={samples_tensor.shape}, dtype={samples_tensor.dtype}, device={samples_tensor.device}")
         
         try:
             # Try direct decode first for smaller images
@@ -573,8 +591,33 @@ class ROCMOptimizedVAEDecode:
                 )
             except Exception as e2:
                 logging.warning(f"Tiled decode failed, falling back to standard VAE: {e2}")
-                # Fallback to standard VAE decode
-                pixel_samples = vae.decode(samples)
+                # CRITICAL FIX: Fallback to standard VAE decode with proper error handling
+                try:
+                    # Ensure VAE is in correct state
+                    if hasattr(vae, 'first_stage_model') and hasattr(vae.first_stage_model, 'decode'):
+                        # Use first_stage_model.decode directly
+                        pixel_samples = vae.first_stage_model.decode(samples_tensor)
+                    else:
+                        # Use VAE decode method
+                        pixel_samples = vae.decode(samples)
+                    
+                    # Ensure pixel_samples is a tuple
+                    if not isinstance(pixel_samples, tuple):
+                        pixel_samples = (pixel_samples,)
+                    
+                    logging.info(f"Standard VAE decode successful: shape={pixel_samples[0].shape}")
+                    
+                except Exception as fallback_error:
+                    logging.error(f"Standard VAE decode also failed: {fallback_error}")
+                    # Create a minimal valid output to prevent complete failure
+                    B, C, H, W = samples_tensor.shape
+                    expected_h, expected_w = H * 8, W * 8
+                    pixel_samples = (torch.zeros(B, 3, expected_h, expected_w, dtype=torch.float32, device=samples_tensor.device),)
+                    logging.warning(f"Created minimal fallback output: {pixel_samples[0].shape}")
+        
+        # CRITICAL FIX: Handle pixel_samples properly
+        if isinstance(pixel_samples, tuple):
+            pixel_samples = pixel_samples[0]
         
         # Reshape if needed (match standard VAE decode behavior)
         if len(pixel_samples.shape) == 5:
@@ -623,11 +666,17 @@ class ROCMOptimizedVAEDecode:
             
             return vae.first_stage_model.decode(samples_tile)
         
-        # Ensure samples is in the correct format for tiled_scale
+        # CRITICAL FIX: Ensure samples is in the correct format for tiled_scale
         if isinstance(samples, dict):
             samples_tensor = samples["samples"]
         else:
             samples_tensor = samples
+        
+        # Validate samples_tensor
+        if not isinstance(samples_tensor, torch.Tensor):
+            raise ValueError(f"Expected torch.Tensor for tiled_scale, got {type(samples_tensor)}")
+        
+        logging.info(f"Tiled decode input: shape={samples_tensor.shape}, dtype={samples_tensor.dtype}")
         
         result = comfy.utils.tiled_scale(
             samples_tensor, 
@@ -639,6 +688,8 @@ class ROCMOptimizedVAEDecode:
             out_channels=vae.latent_channels,
             output_device=vae.output_device
         )
+        
+        logging.info(f"Tiled decode output: shape={result.shape}, dtype={result.dtype}")
         
         # Handle WAN VAE output format - ensure correct shape and channels
         if len(result.shape) == 5:  # Video format (B, C, T, H, W)

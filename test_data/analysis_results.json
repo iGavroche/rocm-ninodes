@@ -1,0 +1,46 @@
+{
+  "performance": {
+    "total_inputs": 41,
+    "total_outputs": 4,
+    "total_benchmarks": 0,
+    "success_rate": 0.0,
+    "input_shapes": {
+      "(1, 4, 32, 32)": 16,
+      "(1, 4, 64, 64)": 5,
+      "(1, 4, 128, 128)": 6,
+      "(1, 4, 160, 160)": 8,
+      "(4, 4, 64, 64)": 6
+    },
+    "output_shapes": {
+      "(1, 256, 3, 3)": 2,
+      "(1, 256, 256, 3)": 2
+    }
+  },
+  "parameters": {
+    "tile_sizes": {
+      "512": 16,
+      "768": 11,
+      "1024": 6,
+      "1280": 8
+    },
+    "overlap_values": {
+      "64": 16,
+      "96": 11,
+      "128": 6,
+      "160": 8
+    },
+    "precision_modes": {
+      "auto": 41
+    },
+    "optimization_settings": {
+      "rocm:True_batch:True_memory:True": 41
+    }
+  },
+  "issues": [
+    "Low success rate: 0.0%",
+    "Suspiciously small output: (1, 256, 3, 3)",
+    "Suspiciously small output: (1, 256, 256, 3)",
+    "Very few outputs compared to inputs: 4/41"
+  ],
+  "timestamp": 1760145585
+}
