@@ -231,11 +231,19 @@ class ROCMOptimizedVAEDecode:
                 
                 return (result,)
         
-        # Set optimal precision for AMD GPUs
+        # Set optimal precision for AMD GPUs - match VAE model dtype to avoid type mismatch
         if precision_mode == "auto":
             if is_amd:
-                # For gfx1151, fp32 is often faster than bf16 due to ROCm limitations
-                optimal_dtype = torch.float32
+                # Check VAE model's actual dtype first to avoid type mismatch
+                vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
+                if vae_model_dtype is not None:
+                    # Use the VAE model's existing dtype to avoid type mismatch errors
+                    optimal_dtype = vae_model_dtype
+                    logging.info(f"Using VAE model's existing dtype: {optimal_dtype}")
+                else:
+                    # Fallback to VAE's configured dtype
+                    optimal_dtype = vae.vae_dtype
+                    logging.info(f"Using VAE's configured dtype: {optimal_dtype}")
             else:
                 optimal_dtype = vae.vae_dtype
         else:
@@ -245,6 +253,15 @@ class ROCMOptimizedVAEDecode:
                 "bf16": torch.bfloat16
             }
             optimal_dtype = dtype_map[precision_mode]
+        
+        # CRITICAL FIX: Handle BFloat16 model with Float32 input type mismatch
+        # If the VAE model has BFloat16 weights but we're using Float32, we need to match them
+        vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
+        if vae_model_dtype == torch.bfloat16 and optimal_dtype == torch.float32:
+            logging.warning("VAE model has BFloat16 weights but input is Float32 - this will cause type mismatch")
+            logging.warning("Converting VAE model to Float32 to match input dtype")
+            vae.first_stage_model = vae.first_stage_model.to(torch.float32)
+            optimal_dtype = torch.float32
         
         # ROCm-specific optimizations (set once, don't repeat)
         if use_rocm_optimizations and is_amd:
@@ -292,8 +309,13 @@ class ROCMOptimizedVAEDecode:
         
         if cache_key not in self._vae_model_cache:
             # Ensure VAE model is in optimal dtype (do this once, not repeatedly)
-            if hasattr(vae.first_stage_model, 'dtype') and vae.first_stage_model.dtype != optimal_dtype:
+            # CRITICAL FIX: Only convert model dtype if it's different to avoid type mismatch
+            current_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
+            if current_model_dtype is not None and current_model_dtype != optimal_dtype:
+                logging.info(f"Converting VAE model from {current_model_dtype} to {optimal_dtype}")
                 vae.first_stage_model = vae.first_stage_model.to(optimal_dtype)
+            else:
+                logging.info(f"VAE model already in correct dtype: {current_model_dtype}")
             self._vae_model_cache[cache_key] = True
         
         # Decide processing method based on image size and available memory
@@ -398,8 +420,13 @@ class ROCMOptimizedVAEDecode:
         
         if cache_key not in self._vae_model_cache:
             # Ensure VAE model is in correct dtype (do this once, not per tile)
-            if hasattr(vae.first_stage_model, 'dtype') and vae.first_stage_model.dtype != dtype:
+            # CRITICAL FIX: Only convert model dtype if it's different to avoid type mismatch
+            current_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
+            if current_model_dtype is not None and current_model_dtype != dtype:
+                logging.info(f"Tiled decode: Converting VAE model from {current_model_dtype} to {dtype}")
                 vae.first_stage_model = vae.first_stage_model.to(dtype)
+            else:
+                logging.info(f"Tiled decode: VAE model already in correct dtype: {current_model_dtype}")
             self._vae_model_cache[cache_key] = True
         
         # Use ComfyUI's tiled scale with optimizations
