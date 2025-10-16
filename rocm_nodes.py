@@ -263,6 +263,16 @@ class ROCMOptimizedVAEDecode:
                 # Clear cache gently to prevent Windows hanging
                 torch.cuda.empty_cache()
                 print("🧹 Memory cache cleared for optimal performance")
+                
+                # SAFE OPTIMIZATION: Set memory allocation strategy for Windows
+                if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
+                    try:
+                        # Use a conservative memory fraction to prevent Windows hanging
+                        torch.cuda.set_per_process_memory_fraction(0.85)  # More conservative than 0.9
+                        print("🔧 Memory allocation optimized for Windows stability")
+                    except Exception as e:
+                        print(f"⚠️ Memory fraction setting skipped: {e}")
+                        
             except Exception as e:
                 print(f"⚠️ Memory optimization skipped: {e}")
             
@@ -1326,6 +1336,9 @@ class ROCMOptimizedCheckpointLoader:
             
             # Use ComfyUI's standard loading - this is the most reliable approach
             print("📦 Loading model components...")
+            print("⏳ Large models may take 2-6 minutes to load (this is normal)")
+            print("🔄 Please be patient, especially on first run...")
+            
             out = comfy.sd.load_checkpoint_guess_config(
                 ckpt_path, 
                 output_vae=True, 
