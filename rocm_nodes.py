@@ -149,6 +149,22 @@ class ROCMOptimizedVAEDecode:
                 # Concatenate results
                 result = torch.cat(chunk_results, dim=1)
                 
+                # DEBUG: Check for dark frames in chunked processing
+                if len(result.shape) == 5:
+                    B, T, H, W, C = result.shape
+                    print(f"Chunked result shape: {result.shape}")
+                    frame_values = []
+                    for t in range(T):
+                        frame = result[0, t, :, :, :]  # Get frame t
+                        frame_min = frame.min().item()
+                        frame_max = frame.max().item()
+                        frame_mean = frame.mean().item()
+                        frame_values.append((frame_min, frame_max, frame_mean))
+                        if frame_mean < 0.1:  # Very dark frame
+                            print(f"WARNING: Dark frame in chunked processing at position {t}: min={frame_min:.4f}, max={frame_max:.4f}, mean={frame_mean:.4f}")
+                    
+                    print(f"Chunked frame value ranges: {frame_values}")
+                
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
                 if len(result.shape) == 5:
@@ -172,6 +188,20 @@ class ROCMOptimizedVAEDecode:
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
                 if len(result.shape) == 5:
                     B, T, H, W, C = result.shape
+                    
+                    # DEBUG: Check for dark frames before reshape
+                    frame_values = []
+                    for t in range(T):
+                        frame = result[0, t, :, :, :]  # Get frame t
+                        frame_min = frame.min().item()
+                        frame_max = frame.max().item()
+                        frame_mean = frame.mean().item()
+                        frame_values.append((frame_min, frame_max, frame_mean))
+                        if frame_mean < 0.1:  # Very dark frame
+                            print(f"WARNING: Dark frame detected at position {t}: min={frame_min:.4f}, max={frame_max:.4f}, mean={frame_mean:.4f}")
+                    
+                    print(f"Frame value ranges: {frame_values}")
+                    
                     result = result.reshape(B * T, H, W, C)
                 
                 # Capture output data and timing for debugging
