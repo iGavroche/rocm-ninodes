@@ -120,12 +120,9 @@ class ROCMOptimizedVAEDecode:
             B, C, T, H, W = samples["samples"].shape
             
             # Memory-safe video processing
-            print(f"Video processing: T={T}, video_chunk_size={video_chunk_size}, memory_optimization_enabled={memory_optimization_enabled}")
-            
             # CRITICAL FIX: WAN VAE has issues with chunking (frame duplication)
             # Force non-chunked processing for WAN VAE to prevent frame count issues
             if memory_optimization_enabled and T > video_chunk_size and T < 100:  # Only chunk for very large videos
-                print("WAN VAE: Using non-chunked processing to prevent frame duplication")
                 use_chunking = False
             else:
                 use_chunking = memory_optimization_enabled and T > video_chunk_size
@@ -148,7 +145,6 @@ class ROCMOptimizedVAEDecode:
                     if isinstance(chunk_decoded, tuple):
                         chunk_decoded = chunk_decoded[0]
                     
-                    print(f"Chunk {i//video_chunk_size}: input shape={chunk.shape}, output shape={chunk_decoded.shape}")
                     
                     # Reshape back to video format - chunk_decoded should already be in correct format
                     # No need to reshape since we kept the 5D format
@@ -161,21 +157,6 @@ class ROCMOptimizedVAEDecode:
                 # Concatenate results
                 result = torch.cat(chunk_results, dim=1)
                 
-                # DEBUG: Check for dark frames in chunked processing
-                if len(result.shape) == 5:
-                    B, T, H, W, C = result.shape
-                    print(f"Chunked result shape: {result.shape}")
-                    frame_values = []
-                    for t in range(T):
-                        frame = result[0, t, :, :, :]  # Get frame t
-                        frame_min = frame.min().item()
-                        frame_max = frame.max().item()
-                        frame_mean = frame.mean().item()
-                        frame_values.append((frame_min, frame_max, frame_mean))
-                        if frame_mean < 0.1:  # Very dark frame
-                            print(f"WARNING: Dark frame in chunked processing at position {t}: min={frame_min:.4f}, max={frame_max:.4f}, mean={frame_mean:.4f}")
-                    
-                    print(f"Chunked frame value ranges: {frame_values}")
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
@@ -196,25 +177,12 @@ class ROCMOptimizedVAEDecode:
                 if isinstance(result, tuple):
                     result = result[0]
                 
-                print(f"Non-chunked: input shape={video_tensor.shape}, output shape={result.shape}")
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
                 if len(result.shape) == 5:
                     B, T, H, W, C = result.shape
                     
-                    # DEBUG: Check for dark frames before reshape
-                    frame_values = []
-                    for t in range(T):
-                        frame = result[0, t, :, :, :]  # Get frame t
-                        frame_min = frame.min().item()
-                        frame_max = frame.max().item()
-                        frame_mean = frame.mean().item()
-                        frame_values.append((frame_min, frame_max, frame_mean))
-                        if frame_mean < 0.1:  # Very dark frame
-                            print(f"WARNING: Dark frame detected at position {t}: min={frame_min:.4f}, max={frame_max:.4f}, mean={frame_mean:.4f}")
-                    
-                    print(f"Frame value ranges: {frame_values}")
                     
                     result = result.reshape(B * T, H, W, C)
                 
