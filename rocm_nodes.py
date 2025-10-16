@@ -119,23 +119,18 @@ class ROCMOptimizedVAEDecode:
         if is_video:
             B, C, T, H, W = samples["samples"].shape
             
-            # Memory-safe video processing - PREFER NON-CHUNKED FOR WAN VAE
-            # WAN VAE has issues with chunking (inconsistent frame counts, brightness variations)
-            # Only use chunking for very large videos that would cause memory issues
-            if memory_optimization_enabled and T > video_chunk_size * 4:  # Only chunk if > 32 frames
+            # Memory-safe video processing
+            if memory_optimization_enabled and T > video_chunk_size:
                 # Process video in chunks to avoid memory exhaustion
                 chunk_results = []
-                
-                logging.info(f"Processing video in chunks of {video_chunk_size} frames")
-                
                 for i in range(0, T, video_chunk_size):
                     end_idx = min(i + video_chunk_size, T)
                     chunk = samples["samples"][:, :, i:end_idx, :, :]
                     
                     # Keep original 5D shape for WAN VAE - don't reshape to 4D
-                    logging.info(f"Processing chunk: frames {i}-{end_idx-1}, shape: {chunk.shape}")
-                    
+                    # WAN VAE expects [B, C, T, H, W] format for memory calculation
                     # Decode chunk - WAN VAE expects 5D tensor [B, C, T, H, W]
+                    
                     with torch.no_grad():
                         chunk_decoded = vae.decode(chunk)
                     
@@ -143,15 +138,15 @@ class ROCMOptimizedVAEDecode:
                     if isinstance(chunk_decoded, tuple):
                         chunk_decoded = chunk_decoded[0]
                     
-                    logging.info(f"Chunk decoded: shape={chunk_decoded.shape}, dtype={chunk_decoded.dtype}")
+                    # Reshape back to video format - chunk_decoded should already be in correct format
+                    # No need to reshape since we kept the 5D format
                     chunk_results.append(chunk_decoded)
                     
                     # Clear memory after each chunk
                     torch.cuda.empty_cache()
                 
-                # Concatenate results along time dimension (dim=1) - SIMPLE APPROACH
+                # Concatenate results
                 result = torch.cat(chunk_results, dim=1)
-                logging.info(f"Video decode completed: {result.shape}")
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
@@ -161,13 +156,9 @@ class ROCMOptimizedVAEDecode:
                 
                 return (result,)
             else:
-                # Process entire video at once - PREFERRED APPROACH FOR WAN VAE
-                # WAN VAE works best with full video processing (consistent frame counts, brightness)
-                # Chunking causes frame count mismatches and brightness variations
+                # Process entire video at once - keep 5D format for WAN VAE
                 B, C, T, H, W = samples["samples"].shape
                 video_tensor = samples["samples"]
-                
-                logging.info(f"Processing full video at once: {video_tensor.shape} (WAN VAE optimized)")
                 
                 with torch.no_grad():
                     result = vae.decode(video_tensor)
@@ -175,33 +166,6 @@ class ROCMOptimizedVAEDecode:
                 # VAE decode returns a tuple, extract the tensor
                 if isinstance(result, tuple):
                     result = result[0]
-                
-                # CRITICAL FIX: Ensure consistent tensor format for video processing
-                # WAN VAE might return different formats, normalize to [B, T, H, W, C]
-                if len(result.shape) == 5:
-                    # Already in correct format: [B, T, H, W, C]
-                    pass
-                elif len(result.shape) == 4:
-                    # Convert from [B*T, H, W, C] to [B, T, H, W, C]
-                    B_result, H, W, C = result.shape
-                    result = result.reshape(B_result // T, T, H, W, C)
-                else:
-                    logging.warning(f"Unexpected result shape: {result.shape}")
-                
-                # CRITICAL FIX: Preserve original tensor values - don't convert dtype
-                # The .float() conversion was corrupting VAE output values causing darker frames
-                result = result.contiguous()
-                
-                # Validate tensor value range - VAE should output values in [0, 1] or [-1, 1]
-                min_val = result.min().item()
-                max_val = result.max().item()
-                logging.info(f"Non-chunked video: shape={result.shape}, dtype={result.dtype}, "
-                           f"min={min_val:.4f}, max={max_val:.4f}, mean={result.mean().item():.4f}")
-                
-                if min_val < -1.1 or max_val > 1.1:
-                    logging.warning(f"Non-chunked video: Unexpected value range [{min_val:.4f}, {max_val:.4f}]")
-                else:
-                    logging.info(f"Non-chunked video: Valid value range [{min_val:.4f}, {max_val:.4f}]")
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
