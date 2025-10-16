@@ -142,8 +142,9 @@ class ROCMOptimizedVAEDecode:
                     # No need to reshape since we kept the 5D format
                     chunk_results.append(chunk_decoded)
                     
-                    # Clear memory after each chunk
-                    torch.cuda.empty_cache()
+                    # Clear memory after each chunk (reduced frequency to prevent fragmentation)
+                    if i % (video_chunk_size * 2) == 0:  # Only clear every 2 chunks
+                        torch.cuda.empty_cache()
                 
                 # Concatenate results
                 result = torch.cat(chunk_results, dim=1)
@@ -755,22 +756,17 @@ class ROCMOptimizedKSampler:
             except Exception as e:
                 logging.warning(f"hipBLAS optimizations failed: {e}")
             
-            # ADVANCED OPTIMIZATION: Uncached memory allocation for large models
+            # SAFE OPTIMIZATION: Conservative memory management
             if memory_optimization:
                 try:
-                    # Clear cache before sampling
+                    # Clear cache before sampling (safe operation)
                     torch.cuda.empty_cache()
                     
-                    # Set memory fraction for better management
-                    if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
-                        torch.cuda.set_per_process_memory_fraction(0.9)
+                    # REMOVED: set_per_process_memory_fraction - can cause OOM
+                    # REMOVED: set_allocator('uncached') - can cause memory corruption
+                    # These operations were causing system instability
                     
-                    # Enable uncached memory allocation for large models
-                    # This reduces latency in large model operations
-                    if hasattr(torch.cuda, 'set_allocator'):
-                        # Use uncached allocation for better performance with large models
-                        torch.cuda.set_allocator('uncached')
-                        logging.info("Uncached memory allocation enabled")
+                    logging.info("Safe memory optimization enabled")
                     
                 except Exception as e:
                     logging.warning(f"Memory optimization failed: {e}")
@@ -1051,11 +1047,10 @@ class ROCMOptimizedKSamplerAdvanced:
                     }
                     optimal_dtype = dtype_map[precision_mode]
                 
-                # Memory optimization
+                # SAFE Memory optimization
                 if memory_optimization:
                     torch.cuda.empty_cache()
-                    if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
-                        torch.cuda.set_per_process_memory_fraction(0.9)
+                    # REMOVED: set_per_process_memory_fraction - can cause OOM and system instability
         
         # Configure sampling parameters
         force_full_denoise = True
