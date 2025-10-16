@@ -119,19 +119,30 @@ class ROCMOptimizedVAEDecode:
         if is_video:
             B, C, T, H, W = samples["samples"].shape
             
+            # Progress indicator for Windows users experiencing hanging
+            print(f"🎬 Processing video: {T} frames, {H}x{W} resolution")
+            
             # Memory-safe video processing
             # CRITICAL FIX: WAN VAE has issues with chunking (frame duplication)
             # Force non-chunked processing for WAN VAE to prevent frame count issues
             if memory_optimization_enabled and T > video_chunk_size and T < 100:  # Only chunk for very large videos
                 use_chunking = False
+                print("📹 Using non-chunked processing for WAN VAE stability")
             else:
                 use_chunking = memory_optimization_enabled and T > video_chunk_size
+                if use_chunking:
+                    print(f"📹 Using chunked processing: {video_chunk_size} frames per chunk")
             
             if use_chunking:
                 # Process video in chunks to avoid memory exhaustion
                 chunk_results = []
+                num_chunks = (T + video_chunk_size - 1) // video_chunk_size
+                print(f"🔄 Processing {num_chunks} chunks...")
+                
                 for i in range(0, T, video_chunk_size):
+                    chunk_idx = i // video_chunk_size + 1
                     end_idx = min(i + video_chunk_size, T)
+                    print(f"  📦 Chunk {chunk_idx}/{num_chunks}: frames {i}-{end_idx-1}")
                     chunk = samples["samples"][:, :, i:end_idx, :, :]
                     
                     # Keep original 5D shape for WAN VAE - don't reshape to 4D
@@ -169,6 +180,7 @@ class ROCMOptimizedVAEDecode:
                 # Process entire video at once - keep 5D format for WAN VAE
                 B, C, T, H, W = samples["samples"].shape
                 video_tensor = samples["samples"]
+                print(f"🎯 Processing entire video at once: {T} frames")
                 
                 with torch.no_grad():
                     result = vae.decode(video_tensor)
@@ -246,6 +258,14 @@ class ROCMOptimizedVAEDecode:
             torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
             torch.backends.cuda.matmul.allow_fp16_accumulation = True
             
+            # SAFE OPTIMIZATION: Gentle memory management for Windows stability
+            try:
+                # Clear cache gently to prevent Windows hanging
+                torch.cuda.empty_cache()
+                print("🧹 Memory cache cleared for optimal performance")
+            except Exception as e:
+                print(f"⚠️ Memory optimization skipped: {e}")
+            
             # Optimize tile size for gfx1151
             if tile_size > 1024:
                 tile_size = 1024  # Cap for gfx1151 memory
@@ -298,6 +318,15 @@ class ROCMOptimizedVAEDecode:
         # Decide processing method based on image size and available memory
         image_size = samples_tensor.shape[2] * samples_tensor.shape[3]
         use_tiled = image_size > 512 * 512 or estimated_memory > free_memory * 0.8
+        
+        if is_video:
+            print(f"✅ Video processing completed, switching to image processing")
+        else:
+            print(f"🖼️ Processing image: {samples_tensor.shape[2]}x{samples_tensor.shape[3]}")
+            if use_tiled:
+                print(f"🔧 Using tiled processing for large image")
+            else:
+                print(f"⚡ Using direct processing for optimal speed")
         
         if not use_tiled:
             # Direct decode for smaller images or when memory is sufficient
@@ -379,6 +408,12 @@ class ROCMOptimizedVAEDecode:
         
         decode_time = time.time() - start_time
         logging.info(f"ROCM VAE Decode completed in {decode_time:.2f}s")
+        
+        # Completion message for user feedback
+        if is_video:
+            print(f"✅ Video decode completed in {decode_time:.2f}s")
+        else:
+            print(f"✅ Image decode completed in {decode_time:.2f}s")
         
         return (pixel_samples,)
     
@@ -737,6 +772,9 @@ class ROCMOptimizedKSampler:
         device = model.model_dtype()
         is_amd = hasattr(device, 'type') and device.type == 'cuda'
         
+        # Progress indicator for Windows users
+        print(f"🎲 Starting KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
+        
         # ROCm-specific optimizations
         if use_rocm_optimizations and is_amd:
             # Set optimal precision for gfx1151
@@ -749,6 +787,8 @@ class ROCMOptimizedKSampler:
                     "bf16": torch.bfloat16
                 }
                 optimal_dtype = dtype_map[precision_mode]
+            
+            print(f"🔧 ROCm optimizations enabled: {optimal_dtype}")
             
             # Enable ROCm optimizations
             torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
@@ -840,6 +880,9 @@ class ROCMOptimizedKSampler:
         
         sample_time = time.time() - start_time
         logging.info(f"ROCM KSampler completed in {sample_time:.2f}s")
+        
+        # Completion message for user feedback
+        print(f"✅ KSampler completed in {sample_time:.2f}s")
         
         # Capture output data and timing for debugging
         if DEBUG_MODE:
@@ -1259,9 +1302,12 @@ class ROCMOptimizedCheckpointLoader:
         try:
             # Get checkpoint path
             ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
-            print(f"Loading checkpoint: {ckpt_name}")
-            print(f"Checkpoint path: {ckpt_path}")
-            print(f"File exists: {os.path.exists(ckpt_path)}")
+            print(f"📁 Loading checkpoint: {ckpt_name}")
+            print(f"📂 Checkpoint path: {ckpt_path}")
+            print(f"✅ File exists: {os.path.exists(ckpt_path)}")
+            
+            # Progress indicator for Windows users
+            print("🔄 Initializing model loading...")
             
             # Check if ROCm is available
             try:
@@ -1279,12 +1325,14 @@ class ROCMOptimizedCheckpointLoader:
                 print("ROCm not available - running in compatibility mode")
             
             # Use ComfyUI's standard loading - this is the most reliable approach
+            print("📦 Loading model components...")
             out = comfy.sd.load_checkpoint_guess_config(
                 ckpt_path, 
                 output_vae=True, 
                 output_clip=True, 
                 embedding_directory=folder_paths.get_folder_paths("embeddings")
             )
+            print("✅ Model loading completed")
             
             # Validate the output
             if len(out) < 3:
