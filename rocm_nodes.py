@@ -121,7 +121,16 @@ class ROCMOptimizedVAEDecode:
             
             # Memory-safe video processing
             print(f"Video processing: T={T}, video_chunk_size={video_chunk_size}, memory_optimization_enabled={memory_optimization_enabled}")
-            if memory_optimization_enabled and T > video_chunk_size:
+            
+            # CRITICAL FIX: WAN VAE has issues with chunking (frame duplication)
+            # Force non-chunked processing for WAN VAE to prevent frame count issues
+            if memory_optimization_enabled and T > video_chunk_size and T < 100:  # Only chunk for very large videos
+                print("WAN VAE: Using non-chunked processing to prevent frame duplication")
+                use_chunking = False
+            else:
+                use_chunking = memory_optimization_enabled and T > video_chunk_size
+            
+            if use_chunking:
                 # Process video in chunks to avoid memory exhaustion
                 chunk_results = []
                 for i in range(0, T, video_chunk_size):
