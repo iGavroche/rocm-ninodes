@@ -120,6 +120,7 @@ class ROCMOptimizedVAEDecode:
             B, C, T, H, W = samples["samples"].shape
             
             # Memory-safe video processing
+            print(f"Video processing: T={T}, video_chunk_size={video_chunk_size}, memory_optimization_enabled={memory_optimization_enabled}")
             if memory_optimization_enabled and T > video_chunk_size:
                 # Process video in chunks to avoid memory exhaustion
                 chunk_results = []
@@ -137,6 +138,8 @@ class ROCMOptimizedVAEDecode:
                     # VAE decode returns a tuple, extract the tensor
                     if isinstance(chunk_decoded, tuple):
                         chunk_decoded = chunk_decoded[0]
+                    
+                    print(f"Chunk {i//video_chunk_size}: input shape={chunk.shape}, output shape={chunk_decoded.shape}")
                     
                     # Reshape back to video format - chunk_decoded should already be in correct format
                     # No need to reshape since we kept the 5D format
@@ -183,6 +186,8 @@ class ROCMOptimizedVAEDecode:
                 # VAE decode returns a tuple, extract the tensor
                 if isinstance(result, tuple):
                     result = result[0]
+                
+                print(f"Non-chunked: input shape={video_tensor.shape}, output shape={result.shape}")
                 
                 # Convert 5D video tensor to 4D image tensor for ComfyUI
                 # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
