@@ -25,7 +25,7 @@
     "display_name": "RocM Ninodes",
     "description": "ROCM-optimized nodes for AMD GPU performance",
     "author": "Nino",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "category": "Optimization",
     "tags": ["rocm", "amd", "gpu", "optimization", "vae", "sampling"],
     "nodes": [
