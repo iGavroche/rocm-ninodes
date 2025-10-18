@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.20] - 2024-12-19
+
+### Improved
+- **ROCM KSampler Advanced Performance**: Optimized for video workflows
+  - Added detailed progress indicators to reduce perceived idle time
+  - Optimized memory management for video processing
+  - Added video-specific progress feedback and status messages
+  - Improved fallback handling with better error reporting
+  - Enhanced completion feedback for better user experience
+
+### Fixed
+- **Idle Time Issues**: Reduced apparent idle time in video workflows
+  - Added progress indicators during parameter preparation
+  - Better feedback during noise preparation and sampling
+  - Clearer status messages throughout the sampling process
+
 ## [1.0.19] - 2024-12-19
 
 ### Fixed

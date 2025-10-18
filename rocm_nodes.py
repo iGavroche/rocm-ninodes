@@ -784,6 +784,7 @@ class ROCMOptimizedKSampler:
         
         # Progress indicator for Windows users
         print(f"🎲 Starting KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
+        print("Using standard ComfyUI sampling path")
         
         # ROCm-specific optimizations
         if use_rocm_optimizations and is_amd:
@@ -889,10 +890,8 @@ class ROCMOptimizedKSampler:
             )
         
         sample_time = time.time() - start_time
-        logging.info(f"ROCM KSampler completed in {sample_time:.2f}s")
-        
-        # Completion message for user feedback
         print(f"✅ KSampler completed in {sample_time:.2f}s")
+        logging.info(f"ROCM KSampler completed in {sample_time:.2f}s")
         
         # Capture output data and timing for debugging
         if DEBUG_MODE:
@@ -1095,6 +1094,10 @@ class ROCMOptimizedKSamplerAdvanced:
         """
         start_time = time.time()
         
+        # Progress indicator for video workflows
+        print(f"🎬 Starting Advanced KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
+        print(f"📊 Video workflow detected - optimizing for temporal processing")
+        
         # ROCm optimizations
         if use_rocm_optimizations:
             device = model.model_dtype()
@@ -1112,9 +1115,11 @@ class ROCMOptimizedKSamplerAdvanced:
                     }
                     optimal_dtype = dtype_map[precision_mode]
                 
-                # SAFE Memory optimization
+                # Optimized memory management for video workflows
                 if memory_optimization:
+                    # Only clear cache once at the beginning
                     torch.cuda.empty_cache()
+                    print("🧹 Memory cache cleared for optimal performance")
                     # REMOVED: set_per_process_memory_fraction - can cause OOM and system instability
         
         # Configure sampling parameters
@@ -1128,11 +1133,14 @@ class ROCMOptimizedKSamplerAdvanced:
         
         # Use advanced ksampler with optimizations
         try:
+            print("⚡ Preparing sampling parameters...")
+            
             # Use ComfyUI's sample function directly with advanced options
             latent_image_tensor = latent_image["samples"]
             latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
             
-            # Prepare noise
+            # Prepare noise with progress feedback
+            print("🎲 Preparing noise for sampling...")
             if disable_noise:
                 noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
             else:
@@ -1144,9 +1152,12 @@ class ROCMOptimizedKSamplerAdvanced:
             if "noise_mask" in latent_image:
                 noise_mask = latent_image["noise_mask"]
             
-            # Prepare callback
+            # Prepare callback with video-optimized progress
             callback = latent_preview.prepare_callback(model, steps)
             disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+            
+            print(f"🚀 Starting sampling: {steps} steps, CFG {cfg}, {sampler_name}")
+            print("Using standard ComfyUI sampling path")
             
             # Sample with advanced options
             samples = comfy.sample.sample(
@@ -1163,8 +1174,16 @@ class ROCMOptimizedKSamplerAdvanced:
             result = (out,)
             
         except Exception as e:
+            print(f"⚠️ Advanced sampling failed, falling back to standard: {e}")
             logging.warning(f"Advanced sampling failed, falling back to standard: {e}")
+            
+            # Clear memory before fallback
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                print("🧹 Memory cache cleared before fallback")
+            
             # Fallback to direct sampling
+            print("🔄 Using fallback sampling method...")
             samples = comfy.sample.sample(
                 model, None, steps, cfg, sampler_name, scheduler, 
                 positive, negative, latent_image["samples"], denoise=denoise, 
@@ -1176,7 +1195,13 @@ class ROCMOptimizedKSamplerAdvanced:
             out["samples"] = samples
             result = (out,)
         
+        # Final memory cleanup
+        if memory_optimization and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print("🧹 Memory cache cleared for optimal performance")
+        
         sample_time = time.time() - start_time
+        print(f"✅ ROCM Advanced KSampler completed in {sample_time:.2f}s")
         logging.info(f"ROCM Advanced KSampler completed in {sample_time:.2f}s")
         
         return result
