@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.21] - 2024-12-19
+
+### Fixed
+- **Memory Calculation Accuracy**: Fixed critical memory calculation errors
+  - **Corrected free memory calculation**: Now uses `reserved_memory` instead of `allocated_memory`
+  - **Added reserved memory monitoring**: Shows both allocated and reserved memory for accurate picture
+  - **Dynamic memory fraction calculation**: Adapts to actual available memory (60-85% for regular, 55-80% for video)
+  - **Consistent memory thresholds**: 4GB for regular KSampler, 3GB for video workflows
+  - **Improved memory cleanup**: Aggressive cleanup with multiple cache clears and garbage collection
+
+### Improved
+- **Memory Management**: Enhanced OOM prevention and memory monitoring
+  - Added `get_gpu_memory_info()` helper function for accurate memory reporting
+  - Added `aggressive_memory_cleanup()` helper function for consistent cleanup
+  - Better error handling for memory operations
+  - More accurate memory reporting in debug output
+
 ## [1.0.20] - 2024-12-19
 
 ### Improved

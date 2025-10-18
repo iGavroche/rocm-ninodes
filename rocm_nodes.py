@@ -14,12 +14,33 @@ import logging
 import folder_paths
 from typing import Dict, Any, Tuple, Optional
 import time
+import gc
 # from debug_config import DEBUG_MODE, save_debug_data, capture_timing, capture_memory_usage, log_debug
 DEBUG_MODE = False
 def save_debug_data(*args, **kwargs): pass
 def capture_timing(*args, **kwargs): pass
 def capture_memory_usage(*args, **kwargs): pass
 def log_debug(*args, **kwargs): pass
+
+def get_gpu_memory_info():
+    """Get accurate GPU memory information"""
+    if not torch.cuda.is_available():
+        return None, None, None, None
+    
+    total_memory = torch.cuda.get_device_properties(0).total_memory
+    allocated_memory = torch.cuda.memory_allocated(0)
+    reserved_memory = torch.cuda.memory_reserved(0)
+    free_memory = total_memory - reserved_memory
+    
+    return total_memory, allocated_memory, reserved_memory, free_memory
+
+def aggressive_memory_cleanup():
+    """Perform aggressive memory cleanup"""
+    for _ in range(3):
+        torch.cuda.empty_cache()
+    gc.collect()
+    # Force another cache clear after GC
+    torch.cuda.empty_cache()
 
 class ROCMOptimizedVAEDecode:
     """
@@ -261,7 +282,7 @@ class ROCMOptimizedVAEDecode:
             # SAFE OPTIMIZATION: Gentle memory management for Windows stability
             try:
                 # Clear cache gently to prevent Windows hanging
-                torch.cuda.empty_cache()
+                aggressive_memory_cleanup()
                 print("🧹 Memory cache cleared for optimal performance")
                 
                 # SAFE OPTIMIZATION: Set memory allocation strategy for Windows
@@ -819,22 +840,46 @@ class ROCMOptimizedKSampler:
             except Exception as e:
                 logging.warning(f"hipBLAS optimizations failed: {e}")
             
-            # SAFE OPTIMIZATION: Conservative memory management
+            # AGGRESSIVE OPTIMIZATION: OOM prevention for video workflows
             if memory_optimization:
                 try:
-                    # Clear cache before sampling (safe operation)
-                    torch.cuda.empty_cache()
+                    # Perform aggressive memory cleanup
+                    aggressive_memory_cleanup()
                     
-                    # REMOVED: set_per_process_memory_fraction - can cause OOM
-                    # REMOVED: set_allocator('uncached') - can cause memory corruption
-                    # These operations were causing system instability
+                    # Check available memory and adjust strategy
+                    total_memory, allocated_memory, reserved_memory, free_memory = get_gpu_memory_info()
                     
-                    logging.info("Safe memory optimization enabled")
+                    if total_memory is not None:
+                        print(f"🔍 GPU Memory: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved, {free_memory/1024**3:.2f}GB free")
+                        
+                        # Calculate memory fraction based on available memory
+                        memory_fraction = min(0.85, max(0.60, free_memory / total_memory))
+                        
+                        # If memory is low, be very aggressive (use 4GB threshold for regular KSampler)
+                        if free_memory < 4 * 1024**3:  # Less than 4GB free
+                            print("⚠️ Low memory detected - using aggressive cleanup")
+                            # Perform additional aggressive cleanup
+                            aggressive_memory_cleanup()
+                            
+                            # Set very conservative memory fraction
+                            memory_fraction = 0.70
+                            print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for OOM prevention")
+                        else:
+                            print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for stability")
+                        
+                        # Apply memory fraction
+                        if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
+                            try:
+                                torch.cuda.set_per_process_memory_fraction(memory_fraction)
+                            except Exception as e:
+                                print(f"⚠️ Memory fraction setting failed: {e}")
+                    
+                    logging.info("Aggressive memory optimization enabled for OOM prevention")
                     
                 except Exception as e:
                     logging.warning(f"Memory optimization failed: {e}")
                     # Fallback to standard memory management
-                    torch.cuda.empty_cache()
+                    aggressive_memory_cleanup()
         
         # Attention optimization
         if attention_optimization and is_amd:
@@ -1115,12 +1160,40 @@ class ROCMOptimizedKSamplerAdvanced:
                     }
                     optimal_dtype = dtype_map[precision_mode]
                 
-                # Optimized memory management for video workflows
+                # AGGRESSIVE memory management for video workflows - OOM prevention
                 if memory_optimization:
-                    # Only clear cache once at the beginning
-                    torch.cuda.empty_cache()
+                    # Perform aggressive memory cleanup
+                    aggressive_memory_cleanup()
+                    
+                    # Check available memory and adjust strategy
+                    total_memory, allocated_memory, reserved_memory, free_memory = get_gpu_memory_info()
+                    
+                    if total_memory is not None:
+                        print(f"🔍 Advanced KSampler Memory: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved, {free_memory/1024**3:.2f}GB free")
+                        
+                        # Calculate memory fraction based on available memory (more conservative for video)
+                        memory_fraction = min(0.80, max(0.55, free_memory / total_memory))
+                        
+                        # If memory is low, be very aggressive (use 3GB threshold for video workflows)
+                        if free_memory < 3 * 1024**3:  # Less than 3GB free
+                            print("⚠️ Low memory detected - using aggressive cleanup for video workflow")
+                            # Perform additional aggressive cleanup
+                            aggressive_memory_cleanup()
+                            
+                            # Set very conservative memory fraction for video
+                            memory_fraction = 0.65
+                            print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for video OOM prevention")
+                        else:
+                            print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for video stability")
+                        
+                        # Apply memory fraction
+                        if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
+                            try:
+                                torch.cuda.set_per_process_memory_fraction(memory_fraction)
+                            except Exception as e:
+                                print(f"⚠️ Memory fraction setting failed: {e}")
+                    
                     print("🧹 Memory cache cleared for optimal performance")
-                    # REMOVED: set_per_process_memory_fraction - can cause OOM and system instability
         
         # Configure sampling parameters
         force_full_denoise = True
@@ -1197,7 +1270,7 @@ class ROCMOptimizedKSamplerAdvanced:
         
         # Final memory cleanup
         if memory_optimization and torch.cuda.is_available():
-            torch.cuda.empty_cache()
+            aggressive_memory_cleanup()
             print("🧹 Memory cache cleared for optimal performance")
         
         sample_time = time.time() - start_time
