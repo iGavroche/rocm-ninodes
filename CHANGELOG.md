@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.16] - 2024-12-19
+
+### Fixed
+- **Critical VAE Decode Bug**: Fixed tensor dimension mismatch in tiled decoding
+  - Corrected `out_channels` parameter from `vae.latent_channels` (16) to 3 (RGB)
+  - Resolves "The size of tensor a (16) must match the size of tensor b (3)" error
+  - Fixes VAE decode failures when processing images with tiled decoding
+
 ## [1.0.13] - 2024-10-10
 
 ### Fixed

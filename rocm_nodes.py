@@ -464,7 +464,7 @@ class ROCMOptimizedVAEDecode:
             tile_y=tile_y, 
             overlap=overlap_adj,
             upscale_amount=vae.upscale_ratio,
-            out_channels=vae.latent_channels,
+            out_channels=3,  # RGB output channels, not latent channels
             output_device=vae.output_device
         )
         

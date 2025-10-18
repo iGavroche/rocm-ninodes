@@ -1,6 +1,6 @@
 {
   "name": "rocm-ninodes",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "ROCM-optimized ComfyUI nodes for AMD GPU performance",
   "author": "Nino",
   "email": "nino2k@proton.me",
