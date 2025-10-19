@@ -34,13 +34,76 @@ def get_gpu_memory_info():
     
     return total_memory, allocated_memory, reserved_memory, free_memory
 
-def aggressive_memory_cleanup():
-    """Perform aggressive memory cleanup"""
-    for _ in range(3):
+def check_memory_safety(required_memory_gb=2.0):
+    """Check if there's enough memory for the operation"""
+    if not torch.cuda.is_available():
+        return True, "CUDA not available"
+    
+    total_memory, allocated_memory, reserved_memory, free_memory = get_gpu_memory_info()
+    
+    if total_memory is None:
+        return True, "Memory info unavailable"
+    
+    free_gb = free_memory / (1024**3)
+    required_gb = required_memory_gb
+    
+    if free_gb < required_gb:
+        return False, f"Only {free_gb:.2f}GB free, need {required_gb:.2f}GB"
+    
+    return True, f"Memory OK: {free_gb:.2f}GB free"
+
+def emergency_memory_cleanup():
+    """Emergency memory cleanup when OOM is imminent"""
+    try:
+        # Force all pending operations to complete
+        torch.cuda.synchronize()
+        
+        # Clear all caches multiple times
+        for _ in range(5):
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Reset memory stats
+        torch.cuda.reset_peak_memory_stats()
+        
+        # Final cache clear
         torch.cuda.empty_cache()
-    gc.collect()
-    # Force another cache clear after GC
-    torch.cuda.empty_cache()
+        
+        return True
+    except Exception as e:
+        logging.error(f"Emergency memory cleanup failed: {e}")
+        return False
+
+def aggressive_memory_cleanup():
+    """Perform aggressive memory cleanup with better error handling"""
+    try:
+        # Multiple cache clears with synchronization
+        for _ in range(3):
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Final cache clear after GC
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        
+        # Additional cleanup for fragmented memory
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+            
+    except Exception as e:
+        logging.warning(f"Memory cleanup failed: {e}")
+        # Fallback to basic cleanup
+        try:
+            torch.cuda.empty_cache()
+            gc.collect()
+        except:
+            pass
 
 class ROCMOptimizedVAEDecode:
     """
@@ -313,8 +376,26 @@ class ROCMOptimizedVAEDecode:
             # For video or other formats, use a conservative estimate
             estimated_memory = samples_shape[0] * samples_shape[1] * samples_shape[2] * samples_shape[3] * 4 * 8
         
+        # Check memory safety before loading models
+        estimated_memory_gb = estimated_memory / (1024**3)
+        is_safe, memory_msg = check_memory_safety(required_memory_gb=estimated_memory_gb + 2.0)
+        
+        if not is_safe:
+            print(f"⚠️ VAE Decode Memory Warning: {memory_msg}")
+            print("🧹 Performing emergency cleanup before VAE decode...")
+            emergency_memory_cleanup()
+        
         # Load models with estimated memory (faster than exact calculation)
-        model_management.load_models_gpu([vae.patcher], memory_required=estimated_memory)
+        try:
+            model_management.load_models_gpu([vae.patcher], memory_required=estimated_memory)
+        except Exception as e:
+            if "out of memory" in str(e).lower():
+                print("💾 VAE model loading failed due to memory - performing cleanup")
+                emergency_memory_cleanup()
+                # Try again with reduced memory requirement
+                model_management.load_models_gpu([vae.patcher], memory_required=estimated_memory // 2)
+            else:
+                raise e
         
         # Calculate optimal batch size for gfx1151 (less conservative)
         free_memory = model_management.get_free_memory(device)
@@ -840,46 +921,57 @@ class ROCMOptimizedKSampler:
             except Exception as e:
                 logging.warning(f"hipBLAS optimizations failed: {e}")
             
-            # AGGRESSIVE OPTIMIZATION: OOM prevention for video workflows
-            if memory_optimization:
-                try:
-                    # Perform aggressive memory cleanup
-                    aggressive_memory_cleanup()
+        # AGGRESSIVE OPTIMIZATION: OOM prevention for video workflows
+        if memory_optimization:
+            try:
+                # Check memory safety before proceeding
+                is_safe, memory_msg = check_memory_safety(required_memory_gb=3.0)
+                print(f"🔍 Memory check: {memory_msg}")
+                
+                if not is_safe:
+                    print("⚠️ Low memory detected - performing emergency cleanup")
+                    if not emergency_memory_cleanup():
+                        print("❌ Emergency cleanup failed - proceeding with caution")
+                
+                # Perform aggressive memory cleanup
+                aggressive_memory_cleanup()
+                
+                # Check available memory and adjust strategy
+                total_memory, allocated_memory, reserved_memory, free_memory = get_gpu_memory_info()
+                
+                if total_memory is not None:
+                    print(f"🔍 GPU Memory: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved, {free_memory/1024**3:.2f}GB free")
                     
-                    # Check available memory and adjust strategy
-                    total_memory, allocated_memory, reserved_memory, free_memory = get_gpu_memory_info()
+                    # Calculate memory fraction based on available memory
+                    memory_fraction = min(0.80, max(0.50, free_memory / total_memory))
                     
-                    if total_memory is not None:
-                        print(f"🔍 GPU Memory: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved, {free_memory/1024**3:.2f}GB free")
-                        
-                        # Calculate memory fraction based on available memory
-                        memory_fraction = min(0.85, max(0.60, free_memory / total_memory))
-                        
-                        # If memory is low, be very aggressive (use 4GB threshold for regular KSampler)
-                        if free_memory < 4 * 1024**3:  # Less than 4GB free
-                            print("⚠️ Low memory detected - using aggressive cleanup")
-                            # Perform additional aggressive cleanup
-                            aggressive_memory_cleanup()
-                            
-                            # Set very conservative memory fraction
-                            memory_fraction = 0.70
-                            print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for OOM prevention")
-                        else:
-                            print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for stability")
-                        
-                        # Apply memory fraction
-                        if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
-                            try:
-                                torch.cuda.set_per_process_memory_fraction(memory_fraction)
-                            except Exception as e:
-                                print(f"⚠️ Memory fraction setting failed: {e}")
+                    # If memory is critically low, be very aggressive
+                    if free_memory < 2 * 1024**3:  # Less than 2GB free
+                        print("⚠️ Critical memory - using emergency cleanup")
+                        emergency_memory_cleanup()
+                        memory_fraction = 0.60
+                        print(f"🔧 Emergency memory fraction set to {memory_fraction*100:.0f}%")
+                    elif free_memory < 4 * 1024**3:  # Less than 4GB free
+                        print("⚠️ Low memory detected - using aggressive cleanup")
+                        aggressive_memory_cleanup()
+                        memory_fraction = 0.70
+                        print(f"🔧 Conservative memory fraction set to {memory_fraction*100:.0f}%")
+                    else:
+                        print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for stability")
                     
-                    logging.info("Aggressive memory optimization enabled for OOM prevention")
-                    
-                except Exception as e:
-                    logging.warning(f"Memory optimization failed: {e}")
-                    # Fallback to standard memory management
-                    aggressive_memory_cleanup()
+                    # Apply memory fraction
+                    if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
+                        try:
+                            torch.cuda.set_per_process_memory_fraction(memory_fraction)
+                        except Exception as e:
+                            print(f"⚠️ Memory fraction setting failed: {e}")
+                
+                logging.info("Aggressive memory optimization enabled for OOM prevention")
+                
+            except Exception as e:
+                logging.warning(f"Memory optimization failed: {e}")
+                # Fallback to standard memory management
+                aggressive_memory_cleanup()
         
         # Attention optimization
         if attention_optimization and is_amd:
@@ -1135,18 +1227,35 @@ class ROCMOptimizedKSamplerAdvanced:
                return_with_leftover_noise, use_rocm_optimizations=True, 
                precision_mode="auto", memory_optimization=True, denoise=1.0):
         """
-        Advanced optimized sampling for ROCm/AMD GPUs
+        Advanced optimized sampling for ROCm/AMD GPUs with video workflow optimizations
         """
         start_time = time.time()
         
-        # Progress indicator for video workflows
-        print(f"🎬 Starting Advanced KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
-        print(f"📊 Video workflow detected - optimizing for temporal processing")
+        # Detect video workflow by batch size
+        batch_size = latent_image["samples"].shape[0]
+        is_video_workflow = batch_size > 1
+        
+        # Minimal progress for video workflows to reduce CPU overhead
+        if is_video_workflow:
+            print(f"🎬 Video KSampler: {steps} steps, batch={batch_size}, {sampler_name}")
+        else:
+            print(f"🎬 Starting Advanced KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
         
         # ROCm optimizations
         if use_rocm_optimizations:
             device = model.model_dtype()
             is_amd = hasattr(device, 'type') and device.type == 'cuda'
+            
+            # Video workflow specific optimizations
+            if is_video_workflow and is_amd:
+                # Optimize for video processing
+                torch.backends.cuda.matmul.allow_tf32 = False  # Better for AMD
+                torch.backends.cuda.matmul.allow_fp16_accumulation = True
+                
+                # Enable more aggressive attention for video
+                torch.backends.cuda.enable_math_sdp(True)
+                torch.backends.cuda.enable_flash_sdp(True)
+                torch.backends.cuda.enable_mem_efficient_sdp(True)
             
             if is_amd:
                 # Set optimal precision
@@ -1160,40 +1269,48 @@ class ROCMOptimizedKSamplerAdvanced:
                     }
                     optimal_dtype = dtype_map[precision_mode]
                 
-                # AGGRESSIVE memory management for video workflows - OOM prevention
+                # OPTIMIZED memory management for video workflows
                 if memory_optimization:
-                    # Perform aggressive memory cleanup
-                    aggressive_memory_cleanup()
-                    
                     # Check available memory and adjust strategy
                     total_memory, allocated_memory, reserved_memory, free_memory = get_gpu_memory_info()
                     
                     if total_memory is not None:
-                        print(f"🔍 Advanced KSampler Memory: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved, {free_memory/1024**3:.2f}GB free")
+                        # Only show detailed memory info for debugging
+                        if not is_video_workflow:
+                            print(f"🔍 Advanced KSampler Memory: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved, {free_memory/1024**3:.2f}GB free")
                         
-                        # Calculate memory fraction based on available memory (more conservative for video)
-                        memory_fraction = min(0.80, max(0.55, free_memory / total_memory))
-                        
-                        # If memory is low, be very aggressive (use 3GB threshold for video workflows)
-                        if free_memory < 3 * 1024**3:  # Less than 3GB free
-                            print("⚠️ Low memory detected - using aggressive cleanup for video workflow")
-                            # Perform additional aggressive cleanup
-                            aggressive_memory_cleanup()
+                        # Video workflow optimization: more aggressive memory usage
+                        if is_video_workflow:
+                            # For video workflows, use more memory for better GPU utilization
+                            memory_fraction = min(0.90, max(0.75, free_memory / total_memory))
                             
-                            # Set very conservative memory fraction for video
-                            memory_fraction = 0.65
-                            print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for video OOM prevention")
+                            # Only cleanup if memory is critically low
+                            if free_memory < 2 * 1024**3:  # Less than 2GB free
+                                print("⚠️ Critical memory - cleaning cache")
+                                aggressive_memory_cleanup()
+                                memory_fraction = 0.80
+                            else:
+                                # Light cleanup for video workflows
+                                torch.cuda.empty_cache()
                         else:
-                            print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for video stability")
+                            # Regular workflow: conservative approach
+                            memory_fraction = min(0.80, max(0.55, free_memory / total_memory))
+                            
+                            if free_memory < 3 * 1024**3:  # Less than 3GB free
+                                print("⚠️ Low memory detected - using aggressive cleanup")
+                                aggressive_memory_cleanup()
+                                memory_fraction = 0.65
+                            else:
+                                aggressive_memory_cleanup()
                         
                         # Apply memory fraction
                         if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
                             try:
                                 torch.cuda.set_per_process_memory_fraction(memory_fraction)
+                                if not is_video_workflow:
+                                    print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}%")
                             except Exception as e:
                                 print(f"⚠️ Memory fraction setting failed: {e}")
-                    
-                    print("🧹 Memory cache cleared for optimal performance")
         
         # Configure sampling parameters
         force_full_denoise = True
@@ -1206,14 +1323,17 @@ class ROCMOptimizedKSamplerAdvanced:
         
         # Use advanced ksampler with optimizations
         try:
-            print("⚡ Preparing sampling parameters...")
+            # Minimal progress for video workflows
+            if not is_video_workflow:
+                print("⚡ Preparing sampling parameters...")
             
             # Use ComfyUI's sample function directly with advanced options
             latent_image_tensor = latent_image["samples"]
             latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
             
-            # Prepare noise with progress feedback
-            print("🎲 Preparing noise for sampling...")
+            # Prepare noise (minimal progress for video)
+            if not is_video_workflow:
+                print("🎲 Preparing noise for sampling...")
             if disable_noise:
                 noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
             else:
@@ -1229,8 +1349,10 @@ class ROCMOptimizedKSamplerAdvanced:
             callback = latent_preview.prepare_callback(model, steps)
             disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
             
-            print(f"🚀 Starting sampling: {steps} steps, CFG {cfg}, {sampler_name}")
-            print("Using standard ComfyUI sampling path")
+            # Minimal progress for video workflows
+            if not is_video_workflow:
+                print(f"🚀 Starting sampling: {steps} steps, CFG {cfg}, {sampler_name}")
+                print("Using standard ComfyUI sampling path")
             
             # Sample with advanced options
             samples = comfy.sample.sample(
@@ -1250,32 +1372,237 @@ class ROCMOptimizedKSamplerAdvanced:
             print(f"⚠️ Advanced sampling failed, falling back to standard: {e}")
             logging.warning(f"Advanced sampling failed, falling back to standard: {e}")
             
-            # Clear memory before fallback
+            # Check if it's a memory error
+            is_memory_error = "out of memory" in str(e).lower() or "oom" in str(e).lower()
+            
+            if is_memory_error:
+                print("💾 Memory error detected - performing emergency cleanup")
+                emergency_memory_cleanup()
+            
+            # Light memory cleanup before fallback
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                print("🧹 Memory cache cleared before fallback")
             
-            # Fallback to direct sampling
-            print("🔄 Using fallback sampling method...")
+            # Fallback to direct sampling with memory safety
+            if not is_video_workflow:
+                print("🔄 Using fallback sampling method...")
+            
+            try:
+                # Use a more conservative approach for fallback
+                samples = comfy.sample.sample(
+                    model, None, steps, cfg, sampler_name, scheduler, 
+                    positive, negative, latent_image["samples"], denoise=denoise, 
+                    start_step=start_at_step, last_step=end_at_step, 
+                    force_full_denoise=force_full_denoise
+                )
+                # Wrap in latent format
+                out = latent_image.copy()
+                out["samples"] = samples
+                result = (out,)
+            except Exception as e2:
+                print(f"❌ Fallback sampling also failed: {e2}")
+                logging.error(f"Fallback sampling failed: {e2}")
+                
+                # Last resort: try with minimal parameters
+                try:
+                    print("🆘 Attempting minimal sampling...")
+                    samples = comfy.sample.sample(
+                        model, None, min(steps, 10), min(cfg, 7.0), sampler_name, scheduler, 
+                        positive, negative, latent_image["samples"], denoise=min(denoise, 0.8), 
+                        start_step=0, last_step=min(steps, 10), 
+                        force_full_denoise=False
+                    )
+                    out = latent_image.copy()
+                    out["samples"] = samples
+                    result = (out,)
+                    print("✅ Minimal sampling succeeded")
+                except Exception as e3:
+                    print(f"❌ All sampling attempts failed: {e3}")
+                    raise e3
+        
+        # Optimized final memory cleanup
+        if memory_optimization and torch.cuda.is_available():
+            if is_video_workflow:
+                # Light cleanup for video workflows
+                torch.cuda.empty_cache()
+            else:
+                # Full cleanup for regular workflows
+                aggressive_memory_cleanup()
+                print("🧹 Memory cache cleared for optimal performance")
+        
+        sample_time = time.time() - start_time
+        if is_video_workflow:
+            print(f"✅ Video KSampler completed in {sample_time:.2f}s")
+        else:
+            print(f"✅ ROCM Advanced KSampler completed in {sample_time:.2f}s")
+        logging.info(f"ROCM Advanced KSampler completed in {sample_time:.2f}s")
+        
+        return result
+
+
+class ROCMMemorySafeKSampler:
+    """
+    Memory-safe KSampler specifically designed to prevent OOM errors
+    """
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL", {"tooltip": "The model to sample from"}),
+                "seed": ("INT", {
+                    "default": 0, 
+                    "min": 0, 
+                    "max": 0xffffffffffffffff,
+                    "tooltip": "Random seed for generation"
+                }),
+                "steps": ("INT", {
+                    "default": 20, 
+                    "min": 1, 
+                    "max": 10000,
+                    "tooltip": "Number of sampling steps"
+                }),
+                "cfg": ("FLOAT", {
+                    "default": 8.0, 
+                    "min": 0.0, 
+                    "max": 100.0, 
+                    "step": 0.1, 
+                    "round": 0.01,
+                    "tooltip": "Classifier-free guidance scale"
+                }),
+                "sampler_name": (comfy.samplers.KSampler.SAMPLERS, {
+                    "tooltip": "Sampling algorithm to use"
+                }),
+                "scheduler": (comfy.samplers.KSampler.SCHEDULERS, {
+                    "tooltip": "Scheduler for noise timesteps"
+                }),
+                "positive": ("CONDITIONING", {"tooltip": "Positive conditioning"}),
+                "negative": ("CONDITIONING", {"tooltip": "Negative conditioning"}),
+                "latent_image": ("LATENT", {"tooltip": "Latent image to sample from"}),
+                "denoise": ("FLOAT", {
+                    "default": 1.0, 
+                    "min": 0.0, 
+                    "max": 1.0, 
+                    "step": 0.01,
+                    "tooltip": "Denoising strength"
+                }),
+                "memory_safety_level": (["conservative", "balanced", "aggressive"], {
+                    "default": "balanced",
+                    "tooltip": "Memory safety level - higher is safer but slower"
+                })
+            }
+        }
+    
+    RETURN_TYPES = ("LATENT",)
+    RETURN_NAMES = ("LATENT",)
+    FUNCTION = "sample"
+    CATEGORY = "RocM Ninodes/Sampling"
+    DESCRIPTION = "Memory-safe KSampler that prevents OOM errors"
+    
+    def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, 
+               latent_image, denoise=1.0, memory_safety_level="balanced"):
+        """
+        Memory-safe sampling that prevents OOM errors
+        """
+        start_time = time.time()
+        
+        # Adjust parameters based on memory safety level
+        if memory_safety_level == "conservative":
+            steps = min(steps, 15)
+            cfg = min(cfg, 7.0)
+            denoise = min(denoise, 0.9)
+            required_memory_gb = 4.0
+        elif memory_safety_level == "balanced":
+            steps = min(steps, 25)
+            cfg = min(cfg, 10.0)
+            required_memory_gb = 3.0
+        else:  # aggressive
+            required_memory_gb = 2.0
+        
+        print(f"🛡️ Memory-Safe KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
+        print(f"🔒 Memory safety level: {memory_safety_level}")
+        
+        # Check memory safety
+        is_safe, memory_msg = check_memory_safety(required_memory_gb)
+        print(f"🔍 Memory check: {memory_msg}")
+        
+        if not is_safe:
+            print("⚠️ Low memory detected - performing emergency cleanup")
+            emergency_memory_cleanup()
+            
+            # Recheck after cleanup
+            is_safe, memory_msg = check_memory_safety(required_memory_gb)
+            if not is_safe:
+                print("❌ Still insufficient memory - reducing parameters")
+                steps = min(steps, 10)
+                cfg = min(cfg, 5.0)
+                denoise = min(denoise, 0.8)
+        
+        # Set conservative memory fraction
+        if torch.cuda.is_available():
+            try:
+                torch.cuda.set_per_process_memory_fraction(0.70)
+                print("🔧 Memory fraction set to 70% for safety")
+            except Exception as e:
+                print(f"⚠️ Memory fraction setting failed: {e}")
+        
+        # Use standard sampling with memory monitoring
+        try:
+            latent_image_tensor = latent_image["samples"]
+            latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+            
+            # Prepare noise
+            batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
+            noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
+            
+            # Prepare noise mask
+            noise_mask = None
+            if "noise_mask" in latent_image:
+                noise_mask = latent_image["noise_mask"]
+            
+            # Prepare callback
+            callback = latent_preview.prepare_callback(model, steps)
+            disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+            
+            print(f"🚀 Starting memory-safe sampling...")
+            
+            # Sample with memory monitoring
             samples = comfy.sample.sample(
-                model, None, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image["samples"], denoise=denoise, 
-                start_step=start_at_step, last_step=end_at_step, 
-                force_full_denoise=force_full_denoise
+                model, noise, steps, cfg, sampler_name, scheduler, 
+                positive, negative, latent_image_tensor, denoise=denoise, 
+                noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed
             )
+            
             # Wrap in latent format
             out = latent_image.copy()
             out["samples"] = samples
             result = (out,)
+            
+        except Exception as e:
+            print(f"❌ Memory-safe sampling failed: {e}")
+            
+            # Try with even more conservative parameters
+            try:
+                print("🆘 Attempting ultra-conservative sampling...")
+                samples = comfy.sample.sample(
+                    model, None, min(steps, 8), min(cfg, 4.0), sampler_name, scheduler, 
+                    positive, negative, latent_image["samples"], denoise=min(denoise, 0.7), 
+                    start_step=0, last_step=min(steps, 8), force_full_denoise=False
+                )
+                out = latent_image.copy()
+                out["samples"] = samples
+                result = (out,)
+                print("✅ Ultra-conservative sampling succeeded")
+            except Exception as e2:
+                print(f"❌ All sampling attempts failed: {e2}")
+                raise e2
         
         # Final memory cleanup
-        if memory_optimization and torch.cuda.is_available():
-            aggressive_memory_cleanup()
-            print("🧹 Memory cache cleared for optimal performance")
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
         sample_time = time.time() - start_time
-        print(f"✅ ROCM Advanced KSampler completed in {sample_time:.2f}s")
-        logging.info(f"ROCM Advanced KSampler completed in {sample_time:.2f}s")
+        print(f"✅ Memory-safe KSampler completed in {sample_time:.2f}s")
         
         return result
 
@@ -1784,6 +2111,7 @@ NODE_CLASS_MAPPINGS = {
     "ROCMVAEPerformanceMonitor": ROCMVAEPerformanceMonitor,
     "ROCMOptimizedKSampler": ROCMOptimizedKSampler,
     "ROCMOptimizedKSamplerAdvanced": ROCMOptimizedKSamplerAdvanced,
+    "ROCMMemorySafeKSampler": ROCMMemorySafeKSampler,
     "ROCMSamplerPerformanceMonitor": ROCMSamplerPerformanceMonitor,
     "ROCMFluxBenchmark": ROCMFluxBenchmark,
     "ROCMMemoryOptimizer": ROCMMemoryOptimizer,

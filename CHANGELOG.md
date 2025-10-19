@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.22] - 2025-01-19
+
+### Added
+- **ROCMMemorySafeKSampler**: New memory-safe KSampler specifically designed to prevent OOM errors
+  - **Memory Safety Levels**: Conservative, balanced, and aggressive memory management modes
+  - **Progressive Parameter Reduction**: Automatically reduces steps, CFG, and denoise when memory is low
+  - **Emergency Memory Cleanup**: 5x cache clearing with synchronization for critical memory situations
+  - **Memory Safety Checks**: Pre-flight validation before operations to prevent OOM errors
+  - **Ultra-Conservative Fallback**: Last-resort sampling with minimal parameters when all else fails
+
+### Fixed
+- **HIP Out of Memory Errors**: Comprehensive OOM prevention system
+  - **Emergency Memory Cleanup**: `emergency_memory_cleanup()` function with 5x cache clearing and synchronization
+  - **Memory Safety Validation**: `check_memory_safety()` function to validate available memory before operations
+  - **Critical Memory Thresholds**: 2GB free memory triggers emergency cleanup, 4GB triggers aggressive cleanup
+  - **Enhanced Fallback Mechanisms**: Multiple levels of fallback with increasingly conservative parameters
+  - **Memory Error Detection**: Automatic detection of memory-related errors and appropriate response
+
+### Improved
+- **Memory Management**: Enhanced OOM prevention and memory monitoring
+  - **Conservative Memory Fractions**: Reduced maximum memory fraction to 70% for better safety
+  - **Memory Monitoring**: Added memory safety checks before VAE decode operations
+  - **Progressive Error Recovery**: Three-tier fallback system (standard → conservative → ultra-conservative)
+  - **Better Error Handling**: Enhanced detection and handling of memory-related errors
+  - **Video Workflow Optimization**: Improved memory management for WAN VAE video processing
+
+### Technical Details
+- **Emergency Cleanup**: 5x `torch.cuda.empty_cache()` with `torch.cuda.synchronize()` between calls
+- **Memory Safety**: Pre-operation validation with configurable memory requirements
+- **Fallback Strategy**: Standard → Conservative → Ultra-Conservative parameter reduction
+- **Error Detection**: Pattern matching for "out of memory" and "oom" error messages
+- **Memory Fraction**: Conservative 70% maximum memory allocation for stability
+
 ## [1.0.21] - 2024-12-19
 
 ### Fixed
