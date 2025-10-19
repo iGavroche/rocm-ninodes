@@ -4,7 +4,39 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
-**RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations and KSampler implementations designed to maximize performance on AMD hardware.
+**RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations, KSampler implementations, and LoRA loading designed to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 **What We Do**
+
+RocM Ninodes transforms your AMD GPU experience in ComfyUI by providing:
+
+- **🎯 ROCm-Optimized Nodes**: Custom implementations of VAE decode, KSampler, and LoRA loading specifically tuned for AMD GPUs
+- **⚡ Performance Boost**: 15-78% faster generation times with better memory efficiency
+- **🛡️ Memory Management**: Gentle memory cleanup optimized for mature ROCm drivers
+- **🔧 Easy Integration**: Drop-in replacements for standard ComfyUI nodes
+- **📊 Real-Time Monitoring**: Built-in performance tracking and optimization recommendations
+
+## 🛠️ **How We Do It**
+
+Our optimization approach focuses on three key areas:
+
+### **1. ROCm-Specific Optimizations**
+- **Environment Variables**: Essential `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` for mature drivers
+- **Memory Allocation**: Optimized settings (256MB chunks, 0.8 threshold) for better fragmentation control
+- **Precision Handling**: Automatic selection of optimal precision for AMD hardware
+- **Attention Mechanisms**: ROCm-tuned attention optimizations for better performance
+
+### **2. Gentle Memory Management**
+- **Single-Pass Cleanup**: Efficient memory clearing without performance penalties
+- **Smart Monitoring**: Real-time memory usage tracking and optimization
+- **Fragmentation Control**: Proactive memory management to prevent OOM errors
+- **Mature Driver Support**: Optimized for current ROCm drivers and libraries
+
+### **3. Hardware-Specific Tuning**
+- **gfx1151 Architecture**: Specifically optimized for AMD Radeon 8060S and similar GPUs
+- **Unified Memory**: Leverages AMD's unified memory architecture for better performance
+- **Conservative Batching**: Smart batching strategies optimized for AMD GPU characteristics
+- **Tile Size Optimization**: Optimal tile sizes (768-1024) for gfx1151 memory bandwidth
 
 ## 🎯 **Real-World Performance Results**
 

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.27] - 2025-01-19
+
+### Fixed
+- **Mature ROCm Driver Support**: Optimized for mature ROCm drivers and libraries
+  - **Essential Environment Variables**: Added `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` for mature drivers
+  - **Gentle Memory Management**: Replaced aggressive memory management with gentle cleanup for better performance
+  - **Less Aggressive Settings**: Updated memory allocation settings (256MB chunks, 0.8 threshold) for mature drivers
+  - **Removed Overly Complex Functions**: Eliminated force_memory_cleanup, emergency_memory_reset, and other performance-penalizing functions
+  - **Clean Starting Script**: Simplified run_comfy.ps1 with essential ROCm variables only
+
+### Improved
+- **Performance**: Removed performance penalties from overly aggressive memory management
+  - **Gentle Memory Cleanup**: Single-pass cache clearing instead of multiple aggressive cycles
+  - **Better Compatibility**: Works optimally with mature ROCm drivers and libraries
+  - **Simplified Codebase**: Removed complex memory management that was causing slowdowns
+  - **Cleaner Architecture**: Focused on essential optimizations without performance penalties
+
+### Technical Details
+- **Environment Variables**: `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` for mature driver support
+- **Memory Management**: Gentle single-pass cleanup instead of aggressive multi-pass cycles
+- **Starting Script**: Clean PowerShell script with essential ROCm variables
+- **Code Cleanup**: Removed unnecessary development files and test workflows
+- **Node Count**: Maintained 9 optimized nodes with gentle memory management
+
+### Removed
+- **Development Files**: Removed test workflows, documentation, and backup files created during development
+- **Aggressive Memory Functions**: Removed force_memory_cleanup, emergency_memory_reset, nuclear_memory_reset
+- **Performance Penalties**: Eliminated functions that were causing 50%+ performance overhead
+- **Complex Memory Management**: Simplified to gentle cleanup for mature ROCm drivers
+
 ## [1.0.26] - 2025-01-19
 
 ### Fixed

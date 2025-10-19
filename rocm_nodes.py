@@ -76,25 +76,22 @@ def simple_memory_cleanup():
         print(f"   Memory cleanup error: {e}")
         return False
 
-def aggressive_memory_cleanup():
-    """Aggressive memory cleanup for LoRA operations"""
+def gentle_memory_cleanup():
+    """Gentle memory cleanup - less aggressive for mature ROCm drivers"""
     try:
         if not torch.cuda.is_available():
             return False
         
-        # Multiple cache clears with synchronization
-        for _ in range(3):
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+        # Single cache clear with synchronization
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
         
-        # Force garbage collection
+        # Light garbage collection
         gc.collect()
         
-        # Final cleanup
-        torch.cuda.empty_cache()
         return True
     except Exception as e:
-        print(f"   Aggressive memory cleanup error: {e}")
+        print(f"   Memory cleanup error: {e}")
         return False
 
 # Diagnostics will be run when nodes are actually used, not at module import
@@ -138,24 +135,15 @@ def check_memory_safety(required_memory_gb=2.0):
     return True, f"Memory OK: {free_gb:.2f}GB free"
 
 def emergency_memory_cleanup():
-    """Emergency memory cleanup when OOM is imminent"""
+    """Emergency memory cleanup - gentle approach for mature ROCm"""
     try:
-        # Force all pending operations to complete
+        if not torch.cuda.is_available():
+            return False
+        
+        # Gentle cleanup - single pass
         torch.cuda.synchronize()
-        
-        # Clear all caches multiple times
-        for _ in range(5):
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-        
-        # Force garbage collection
-        gc.collect()
-        
-        # Reset memory stats
-        torch.cuda.reset_peak_memory_stats()
-        
-        # Final cache clear
         torch.cuda.empty_cache()
+        gc.collect()
         
         return True
     except Exception as e:
@@ -164,96 +152,17 @@ def emergency_memory_cleanup():
 
 
 
-def force_memory_cleanup():
-    """Force aggressive memory cleanup before critical operations"""
-    try:
-        if not torch.cuda.is_available():
-            return False
-            
-        print("🧹 Force memory cleanup before critical operation...")
-        
-        # Force all operations to complete
-        torch.cuda.synchronize()
-        
-        # Multiple aggressive cache clears
-        for i in range(7):  # More aggressive cleanup
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            if i % 2 == 0:  # Every other iteration, force GC
-                gc.collect()
-        
-        # Reset memory stats
-        torch.cuda.reset_peak_memory_stats()
-        
-        # Final cleanup
-        torch.cuda.empty_cache()
-        
-        print("✅ Force memory cleanup completed")
-        return True
-        
-    except Exception as e:
-        logging.error(f"Force memory cleanup failed: {e}")
-        return False
+# Removed force_memory_cleanup - using gentle_memory_cleanup instead
 
-def emergency_memory_reset():
-    """Emergency memory reset for critical situations"""
-    try:
-        if not torch.cuda.is_available():
-            return False
-            
-        print("🚨 Emergency memory reset...")
-        
-        # Force all operations to complete
-        torch.cuda.synchronize()
-        
-        # Aggressive cache clearing
-        for i in range(10):
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            if i % 2 == 0:
-                gc.collect()
-        
-        # Reset memory stats
-        torch.cuda.reset_peak_memory_stats()
-        
-        print("✅ Emergency memory reset completed")
-        return True
-        
-    except Exception as e:
-        logging.error(f"Emergency memory reset failed: {e}")
-        return False
+# Removed emergency_memory_reset - using emergency_memory_cleanup instead
 
 
 
 
 
 def aggressive_memory_cleanup():
-    """Perform aggressive memory cleanup with better error handling"""
-    try:
-        # Multiple cache clears with synchronization
-        for _ in range(3):
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-        
-        # Force garbage collection
-        gc.collect()
-        
-        # Final cache clear after GC
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-        
-        # Additional cleanup for fragmented memory
-        if torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats()
-            
-    except Exception as e:
-        logging.warning(f"Memory cleanup failed: {e}")
-        # Fallback to basic cleanup
-        try:
-            torch.cuda.empty_cache()
-            gc.collect()
-        except:
-            pass
+    """Gentle memory cleanup - renamed for compatibility"""
+    return gentle_memory_cleanup()
 
 class ROCMOptimizedVAEDecode:
     """
@@ -492,21 +401,12 @@ class ROCMOptimizedVAEDecode:
             torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
             torch.backends.cuda.matmul.allow_fp16_accumulation = True
             
-            # SAFE OPTIMIZATION: Gentle memory management for Windows stability
+            # Gentle memory management for mature ROCm drivers
             try:
-                # Clear cache gently to prevent Windows hanging
-                aggressive_memory_cleanup()
-                print("🧹 Memory cache cleared for optimal performance")
+                # Light cleanup for mature drivers
+                gentle_memory_cleanup()
+                print("🧹 Memory cache cleared gently")
                 
-                # SAFE OPTIMIZATION: Set memory allocation strategy for Windows
-                if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
-                    try:
-                        # Use a conservative memory fraction to prevent Windows hanging
-                        torch.cuda.set_per_process_memory_fraction(0.85)  # More conservative than 0.9
-                        print("🔧 Memory allocation optimized for Windows stability")
-                    except Exception as e:
-                        print(f"⚠️ Memory fraction setting skipped: {e}")
-                        
             except Exception as e:
                 print(f"⚠️ Memory optimization skipped: {e}")
             
@@ -996,10 +896,10 @@ class ROCMOptimizedKSampler:
         """
         start_time = time.time()
         
-        # Pre-sampling memory cleanup (aggressive for LoRA issues)
+        # Pre-sampling memory cleanup (gentle for mature ROCm)
         if torch.cuda.is_available():
-            # Use aggressive cleanup to handle LoRA fragmentation
-            aggressive_memory_cleanup()
+            # Gentle cleanup for mature drivers
+            gentle_memory_cleanup()
             
             # Log memory state before sampling
             allocated_memory = torch.cuda.memory_allocated(0)
@@ -1008,12 +908,6 @@ class ROCMOptimizedKSampler:
             
             print(f"Memory before sampling: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved")
             print(f"Fragmentation: {fragmentation/1024**2:.1f}MB")
-            
-            # Warning if fragmentation is high
-            if fragmentation > 500 * 1024**2:  # 500MB
-                print(f"WARNING: High fragmentation detected ({fragmentation/1024**2:.1f}MB)")
-                print("Applying additional memory cleanup...")
-                aggressive_memory_cleanup()
         
         print(f"Starting KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
         
@@ -1052,10 +946,10 @@ class ROCMOptimizedKSampler:
             print(f"Sampling failed: {e}")
             raise e
         
-        # Post-sampling cleanup (aggressive for LoRA issues)
+        # Post-sampling cleanup (gentle for mature ROCm)
         if torch.cuda.is_available():
-            # Use aggressive cleanup to handle LoRA fragmentation
-            aggressive_memory_cleanup()
+            # Gentle cleanup for mature drivers
+            gentle_memory_cleanup()
             
             # Log memory state after sampling
             allocated_memory_after = torch.cuda.memory_allocated(0)
@@ -1161,10 +1055,10 @@ class ROCMOptimizedKSamplerAdvanced:
         """
         start_time = time.time()
         
-        # Force memory defragmentation before sampling (aggressive for LoRA issues)
+        # Gentle memory cleanup before sampling (for mature ROCm)
         if torch.cuda.is_available():
-            # Use aggressive cleanup to handle LoRA fragmentation
-            aggressive_memory_cleanup()
+            # Gentle cleanup for mature drivers
+            gentle_memory_cleanup()
         
         # Detect video workflow by batch size
         batch_size = latent_image["samples"].shape[0]
@@ -1221,8 +1115,8 @@ class ROCMOptimizedKSamplerAdvanced:
                             
                             # Only cleanup if memory is critically low
                             if free_memory < 2 * 1024**3:  # Less than 2GB free
-                                print("⚠️ Critical memory - cleaning cache")
-                                aggressive_memory_cleanup()
+                                print("⚠️ Critical memory - gentle cleanup")
+                                gentle_memory_cleanup()
                                 memory_fraction = 0.80
                             else:
                                 # Light cleanup for video workflows
@@ -1232,11 +1126,11 @@ class ROCMOptimizedKSamplerAdvanced:
                             memory_fraction = min(0.80, max(0.55, free_memory / total_memory))
                             
                             if free_memory < 3 * 1024**3:  # Less than 3GB free
-                                print("⚠️ Low memory detected - using aggressive cleanup")
-                                aggressive_memory_cleanup()
+                                print("⚠️ Low memory detected - gentle cleanup")
+                                gentle_memory_cleanup()
                                 memory_fraction = 0.65
                             else:
-                                aggressive_memory_cleanup()
+                                gentle_memory_cleanup()
                         
                         # Apply memory fraction
                         if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
@@ -1355,15 +1249,12 @@ class ROCMOptimizedKSamplerAdvanced:
                     print(f"❌ All sampling attempts failed: {e3}")
                     raise e3
         
-        # Optimized final memory cleanup
+        # Gentle final memory cleanup
         if memory_optimization and torch.cuda.is_available():
-            if is_video_workflow:
-                # Light cleanup for video workflows
-                torch.cuda.empty_cache()
-            else:
-                # Full cleanup for regular workflows
-                aggressive_memory_cleanup()
-                print("🧹 Memory cache cleared for optimal performance")
+            # Gentle cleanup for mature drivers
+            gentle_memory_cleanup()
+            if not is_video_workflow:
+                print("🧹 Memory cache cleared gently")
         
         sample_time = time.time() - start_time
         if is_video_workflow:
@@ -1932,10 +1823,10 @@ class ROCMLoRALoader:
         """
         print(f"🔄 ROCM LoRA Loader: Loading {lora_name} with strengths {strength_model}/{strength_clip}")
         
-        # Pre-loading aggressive memory cleanup
+        # Pre-loading gentle memory cleanup
         if torch.cuda.is_available():
             print("🧹 Pre-loading memory cleanup...")
-            aggressive_memory_cleanup()
+            gentle_memory_cleanup()
             
             # Log memory state before LoRA loading
             allocated_memory = torch.cuda.memory_allocated(0)
@@ -1957,24 +1848,24 @@ class ROCMLoRALoader:
             
             print(f"📁 Loading LoRA from: {lora_path}")
             
-            # Apply aggressive memory cleanup before each major operation
+            # Apply gentle memory cleanup before each major operation
             if torch.cuda.is_available():
-                aggressive_memory_cleanup()
+                gentle_memory_cleanup()
             
             # Load the LoRA
             lora = load_lora(lora_path)
             
-            # Apply aggressive memory cleanup after loading
+            # Apply gentle memory cleanup after loading
             if torch.cuda.is_available():
-                aggressive_memory_cleanup()
+                gentle_memory_cleanup()
             
             # Apply LoRA to model with memory management
             model_lora, clip_lora = lora.apply_to_model(model, clip, strength_model, strength_clip)
             
-            # Post-loading aggressive memory cleanup
+            # Post-loading gentle memory cleanup
             if torch.cuda.is_available():
                 print("🧹 Post-loading memory cleanup...")
-                aggressive_memory_cleanup()
+                gentle_memory_cleanup()
                 
                 # Log memory state after LoRA loading
                 allocated_memory_after = torch.cuda.memory_allocated(0)
@@ -1993,7 +1884,7 @@ class ROCMLoRALoader:
             # Emergency memory cleanup on failure
             if torch.cuda.is_available():
                 print("🚨 Emergency memory cleanup...")
-                aggressive_memory_cleanup()
+                gentle_memory_cleanup()
             
             raise e
 
