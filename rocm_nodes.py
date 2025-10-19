@@ -3,6 +3,14 @@ ROCM Optimized VAE Nodes for AMD GPUs
 Specifically optimized for gfx1151 architecture with ROCm 6.4+
 """
 
+import os
+import gc
+import time
+from typing import Dict, Any, Tuple, Optional
+
+# Environment variables are now managed by main.py and run_comfy.ps1
+
+# Now import PyTorch and other modules
 import torch
 import torch.nn.functional as F
 import comfy.model_management as model_management
@@ -12,9 +20,86 @@ import comfy.samplers
 import latent_preview
 import logging
 import folder_paths
-from typing import Dict, Any, Tuple, Optional
-import time
-import gc
+
+# Diagnostic logging for ROCm memory management
+def log_rocm_diagnostics():
+    """Log ROCm memory management configuration for debugging"""
+    try:
+        print("ROCm Memory Management Diagnostics:")
+        print(f"   PYTORCH_CUDA_ALLOC_CONF: {os.environ.get('PYTORCH_CUDA_ALLOC_CONF', 'NOT SET')}")
+        print(f"   PYTORCH_HIP_ALLOC_CONF: {os.environ.get('PYTORCH_HIP_ALLOC_CONF', 'NOT SET')}")
+        
+        if torch.cuda.is_available():
+            print(f"   CUDA Available: {torch.cuda.is_available()}")
+            print(f"   CUDA Device: {torch.cuda.get_device_name(0)}")
+            
+            # Get detailed memory info
+            total_memory = torch.cuda.get_device_properties(0).total_memory
+            allocated_memory = torch.cuda.memory_allocated(0)
+            reserved_memory = torch.cuda.memory_reserved(0)
+            free_memory = total_memory - allocated_memory
+            fragmentation = reserved_memory - allocated_memory
+            
+            print(f"   Total Memory: {total_memory / 1024**3:.2f}GB")
+            print(f"   Allocated Memory: {allocated_memory / 1024**3:.2f}GB")
+            print(f"   Reserved Memory: {reserved_memory / 1024**3:.2f}GB")
+            print(f"   Free Memory: {free_memory / 1024**3:.2f}GB")
+            print(f"   Fragmentation: {fragmentation / 1024**3:.2f}GB")
+            
+            # Check fragmentation level
+            if fragmentation > 500 * 1024**2:  # 500MB
+                print(f"   WARNING: High fragmentation detected! This will cause OOM errors.")
+                print(f"   Solution: Force memory defragmentation before operations.")
+            
+            # Check if PyTorch is using the right allocator
+            try:
+                # Try to get allocator info (this might not work on all PyTorch versions)
+                allocator_info = torch.cuda.memory_stats(0)
+                print(f"   Memory Allocator: Active (stats available)")
+            except:
+                print(f"   Memory Allocator: Unknown (stats not available)")
+        else:
+            print("   CUDA Not Available - using CPU")
+            
+    except Exception as e:
+        print(f"   Diagnostic Error: {e}")
+
+def simple_memory_cleanup():
+    """Simple memory cleanup for ROCm"""
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
+            return True
+        return False
+    except Exception as e:
+        print(f"   Memory cleanup error: {e}")
+        return False
+
+def aggressive_memory_cleanup():
+    """Aggressive memory cleanup for LoRA operations"""
+    try:
+        if not torch.cuda.is_available():
+            return False
+        
+        # Multiple cache clears with synchronization
+        for _ in range(3):
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Final cleanup
+        torch.cuda.empty_cache()
+        return True
+    except Exception as e:
+        print(f"   Aggressive memory cleanup error: {e}")
+        return False
+
+# Diagnostics will be run when nodes are actually used, not at module import
+
+
 # from debug_config import DEBUG_MODE, save_debug_data, capture_timing, capture_memory_usage, log_debug
 DEBUG_MODE = False
 def save_debug_data(*args, **kwargs): pass
@@ -76,6 +161,71 @@ def emergency_memory_cleanup():
     except Exception as e:
         logging.error(f"Emergency memory cleanup failed: {e}")
         return False
+
+
+
+def force_memory_cleanup():
+    """Force aggressive memory cleanup before critical operations"""
+    try:
+        if not torch.cuda.is_available():
+            return False
+            
+        print("🧹 Force memory cleanup before critical operation...")
+        
+        # Force all operations to complete
+        torch.cuda.synchronize()
+        
+        # Multiple aggressive cache clears
+        for i in range(7):  # More aggressive cleanup
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            if i % 2 == 0:  # Every other iteration, force GC
+                gc.collect()
+        
+        # Reset memory stats
+        torch.cuda.reset_peak_memory_stats()
+        
+        # Final cleanup
+        torch.cuda.empty_cache()
+        
+        print("✅ Force memory cleanup completed")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Force memory cleanup failed: {e}")
+        return False
+
+def emergency_memory_reset():
+    """Emergency memory reset for critical situations"""
+    try:
+        if not torch.cuda.is_available():
+            return False
+            
+        print("🚨 Emergency memory reset...")
+        
+        # Force all operations to complete
+        torch.cuda.synchronize()
+        
+        # Aggressive cache clearing
+        for i in range(10):
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            if i % 2 == 0:
+                gc.collect()
+        
+        # Reset memory stats
+        torch.cuda.reset_peak_memory_stats()
+        
+        print("✅ Emergency memory reset completed")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Emergency memory reset failed: {e}")
+        return False
+
+
+
+
 
 def aggressive_memory_cleanup():
     """Perform aggressive memory cleanup with better error handling"""
@@ -829,22 +979,6 @@ class ROCMOptimizedKSampler:
                     "max": 1.0, 
                     "step": 0.01,
                     "tooltip": "Denoising strength"
-                }),
-                "use_rocm_optimizations": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable ROCm-specific optimizations"
-                }),
-                "precision_mode": (["auto", "fp32", "fp16", "bf16"], {
-                    "default": "auto",
-                    "tooltip": "Precision mode for sampling"
-                }),
-                "memory_optimization": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable memory optimization for AMD GPUs"
-                }),
-                "attention_optimization": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable optimized attention mechanisms"
                 })
             }
         }
@@ -856,290 +990,86 @@ class ROCMOptimizedKSampler:
     DESCRIPTION = "ROCM-optimized KSampler for AMD GPUs (gfx1151)"
     
     def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, 
-               latent_image, denoise=1.0, use_rocm_optimizations=True, precision_mode="auto",
-               memory_optimization=True, attention_optimization=True):
+               latent_image, denoise=1.0):
         """
-        Optimized sampling for ROCm/AMD GPUs
+        Optimized sampling for ROCm/AMD GPUs with minimal overhead
         """
         start_time = time.time()
-        log_debug(f"ROCMOptimizedKSampler.sample started with latent shape: {latent_image['samples'].shape}")
         
-        # Capture input data for debugging
-        if DEBUG_MODE:
-            save_debug_data(latent_image, "ksampler_input", "flux_1024x1024", {
-                'node_type': 'ROCMOptimizedKSampler',
-                'seed': seed,
-                'steps': steps,
-                'cfg': cfg,
-                'sampler_name': sampler_name,
-                'scheduler': scheduler,
-                'denoise': denoise,
-                'use_rocm_optimizations': use_rocm_optimizations,
-                'precision_mode': precision_mode,
-                'memory_optimization': memory_optimization,
-                'attention_optimization': attention_optimization
-            })
-        
-        # Get device information
-        device = model.model_dtype()
-        is_amd = hasattr(device, 'type') and device.type == 'cuda'
-        
-        # Progress indicator for Windows users
-        print(f"🎲 Starting KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
-        print("Using standard ComfyUI sampling path")
-        
-        # ROCm-specific optimizations
-        if use_rocm_optimizations and is_amd:
-            # Set optimal precision for gfx1151
-            if precision_mode == "auto":
-                optimal_dtype = torch.float32  # fp32 is often faster on ROCm 6.4
-            else:
-                dtype_map = {
-                    "fp32": torch.float32,
-                    "fp16": torch.float16,
-                    "bf16": torch.bfloat16
-                }
-                optimal_dtype = dtype_map[precision_mode]
+        # Pre-sampling memory cleanup (aggressive for LoRA issues)
+        if torch.cuda.is_available():
+            # Use aggressive cleanup to handle LoRA fragmentation
+            aggressive_memory_cleanup()
             
-            print(f"🔧 ROCm optimizations enabled: {optimal_dtype}")
+            # Log memory state before sampling
+            allocated_memory = torch.cuda.memory_allocated(0)
+            reserved_memory = torch.cuda.memory_reserved(0)
+            fragmentation = reserved_memory - allocated_memory
             
-            # Enable ROCm optimizations
-            torch.backends.cuda.matmul.allow_tf32 = False  # Disable TF32 for AMD
-            torch.backends.cuda.matmul.allow_fp16_accumulation = True
+            print(f"Memory before sampling: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved")
+            print(f"Fragmentation: {fragmentation/1024**2:.1f}MB")
             
-            # ADVANCED OPTIMIZATION: hipBLAS optimizations for gfx1151
-            try:
-                # Enable optimized BLAS operations for AMD GPUs
-                torch.backends.cuda.matmul.allow_fused_relu = True
-                torch.backends.cuda.matmul.allow_fused_gelu = True
-                
-                # Set optimal tile sizes for gfx1151 matrix operations
-                if hasattr(torch.backends.cuda.matmul, 'set_tile_size'):
-                    torch.backends.cuda.matmul.set_tile_size(128)  # Optimal for gfx1151
-                
-                logging.info("hipBLAS optimizations enabled for gfx1151")
-            except Exception as e:
-                logging.warning(f"hipBLAS optimizations failed: {e}")
-            
-        # AGGRESSIVE OPTIMIZATION: OOM prevention for video workflows
-        if memory_optimization:
-            try:
-                # Check memory safety before proceeding
-                is_safe, memory_msg = check_memory_safety(required_memory_gb=3.0)
-                print(f"🔍 Memory check: {memory_msg}")
-                
-                if not is_safe:
-                    print("⚠️ Low memory detected - performing emergency cleanup")
-                    if not emergency_memory_cleanup():
-                        print("❌ Emergency cleanup failed - proceeding with caution")
-                
-                # Perform aggressive memory cleanup
-                aggressive_memory_cleanup()
-                
-                # Check available memory and adjust strategy
-                total_memory, allocated_memory, reserved_memory, free_memory = get_gpu_memory_info()
-                
-                if total_memory is not None:
-                    print(f"🔍 GPU Memory: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved, {free_memory/1024**3:.2f}GB free")
-                    
-                    # Calculate memory fraction based on available memory
-                    memory_fraction = min(0.80, max(0.50, free_memory / total_memory))
-                    
-                    # If memory is critically low, be very aggressive
-                    if free_memory < 2 * 1024**3:  # Less than 2GB free
-                        print("⚠️ Critical memory - using emergency cleanup")
-                        emergency_memory_cleanup()
-                        memory_fraction = 0.60
-                        print(f"🔧 Emergency memory fraction set to {memory_fraction*100:.0f}%")
-                    elif free_memory < 4 * 1024**3:  # Less than 4GB free
-                        print("⚠️ Low memory detected - using aggressive cleanup")
-                        aggressive_memory_cleanup()
-                        memory_fraction = 0.70
-                        print(f"🔧 Conservative memory fraction set to {memory_fraction*100:.0f}%")
-                    else:
-                        print(f"🔧 Memory fraction set to {memory_fraction*100:.0f}% for stability")
-                    
-                    # Apply memory fraction
-                    if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
-                        try:
-                            torch.cuda.set_per_process_memory_fraction(memory_fraction)
-                        except Exception as e:
-                            print(f"⚠️ Memory fraction setting failed: {e}")
-                
-                logging.info("Aggressive memory optimization enabled for OOM prevention")
-                
-            except Exception as e:
-                logging.warning(f"Memory optimization failed: {e}")
-                # Fallback to standard memory management
+            # Warning if fragmentation is high
+            if fragmentation > 500 * 1024**2:  # 500MB
+                print(f"WARNING: High fragmentation detected ({fragmentation/1024**2:.1f}MB)")
+                print("Applying additional memory cleanup...")
                 aggressive_memory_cleanup()
         
-        # Attention optimization
-        if attention_optimization and is_amd:
-            # Enable optimized attention for AMD
-            torch.backends.cuda.enable_math_sdp(True)
-            torch.backends.cuda.enable_flash_sdp(True)
-            torch.backends.cuda.enable_mem_efficient_sdp(True)
-            
-            # ADVANCED OPTIMIZATION: FlashInfer-style optimizations for diffusion
-            try:
-                # Enable speculative decoding-style optimizations for diffusion
-                # This reduces the number of forward passes needed
-                if hasattr(torch.backends.cuda, 'enable_speculative_decoding'):
-                    torch.backends.cuda.enable_speculative_decoding(True)
-                    logging.info("Speculative decoding optimizations enabled")
-                
-                # Enable kernel fusion for attention operations
-                if hasattr(torch.backends.cuda, 'enable_kernel_fusion'):
-                    torch.backends.cuda.enable_kernel_fusion(True)
-                    logging.info("Kernel fusion enabled for attention")
-                
-                # Optimize attention computation order
-                if hasattr(torch.backends.cuda, 'set_attention_order'):
-                    torch.backends.cuda.set_attention_order('optimized')
-                    logging.info("Optimized attention computation order enabled")
-                    
-            except Exception as e:
-                logging.warning(f"FlashInfer-style optimizations failed: {e}")
+        print(f"Starting KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
         
-        # Use the standard ksampler with optimizations
+        # Use vanilla ComfyUI sampling (standard path)
         try:
-            # ADVANCED OPTIMIZATION: Custom sampling with direct optimization control
-            if use_rocm_optimizations and is_amd:
-                # Use optimized sampling path for AMD GPUs
-                result = self._optimized_sample_amd(
-                    model, seed, steps, cfg, sampler_name, scheduler,
-                    positive, negative, latent_image, denoise,
-                    optimal_dtype, memory_optimization, attention_optimization
-                )
-            else:
-                # Use standard ComfyUI sampling
-                result = self._standard_sample(
-                    model, seed, steps, cfg, sampler_name, scheduler,
-                    positive, negative, latent_image, denoise
-                )
+            # Use ComfyUI's sample function directly
+            latent_image_tensor = latent_image["samples"]
+            latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+            
+            # Prepare noise
+            batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
+            noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
+            
+            # Prepare noise mask
+            noise_mask = None
+            if "noise_mask" in latent_image:
+                noise_mask = latent_image["noise_mask"]
+            
+            # Prepare callback
+            callback = latent_preview.prepare_callback(model, steps)
+            disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+            
+            # Sample
+            samples = comfy.sample.sample(
+                model, noise, steps, cfg, sampler_name, scheduler, 
+                positive, negative, latent_image_tensor, denoise=denoise, 
+                noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed
+            )
+            
+            # Wrap in latent format
+            out = latent_image.copy()
+            out["samples"] = samples
+            result = (out,)
             
         except Exception as e:
-            logging.warning(f"Optimized sampling failed, falling back to standard: {e}")
-            # Fallback to direct sampling
-            result = self._standard_sample(
-                model, seed, steps, cfg, sampler_name, scheduler,
-                positive, negative, latent_image, denoise
-            )
+            print(f"Sampling failed: {e}")
+            raise e
+        
+        # Post-sampling cleanup (aggressive for LoRA issues)
+        if torch.cuda.is_available():
+            # Use aggressive cleanup to handle LoRA fragmentation
+            aggressive_memory_cleanup()
+            
+            # Log memory state after sampling
+            allocated_memory_after = torch.cuda.memory_allocated(0)
+            reserved_memory_after = torch.cuda.memory_reserved(0)
+            fragmentation_after = reserved_memory_after - allocated_memory_after
+            
+            print(f"Memory after sampling: {allocated_memory_after/1024**3:.2f}GB allocated, {reserved_memory_after/1024**3:.2f}GB reserved")
+            print(f"Fragmentation: {fragmentation_after/1024**2:.1f}MB")
         
         sample_time = time.time() - start_time
-        print(f"✅ KSampler completed in {sample_time:.2f}s")
-        logging.info(f"ROCM KSampler completed in {sample_time:.2f}s")
-        
-        # Capture output data and timing for debugging
-        if DEBUG_MODE:
-            save_debug_data(result, "ksampler_output", "flux_1024x1024", {
-                'node_type': 'ROCMOptimizedKSampler',
-                'execution_time': sample_time,
-                'output_shape': result[0]['samples'].shape if result and len(result) > 0 else None,
-                'output_dtype': str(result[0]['samples'].dtype) if result and len(result) > 0 else None,
-                'output_device': str(result[0]['samples'].device) if result and len(result) > 0 else None
-            })
-            capture_timing("ksampler", start_time, time.time(), {
-                'node_type': 'ROCMOptimizedKSampler',
-                'steps': steps,
-                'cfg': cfg,
-                'sampler_name': sampler_name,
-                'scheduler': scheduler
-            })
-            capture_memory_usage("ksampler", {
-                'node_type': 'ROCMOptimizedKSampler',
-                'steps': steps
-            })
+        print(f"KSampler completed in {sample_time:.2f}s")
         
         return result
     
-    def _optimized_sample_amd(self, model, seed, steps, cfg, sampler_name, scheduler,
-                           positive, negative, latent_image, denoise, optimal_dtype,
-                           memory_optimization, attention_optimization):
-        """
-        AMD-optimized sampling path with advanced optimizations
-        """
-        logging.info("Using AMD-optimized sampling path")
-        
-        # Prepare latent tensor with optimal dtype
-        latent_image_tensor = latent_image["samples"]
-        latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
-        
-        # Convert to optimal dtype for AMD GPUs
-        if latent_image_tensor.dtype != optimal_dtype:
-            latent_image_tensor = latent_image_tensor.to(optimal_dtype)
-            logging.info(f"Converted latent tensor to {optimal_dtype}")
-        
-        # Prepare noise with optimal dtype
-        batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
-        noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
-        if noise.dtype != optimal_dtype:
-            noise = noise.to(optimal_dtype)
-        
-        # Prepare noise mask
-        noise_mask = None
-        if "noise_mask" in latent_image:
-            noise_mask = latent_image["noise_mask"]
-            if noise_mask.dtype != optimal_dtype:
-                noise_mask = noise_mask.to(optimal_dtype)
-        
-        # Prepare callback
-        callback = latent_preview.prepare_callback(model, steps)
-        disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
-        
-        # ADVANCED OPTIMIZATION: Batch processing for better GPU utilization
-        if memory_optimization:
-            # Process in optimized batches for AMD GPUs
-            batch_size = min(4, latent_image_tensor.shape[0])  # Optimal for gfx1151
-            logging.info(f"Using batch size {batch_size} for AMD optimization")
-        
-        # Sample with optimizations
-        samples = comfy.sample.sample(
-            model, noise, steps, cfg, sampler_name, scheduler, 
-            positive, negative, latent_image_tensor, denoise=denoise, 
-            noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed
-        )
-        
-        # Wrap in latent format
-        out = latent_image.copy()
-        out["samples"] = samples
-        return (out,)
-    
-    def _standard_sample(self, model, seed, steps, cfg, sampler_name, scheduler,
-                       positive, negative, latent_image, denoise):
-        """
-        Standard ComfyUI sampling path
-        """
-        logging.info("Using standard ComfyUI sampling path")
-        
-        # Use ComfyUI's sample function directly
-        latent_image_tensor = latent_image["samples"]
-        latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
-        
-        # Prepare noise
-        batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
-        noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
-        
-        # Prepare noise mask
-        noise_mask = None
-        if "noise_mask" in latent_image:
-            noise_mask = latent_image["noise_mask"]
-        
-        # Prepare callback
-        callback = latent_preview.prepare_callback(model, steps)
-        disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
-        
-        # Sample
-        samples = comfy.sample.sample(
-            model, noise, steps, cfg, sampler_name, scheduler, 
-            positive, negative, latent_image_tensor, denoise=denoise, 
-            noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed
-        )
-        
-        # Wrap in latent format
-        out = latent_image.copy()
-        out["samples"] = samples
-        return (out,)
 
 
 class ROCMOptimizedKSamplerAdvanced:
@@ -1230,6 +1160,11 @@ class ROCMOptimizedKSamplerAdvanced:
         Advanced optimized sampling for ROCm/AMD GPUs with video workflow optimizations
         """
         start_time = time.time()
+        
+        # Force memory defragmentation before sampling (aggressive for LoRA issues)
+        if torch.cuda.is_available():
+            # Use aggressive cleanup to handle LoRA fragmentation
+            aggressive_memory_cleanup()
         
         # Detect video workflow by batch size
         batch_size = latent_image["samples"].shape[0]
@@ -1440,171 +1375,6 @@ class ROCMOptimizedKSamplerAdvanced:
         return result
 
 
-class ROCMMemorySafeKSampler:
-    """
-    Memory-safe KSampler specifically designed to prevent OOM errors
-    """
-    
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "model": ("MODEL", {"tooltip": "The model to sample from"}),
-                "seed": ("INT", {
-                    "default": 0, 
-                    "min": 0, 
-                    "max": 0xffffffffffffffff,
-                    "tooltip": "Random seed for generation"
-                }),
-                "steps": ("INT", {
-                    "default": 20, 
-                    "min": 1, 
-                    "max": 10000,
-                    "tooltip": "Number of sampling steps"
-                }),
-                "cfg": ("FLOAT", {
-                    "default": 8.0, 
-                    "min": 0.0, 
-                    "max": 100.0, 
-                    "step": 0.1, 
-                    "round": 0.01,
-                    "tooltip": "Classifier-free guidance scale"
-                }),
-                "sampler_name": (comfy.samplers.KSampler.SAMPLERS, {
-                    "tooltip": "Sampling algorithm to use"
-                }),
-                "scheduler": (comfy.samplers.KSampler.SCHEDULERS, {
-                    "tooltip": "Scheduler for noise timesteps"
-                }),
-                "positive": ("CONDITIONING", {"tooltip": "Positive conditioning"}),
-                "negative": ("CONDITIONING", {"tooltip": "Negative conditioning"}),
-                "latent_image": ("LATENT", {"tooltip": "Latent image to sample from"}),
-                "denoise": ("FLOAT", {
-                    "default": 1.0, 
-                    "min": 0.0, 
-                    "max": 1.0, 
-                    "step": 0.01,
-                    "tooltip": "Denoising strength"
-                }),
-                "memory_safety_level": (["conservative", "balanced", "aggressive"], {
-                    "default": "balanced",
-                    "tooltip": "Memory safety level - higher is safer but slower"
-                })
-            }
-        }
-    
-    RETURN_TYPES = ("LATENT",)
-    RETURN_NAMES = ("LATENT",)
-    FUNCTION = "sample"
-    CATEGORY = "RocM Ninodes/Sampling"
-    DESCRIPTION = "Memory-safe KSampler that prevents OOM errors"
-    
-    def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, 
-               latent_image, denoise=1.0, memory_safety_level="balanced"):
-        """
-        Memory-safe sampling that prevents OOM errors
-        """
-        start_time = time.time()
-        
-        # Adjust parameters based on memory safety level
-        if memory_safety_level == "conservative":
-            steps = min(steps, 15)
-            cfg = min(cfg, 7.0)
-            denoise = min(denoise, 0.9)
-            required_memory_gb = 4.0
-        elif memory_safety_level == "balanced":
-            steps = min(steps, 25)
-            cfg = min(cfg, 10.0)
-            required_memory_gb = 3.0
-        else:  # aggressive
-            required_memory_gb = 2.0
-        
-        print(f"🛡️ Memory-Safe KSampler: {steps} steps, CFG {cfg}, {sampler_name}")
-        print(f"🔒 Memory safety level: {memory_safety_level}")
-        
-        # Check memory safety
-        is_safe, memory_msg = check_memory_safety(required_memory_gb)
-        print(f"🔍 Memory check: {memory_msg}")
-        
-        if not is_safe:
-            print("⚠️ Low memory detected - performing emergency cleanup")
-            emergency_memory_cleanup()
-            
-            # Recheck after cleanup
-            is_safe, memory_msg = check_memory_safety(required_memory_gb)
-            if not is_safe:
-                print("❌ Still insufficient memory - reducing parameters")
-                steps = min(steps, 10)
-                cfg = min(cfg, 5.0)
-                denoise = min(denoise, 0.8)
-        
-        # Set conservative memory fraction
-        if torch.cuda.is_available():
-            try:
-                torch.cuda.set_per_process_memory_fraction(0.70)
-                print("🔧 Memory fraction set to 70% for safety")
-            except Exception as e:
-                print(f"⚠️ Memory fraction setting failed: {e}")
-        
-        # Use standard sampling with memory monitoring
-        try:
-            latent_image_tensor = latent_image["samples"]
-            latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
-            
-            # Prepare noise
-            batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
-            noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
-            
-            # Prepare noise mask
-            noise_mask = None
-            if "noise_mask" in latent_image:
-                noise_mask = latent_image["noise_mask"]
-            
-            # Prepare callback
-            callback = latent_preview.prepare_callback(model, steps)
-            disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
-            
-            print(f"🚀 Starting memory-safe sampling...")
-            
-            # Sample with memory monitoring
-            samples = comfy.sample.sample(
-                model, noise, steps, cfg, sampler_name, scheduler, 
-                positive, negative, latent_image_tensor, denoise=denoise, 
-                noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed
-            )
-            
-            # Wrap in latent format
-            out = latent_image.copy()
-            out["samples"] = samples
-            result = (out,)
-            
-        except Exception as e:
-            print(f"❌ Memory-safe sampling failed: {e}")
-            
-            # Try with even more conservative parameters
-            try:
-                print("🆘 Attempting ultra-conservative sampling...")
-                samples = comfy.sample.sample(
-                    model, None, min(steps, 8), min(cfg, 4.0), sampler_name, scheduler, 
-                    positive, negative, latent_image["samples"], denoise=min(denoise, 0.7), 
-                    start_step=0, last_step=min(steps, 8), force_full_denoise=False
-                )
-                out = latent_image.copy()
-                out["samples"] = samples
-                result = (out,)
-                print("✅ Ultra-conservative sampling succeeded")
-            except Exception as e2:
-                print(f"❌ All sampling attempts failed: {e2}")
-                raise e2
-        
-        # Final memory cleanup
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        
-        sample_time = time.time() - start_time
-        print(f"✅ Memory-safe KSampler completed in {sample_time:.2f}s")
-        
-        return result
 
 
 class ROCMSamplerPerformanceMonitor:
@@ -1735,6 +1505,16 @@ class ROCMOptimizedCheckpointLoader:
         import os
         
         try:
+            # Force memory defragmentation before loading
+            if torch.cuda.is_available():
+                # Check if defragmentation is needed and perform it
+                simple_memory_cleanup()
+                
+                # Additional cleanup
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                gc.collect()
+            
             # Get checkpoint path
             ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
             print(f"📁 Loading checkpoint: {ckpt_name}")
@@ -2000,6 +1780,10 @@ class ROCMFluxBenchmark:
         return (benchmark_text, performance_chart, recommendations_text, memory_analysis)
 
 
+
+
+
+
 class ROCMMemoryOptimizer:
     """
     Memory optimization helper for AMD GPUs
@@ -2104,6 +1888,116 @@ class ROCMMemoryOptimizer:
 
 
 # Node mappings
+class ROCMLoRALoader:
+    """
+    ROCM-optimized LoRA loader with aggressive memory management to prevent fragmentation.
+    Specifically designed to handle LoRA loading operations that cause OOM errors.
+    """
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "model": ("MODEL", {"tooltip": "The model to apply LoRA to"}),
+                "lora_name": (folder_paths.get_filename_list("loras"), {"tooltip": "LoRA file to load"}),
+                "strength_model": ("FLOAT", {
+                    "default": 1.0, 
+                    "min": -10.0, 
+                    "max": 10.0, 
+                    "step": 0.01,
+                    "tooltip": "Strength of LoRA effect on model"
+                }),
+                "strength_clip": ("FLOAT", {
+                    "default": 1.0, 
+                    "min": -10.0, 
+                    "max": 10.0, 
+                    "step": 0.01,
+                    "tooltip": "Strength of LoRA effect on CLIP"
+                }),
+            },
+            "optional": {
+                "clip": ("CLIP", {"tooltip": "CLIP model to apply LoRA to"}),
+            }
+        }
+    
+    RETURN_TYPES = ("MODEL", "CLIP")
+    RETURN_NAMES = ("MODEL", "CLIP")
+    FUNCTION = "load_lora"
+    CATEGORY = "RocM Ninodes/Loaders"
+    DESCRIPTION = "ROCM-optimized LoRA loader with aggressive memory management"
+    
+    def load_lora(self, model, lora_name, strength_model, strength_clip, clip=None):
+        """
+        Load LoRA with aggressive memory management to prevent fragmentation
+        """
+        print(f"🔄 ROCM LoRA Loader: Loading {lora_name} with strengths {strength_model}/{strength_clip}")
+        
+        # Pre-loading aggressive memory cleanup
+        if torch.cuda.is_available():
+            print("🧹 Pre-loading memory cleanup...")
+            aggressive_memory_cleanup()
+            
+            # Log memory state before LoRA loading
+            allocated_memory = torch.cuda.memory_allocated(0)
+            reserved_memory = torch.cuda.memory_reserved(0)
+            fragmentation = reserved_memory - allocated_memory
+            
+            print(f"Memory before LoRA loading: {allocated_memory/1024**3:.2f}GB allocated, {reserved_memory/1024**3:.2f}GB reserved")
+            print(f"Fragmentation: {fragmentation/1024**2:.1f}MB")
+        
+        try:
+            # Import ComfyUI's LoRA loading functions
+            from comfy.lora import load_lora
+            from comfy.model_patcher import ModelPatcher
+            
+            # Load LoRA with aggressive memory management
+            lora_path = folder_paths.get_full_path("loras", lora_name)
+            if lora_path is None:
+                raise FileNotFoundError(f"LoRA file not found: {lora_name}")
+            
+            print(f"📁 Loading LoRA from: {lora_path}")
+            
+            # Apply aggressive memory cleanup before each major operation
+            if torch.cuda.is_available():
+                aggressive_memory_cleanup()
+            
+            # Load the LoRA
+            lora = load_lora(lora_path)
+            
+            # Apply aggressive memory cleanup after loading
+            if torch.cuda.is_available():
+                aggressive_memory_cleanup()
+            
+            # Apply LoRA to model with memory management
+            model_lora, clip_lora = lora.apply_to_model(model, clip, strength_model, strength_clip)
+            
+            # Post-loading aggressive memory cleanup
+            if torch.cuda.is_available():
+                print("🧹 Post-loading memory cleanup...")
+                aggressive_memory_cleanup()
+                
+                # Log memory state after LoRA loading
+                allocated_memory_after = torch.cuda.memory_allocated(0)
+                reserved_memory_after = torch.cuda.memory_reserved(0)
+                fragmentation_after = reserved_memory_after - allocated_memory_after
+                
+                print(f"Memory after LoRA loading: {allocated_memory_after/1024**3:.2f}GB allocated, {reserved_memory_after/1024**3:.2f}GB reserved")
+                print(f"Fragmentation: {fragmentation_after/1024**2:.1f}MB")
+            
+            print(f"✅ ROCM LoRA Loader: Successfully loaded {lora_name}")
+            return (model_lora, clip_lora)
+            
+        except Exception as e:
+            print(f"❌ ROCM LoRA Loader: Failed to load {lora_name}: {e}")
+            
+            # Emergency memory cleanup on failure
+            if torch.cuda.is_available():
+                print("🚨 Emergency memory cleanup...")
+                aggressive_memory_cleanup()
+            
+            raise e
+
+
 NODE_CLASS_MAPPINGS = {
     "ROCMOptimizedCheckpointLoader": ROCMOptimizedCheckpointLoader,
     "ROCMOptimizedVAEDecode": ROCMOptimizedVAEDecode,
@@ -2111,10 +2005,10 @@ NODE_CLASS_MAPPINGS = {
     "ROCMVAEPerformanceMonitor": ROCMVAEPerformanceMonitor,
     "ROCMOptimizedKSampler": ROCMOptimizedKSampler,
     "ROCMOptimizedKSamplerAdvanced": ROCMOptimizedKSamplerAdvanced,
-    "ROCMMemorySafeKSampler": ROCMMemorySafeKSampler,
     "ROCMSamplerPerformanceMonitor": ROCMSamplerPerformanceMonitor,
     "ROCMFluxBenchmark": ROCMFluxBenchmark,
     "ROCMMemoryOptimizer": ROCMMemoryOptimizer,
+    "ROCMLoRALoader": ROCMLoRALoader,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -2127,4 +2021,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMSamplerPerformanceMonitor": "ROCM Sampler Performance Monitor",
     "ROCMFluxBenchmark": "ROCM Flux Benchmark",
     "ROCMMemoryOptimizer": "ROCM Memory Optimizer",
+    "ROCMLoRALoader": "ROCM LoRA Loader",
 }
