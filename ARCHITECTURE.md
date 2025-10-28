@@ -51,7 +51,25 @@ ROCM_NINODES_DEBUG=0  # Set to 1 to enable data capture for testing
 - **Video Support**: 5D tensor processing with 4D output conversion
 - **Cache Management**: Regular `torch.cuda.empty_cache()` calls
 
-## Library Support Status
+## Quantization Support
+
+### Supported Quantized Formats
+- **FP8**: Hardware-accelerated FP8 quantization (flux1-dev-fp8.safetensors)
+- **BFloat16**: Native ROCm support with minimal overhead
+- **INT8/INT4**: GGUF format support for WAN 2.2 models
+- **Automatic Detection**: Detects quantized models from filename and dtype
+
+### Quantization-Specific Optimizations
+- **Compatibility Mode**: Disables aggressive optimizations for quantized models
+- **Memory Management**: Quantization-aware memory allocation (FP8: 50% vs FP32, INT8: 25% vs FP32)
+- **Dtype Preservation**: Prevents forced dtype conversions that break quantized models
+- **Adaptive Processing**: Smaller tile sizes and chunk sizes for quantized models
+
+### User-Reported Issue Fixes
+- **OOM Prevention**: Lower default tile_size (512 vs 768) for compatibility
+- **Batch Optimization**: Disabled by default for quantized models
+- **Memory Cleanup**: Less aggressive cleanup for quantized models
+- **Video Processing**: Adaptive chunk sizing based on frame count and memory
 
 ### HIPBlas
 - **Status**: Fully supported

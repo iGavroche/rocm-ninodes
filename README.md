@@ -16,7 +16,37 @@ RocM Ninodes transforms your AMD GPU experience in ComfyUI by providing:
 - **🔧 Easy Integration**: Drop-in replacements for standard ComfyUI nodes
 - **📊 Real-Time Monitoring**: Built-in performance tracking and optimization recommendations
 
-## 🛠️ **How We Do It**
+## 🔧 **Quantized Model Support**
+
+RocM Ninodes now includes comprehensive support for quantized models with automatic detection and optimization:
+
+### **Supported Quantized Formats**
+- **FP8 Models**: Hardware-accelerated FP8 quantization (flux1-dev-fp8.safetensors)
+- **BFloat16**: Native ROCm support with minimal overhead
+- **INT8/INT4**: GGUF format support for WAN 2.2 models
+- **Automatic Detection**: Detects quantized models from filename and dtype
+
+### **Quantization-Specific Features**
+- **🛡️ Compatibility Mode**: Automatically disables aggressive optimizations for quantized models
+- **💾 Smart Memory Management**: Quantization-aware memory allocation (FP8: 50% vs FP32, INT8: 25% vs FP32)
+- **🔒 Dtype Preservation**: Prevents forced dtype conversions that break quantized models
+- **📹 Adaptive Video Processing**: Smaller chunk sizes and tile sizes for quantized models
+- **⚡ OOM Prevention**: Lower default settings to prevent out-of-memory errors
+
+### **User-Reported Issue Fixes**
+- **Fixed OOM Errors**: Lower default tile_size (512 vs 768) for better compatibility
+- **Fixed Quantized Model Breaking**: Disabled batch optimization by default for quantized models
+- **Fixed Memory Management**: Less aggressive cleanup for quantized models
+- **Fixed Video Processing**: Adaptive chunk sizing based on frame count and available memory
+
+### **Recommended Settings for Quantized Models**
+- **Compatibility Mode**: Enable for quantized models
+- **Tile Size**: Use 512 (conservative) instead of 768
+- **Video Chunk Size**: Use 2-4 frames instead of 8
+- **Batch Optimization**: Disable for quantized models
+- **Memory Optimization**: Disable aggressive cleanup
+
+
 
 Our optimization approach focuses on three key areas:
 
@@ -47,9 +77,10 @@ Our optimization approach focuses on three key areas:
 
 #### **🎬 Image-to-Video Generation (WAN 2.2 i2v)**
 - **320x320px, 2s**: **163s → 139s** (15% improvement!)
-- **320x320px, 17 frames**: **98.33s → 92.78s** (5.6% improvement!) **NEW!**
+- **320x320px, 17 frames**: **98.33s → 92.78s** (5.6% improvement!)
 - **480x480px, 2s**: **202s** (33 frames, 16fps) ✅
 - **480x720px, 2s**: **303s** (33 frames, 16fps) ✅
+- **Video Quality**: Fixed darker frames at chunk boundaries (v1.0.29) ✅
 
 #### **📊 Performance Metrics**
 - **Memory efficiency**: 50% reduction in attention memory requirements

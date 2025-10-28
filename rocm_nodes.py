@@ -151,6 +151,83 @@ def emergency_memory_cleanup():
         return False
 
 
+    """
+    Quantization-aware memory cleanup - less aggressive for quantized models
+    """
+    try:
+        if not torch.cuda.is_available():
+            return False
+        
+        # Different cleanup strategies based on quantization type
+        if quantization_type in ["fp8", "int8", "int4"]:
+            # Quantized models are already memory-efficient, minimal cleanup
+            torch.cuda.empty_cache()
+            print(f"🧹 Light memory cleanup for {quantization_type} model")
+        else:
+            # Standard cleanup for non-quantized models
+            gentle_memory_cleanup()
+            print(f"🧹 Standard memory cleanup for {quantization_type} model")
+        
+        return True
+    except Exception as e:
+        print(f"   Quantized memory cleanup error: {e}")
+        return False
+
+def check_quantized_memory_safety(model_size, quantization_type="fp8"):
+    """
+    Check memory safety with quantization-aware estimation
+    """
+    if not torch.cuda.is_available():
+        return True, "CUDA not available"
+    
+    total_memory, allocated_memory, reserved_memory, free_memory = get_gpu_memory_info()
+    
+    if total_memory is None:
+        return True, "Memory info unavailable"
+    
+    # Calculate memory requirements based on quantization
+    if quantization_type == "fp8":
+        required_memory = model_size * 0.5  # 50% of FP32
+        safety_margin = 1.2  # Less aggressive for quantized
+    elif quantization_type in ["int8", "int4"]:
+        required_memory = model_size * 0.25  # 25% of FP32
+        safety_margin = 1.1  # Even less aggressive
+    else:
+        required_memory = model_size  # Full FP32
+        safety_margin = 1.5  # Conservative for non-quantized
+    
+    required_gb = (required_memory * safety_margin) / (1024**3)
+    free_gb = free_memory / (1024**3)
+    
+    if free_gb < required_gb:
+        return False, f"Only {free_gb:.2f}GB free, need {required_gb:.2f}GB for {quantization_type}"
+    
+    return True, f"Memory OK for {quantization_type}: {free_gb:.2f}GB free"
+
+def detect_model_quantization(model):
+    """
+    Detect if a model is quantized and return quantization type
+    """
+    try:
+        # Check model dtype
+        model_dtype = model.model_dtype()
+        dtype_name = str(model_dtype).lower()
+        
+        if 'int8' in dtype_name:
+            return "int8"
+        elif 'int4' in dtype_name:
+            return "int4"
+        elif 'float8' in dtype_name or 'fp8' in dtype_name:
+            return "fp8"
+        elif 'bfloat16' in dtype_name or 'bf16' in dtype_name:
+            return "bf16"
+        else:
+            return "fp32"
+    except Exception as e:
+        print(f"⚠️ Could not detect model quantization: {e}")
+        return "unknown"
+
+
 
 # Removed force_memory_cleanup - using gentle_memory_cleanup instead
 
@@ -223,6 +300,13 @@ class ROCMOptimizedVAEDecode:
                     "tooltip": "Enable memory optimization for video processing"
                 })
             }
+            ,
+            "optional": {
+                "compatibility_mode": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Enable stock ComfyUI compatibility mode (disables all ROCm optimizations)"
+                })
+            }
         }
     
     RETURN_TYPES = ("IMAGE",)
@@ -233,12 +317,32 @@ class ROCMOptimizedVAEDecode:
     
     def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True, 
                precision_mode="auto", batch_optimization=True, video_chunk_size=8, 
-               memory_optimization_enabled=True):
+               memory_optimization_enabled=True, compatibility_mode=False):
         """
-        Optimized VAE decode for ROCm/AMD GPUs with video support
+        Optimized VAE decode for ROCm/AMD GPUs with video support and quantized model compatibility
         """
         start_time = time.time()
         log_debug(f"ROCMOptimizedVAEDecode.decode started with samples shape: {samples['samples'].shape}")
+        
+        # CRITICAL FIX: Detect quantized models to avoid breaking them
+        is_quantized_model = False
+        vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
+        if vae_model_dtype is not None:
+            # Check for quantized dtypes - be more specific to avoid false positives
+            quantized_dtypes = [torch.float8_e4m3fn, torch.float8_e5m2, torch.int8, torch.int4]
+            if vae_model_dtype in quantized_dtypes:
+                is_quantized_model = True
+                print(f"🔍 Detected quantized VAE model (dtype: {vae_model_dtype})")
+            elif hasattr(vae_model_dtype, '__name__') and 'int' in str(vae_model_dtype):
+                is_quantized_model = True
+                print(f"🔍 Detected quantized VAE model (dtype: {vae_model_dtype})")
+        
+        # Compatibility mode: disable all optimizations for quantized models
+        if compatibility_mode or is_quantized_model:
+            print("🛡️ Compatibility mode enabled - using stock ComfyUI behavior")
+            use_rocm_optimizations = False
+            batch_optimization = False
+            memory_optimization_enabled = False
         
         # Capture input data for debugging
         if DEBUG_MODE:
@@ -266,32 +370,36 @@ class ROCMOptimizedVAEDecode:
             print(f"🎬 Processing video: {T} frames, {H}x{W} resolution")
             
             # Memory-safe video processing
-            # CRITICAL FIX: WAN VAE has issues with chunking (frame duplication)
-            # Force non-chunked processing for WAN VAE to prevent frame count issues
-            if memory_optimization_enabled and T > video_chunk_size and T < 100:  # Only chunk for very large videos
-                use_chunking = False
-                print("📹 Using non-chunked processing for WAN VAE stability")
+            # CRITICAL FIX: Only chunk for very large videos to avoid performance penalty
+            if memory_optimization_enabled and T > video_chunk_size and T > 20:  # Only chunk for videos > 20 frames
+                use_chunking = True
+                print(f"📹 Using chunked processing: {video_chunk_size} frames per chunk")
             else:
-                use_chunking = memory_optimization_enabled and T > video_chunk_size
-                if use_chunking:
-                    print(f"📹 Using chunked processing: {video_chunk_size} frames per chunk")
+                use_chunking = False
+                print("📹 Using non-chunked processing for optimal speed")
             
             if use_chunking:
-                # Process video in chunks to avoid memory exhaustion
+                # Process video in chunks to avoid memory exhaustion with overlap to prevent boundary artifacts
                 chunk_results = []
                 num_chunks = (T + video_chunk_size - 1) // video_chunk_size
-                print(f"🔄 Processing {num_chunks} chunks...")
+                overlap_frames = 2  # Process overlap to blend boundaries smoothly
+                print(f"🔄 Processing {num_chunks} chunks with {overlap_frames} frame overlap...")
                 
                 for i in range(0, T, video_chunk_size):
                     chunk_idx = i // video_chunk_size + 1
                     end_idx = min(i + video_chunk_size, T)
                     print(f"  📦 Chunk {chunk_idx}/{num_chunks}: frames {i}-{end_idx-1}")
-                    chunk = samples["samples"][:, :, i:end_idx, :, :]
                     
-                    # Keep original 5D shape for WAN VAE - don't reshape to 4D
-                    # WAN VAE expects [B, C, T, H, W] format for memory calculation
-                    # Decode chunk - WAN VAE expects 5D tensor [B, C, T, H, W]
+                    # Add overlap frames at boundaries (except at start and end)
+                    start_overlap = overlap_frames if i > 0 else 0
+                    end_overlap = overlap_frames if end_idx < T else 0
                     
+                    chunk_start = max(0, i - start_overlap)
+                    chunk_end = min(T, end_idx + end_overlap)
+                    
+                    chunk = samples["samples"][:, :, chunk_start:chunk_end, :, :]
+                    
+                    # Decode chunk
                     with torch.no_grad():
                         chunk_decoded = vae.decode(chunk)
                     
@@ -299,24 +407,59 @@ class ROCMOptimizedVAEDecode:
                     if isinstance(chunk_decoded, tuple):
                         chunk_decoded = chunk_decoded[0]
                     
+                    # Crop out overlap frames for clean concatenation
+                    # We processed more frames than needed due to overlap, so crop them
+                    crop_start = start_overlap  # Number of frames to crop from start
+                    crop_end = end_overlap      # Number of frames to crop from end
                     
-                    # Reshape back to video format - chunk_decoded should already be in correct format
-                    # No need to reshape since we kept the 5D format
+                    # Get the actual frame indices we want to keep
+                    total_frames = chunk_decoded.shape[2] if chunk_decoded.shape[1] == 3 else chunk_decoded.shape[1]
+                    keep_frames = total_frames - crop_start - crop_end
+                    
+                    if crop_start > 0 or crop_end > 0:
+                        if chunk_decoded.shape[1] == 3:
+                            # (B, C, T, H, W) format
+                            chunk_decoded = chunk_decoded[:, :, crop_start:total_frames-crop_end, :, :]
+                        else:
+                            # (B, T, H, W, C) format  
+                            chunk_decoded = chunk_decoded[:, crop_start:total_frames-crop_end, :, :, :]
+                    
                     chunk_results.append(chunk_decoded)
                     
                     # Clear memory after each chunk (reduced frequency to prevent fragmentation)
                     if i % (video_chunk_size * 2) == 0:  # Only clear every 2 chunks
                         torch.cuda.empty_cache()
                 
-                # Concatenate results
-                result = torch.cat(chunk_results, dim=1)
+                # Concatenate results along temporal dimension
+                # Detect layout: channels-first 5D => (B, C, T, H, W) else channels-last 5D => (B, T, H, W, C)
+                first = chunk_results[0]
+                if len(first.shape) == 5 and first.shape[1] == 3:
+                    # (B, C, T, H, W)
+                    result = torch.cat(chunk_results, dim=2)
+                elif len(first.shape) == 5 and first.shape[-1] == 3:
+                    # (B, T, H, W, C)
+                    result = torch.cat(chunk_results, dim=1)
+                else:
+                    # Fallback: assume temporal at dim=2
+                    result = torch.cat(chunk_results, dim=2)
                 
                 
-                # Convert 5D video tensor to 4D image tensor for ComfyUI
-                # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
+                # Convert 5D video tensor to 4D image tensor for ComfyUI (B*T, H, W, C)
                 if len(result.shape) == 5:
-                    B, T, H, W, C = result.shape
-                    result = result.reshape(B * T, H, W, C)
+                    if result.shape[1] == 3:
+                        # (B, C, T, H, W) -> (B, T, H, W, C)
+                        result = result.permute(0, 2, 3, 4, 1).contiguous()
+                        B, T, H, W, C = result.shape
+                        result = result.reshape(B * T, H, W, C)
+                    elif result.shape[-1] == 3:
+                        # (B, T, H, W, C)
+                        B, T, H, W, C = result.shape
+                        result = result.reshape(B * T, H, W, C)
+                    else:
+                        # Fallback: treat as channels-first
+                        result = result.permute(0, 2, 3, 4, 1).contiguous()
+                        B, T, H, W, C = result.shape
+                        result = result.reshape(B * T, H, W, C)
                 
                 return (result,)
             else:
@@ -333,13 +476,22 @@ class ROCMOptimizedVAEDecode:
                     result = result[0]
                 
                 
-                # Convert 5D video tensor to 4D image tensor for ComfyUI
-                # Input: [B, T, H, W, C] -> Output: [B*T, H, W, C]
+                # Convert 5D video tensor to 4D image tensor for ComfyUI (B*T, H, W, C)
                 if len(result.shape) == 5:
-                    B, T, H, W, C = result.shape
-                    
-                    
-                    result = result.reshape(B * T, H, W, C)
+                    if result.shape[1] == 3:
+                        # (B, C, T, H, W) -> (B, T, H, W, C)
+                        result = result.permute(0, 2, 3, 4, 1).contiguous()
+                        B, T, H, W, C = result.shape
+                        result = result.reshape(B * T, H, W, C)
+                    elif result.shape[-1] == 3:
+                        # (B, T, H, W, C)
+                        B, T, H, W, C = result.shape
+                        result = result.reshape(B * T, H, W, C)
+                    else:
+                        # Fallback: treat as channels-first
+                        result = result.permute(0, 2, 3, 4, 1).contiguous()
+                        B, T, H, W, C = result.shape
+                        result = result.reshape(B * T, H, W, C)
                 
                 # Capture output data and timing for debugging
                 if DEBUG_MODE:
@@ -363,11 +515,14 @@ class ROCMOptimizedVAEDecode:
                 
                 return (result,)
         
-        # Set optimal precision for AMD GPUs - match VAE model dtype to avoid type mismatch
-        if precision_mode == "auto":
+        # CRITICAL FIX: Preserve quantized model dtypes - do not convert
+        if is_quantized_model:
+            print(f"🔒 Preserving quantized model dtype: {vae_model_dtype}")
+            optimal_dtype = vae_model_dtype
+            # Skip all dtype conversions for quantized models
+        elif precision_mode == "auto":
             if is_amd:
                 # Check VAE model's actual dtype first to avoid type mismatch
-                vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
                 if vae_model_dtype is not None:
                     # Use the VAE model's existing dtype to avoid type mismatch errors
                     optimal_dtype = vae_model_dtype
@@ -386,14 +541,17 @@ class ROCMOptimizedVAEDecode:
             }
             optimal_dtype = dtype_map[precision_mode]
         
-        # CRITICAL FIX: Handle BFloat16 model with Float32 input type mismatch
-        # If the VAE model has BFloat16 weights but we're using Float32, we need to match them
-        vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
-        if vae_model_dtype == torch.bfloat16 and optimal_dtype == torch.float32:
-            logging.warning("VAE model has BFloat16 weights but input is Float32 - this will cause type mismatch")
-            logging.warning("Converting VAE model to Float32 to match input dtype")
-            vae.first_stage_model = vae.first_stage_model.to(torch.float32)
-            optimal_dtype = torch.float32
+        # CRITICAL FIX: Skip dtype conversion for quantized models
+        if not is_quantized_model:
+            # Handle BFloat16 model with Float32 input type mismatch
+            # If the VAE model has BFloat16 weights but we're using Float32, we need to match them
+            if vae_model_dtype == torch.bfloat16 and optimal_dtype == torch.float32:
+                logging.warning("VAE model has BFloat16 weights but input is Float32 - this will cause type mismatch")
+                logging.warning("Converting VAE model to Float32 to match input dtype")
+                vae.first_stage_model = vae.first_stage_model.to(torch.float32)
+                optimal_dtype = torch.float32
+        else:
+            print(f"🔒 Skipping dtype conversion for quantized model (dtype: {vae_model_dtype})")
         
         # ROCm-specific optimizations (set once, don't repeat)
         if use_rocm_optimizations and is_amd:
@@ -467,14 +625,16 @@ class ROCMOptimizedVAEDecode:
         cache_key = f"{vae_id}_{optimal_dtype}"
         
         if cache_key not in self._vae_model_cache:
-            # Ensure VAE model is in optimal dtype (do this once, not repeatedly)
-            # CRITICAL FIX: Only convert model dtype if it's different to avoid type mismatch
-            current_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
-            if current_model_dtype is not None and current_model_dtype != optimal_dtype:
-                logging.info(f"Converting VAE model from {current_model_dtype} to {optimal_dtype}")
-                vae.first_stage_model = vae.first_stage_model.to(optimal_dtype)
+            # CRITICAL FIX: Only convert model dtype if it's different AND not quantized
+            if not is_quantized_model:
+                current_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
+                if current_model_dtype is not None and current_model_dtype != optimal_dtype:
+                    logging.info(f"Converting VAE model from {current_model_dtype} to {optimal_dtype}")
+                    vae.first_stage_model = vae.first_stage_model.to(optimal_dtype)
+                else:
+                    logging.info(f"VAE model already in correct dtype: {current_model_dtype}")
             else:
-                logging.info(f"VAE model already in correct dtype: {current_model_dtype}")
+                logging.info(f"Preserving quantized model dtype: {vae_model_dtype}")
             self._vae_model_cache[cache_key] = True
         
         # Decide processing method based on image size and available memory
@@ -501,7 +661,7 @@ class ROCMOptimizedVAEDecode:
                     with torch.cuda.amp.autocast(enabled=(optimal_dtype != torch.float32), dtype=optimal_dtype):
                         out = vae.first_stage_model.decode(samples_processed)
                 
-                out = out.to(vae.output_device).float()
+                out = out.to(device).float()  # CRITICAL FIX: Keep on GPU device, not output_device
                 pixel_samples = vae.process_output(out)
                 
             except Exception as e:
@@ -519,8 +679,8 @@ class ROCMOptimizedVAEDecode:
             pixel_samples = pixel_samples.reshape(-1, pixel_samples.shape[-3], 
                                                 pixel_samples.shape[-2], pixel_samples.shape[-1])
         
-        # Move to output device (no movedim needed - match standard VAE decode)
-        pixel_samples = pixel_samples.to(vae.output_device)
+        # Move to GPU device (not output_device which might be CPU)
+        pixel_samples = pixel_samples.to(device)
         
         # CRITICAL FIX: Preserve original tensor values - don't convert dtype unnecessarily
         # ComfyUI's save_images function expects (B, H, W, C) format with preserved values
@@ -588,19 +748,31 @@ class ROCMOptimizedVAEDecode:
         tile_y = tile_size // compression
         overlap_adj = overlap // compression
         
+        # Detect if this is a quantized model
+        is_quantized_model = False
+        vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
+        if vae_model_dtype is not None:
+            quantized_dtypes = [torch.float8_e4m3fn, torch.float8_e5m2, torch.int8, torch.int4]
+            if vae_model_dtype in quantized_dtypes:
+                is_quantized_model = True
+            elif hasattr(vae_model_dtype, '__name__') and 'int' in str(vae_model_dtype):
+                is_quantized_model = True
+        
         # Use caching to avoid repeated model conversions in tiled decoding
         vae_id = id(vae.first_stage_model)
         cache_key = f"{vae_id}_{dtype}"
         
         if cache_key not in self._vae_model_cache:
-            # Ensure VAE model is in correct dtype (do this once, not per tile)
-            # CRITICAL FIX: Only convert model dtype if it's different to avoid type mismatch
-            current_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
-            if current_model_dtype is not None and current_model_dtype != dtype:
-                logging.info(f"Tiled decode: Converting VAE model from {current_model_dtype} to {dtype}")
-                vae.first_stage_model = vae.first_stage_model.to(dtype)
+            # CRITICAL FIX: Only convert model dtype if it's different AND not quantized
+            if not is_quantized_model:
+                current_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
+                if current_model_dtype is not None and current_model_dtype != dtype:
+                    logging.info(f"Tiled decode: Converting VAE model from {current_model_dtype} to {dtype}")
+                    vae.first_stage_model = vae.first_stage_model.to(dtype)
+                else:
+                    logging.info(f"Tiled decode: VAE model already in correct dtype: {current_model_dtype}")
             else:
-                logging.info(f"Tiled decode: VAE model already in correct dtype: {current_model_dtype}")
+                logging.info(f"Tiled decode: Preserving quantized model dtype: {vae_model_dtype}")
             self._vae_model_cache[cache_key] = True
         
         # Use ComfyUI's tiled scale with optimizations
@@ -609,6 +781,13 @@ class ROCMOptimizedVAEDecode:
             samples_tile = samples_tile.to(vae.device).to(dtype)
             return vae.first_stage_model.decode(samples_tile)
         
+        # Ensure a valid output device is defined for tiled scaling
+        device = vae.device if hasattr(vae, 'device') else (
+            samples.device if hasattr(samples, 'device') else (
+                torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+            )
+        )
+
         result = comfy.utils.tiled_scale(
             samples, 
             decode_fn, 
@@ -617,7 +796,7 @@ class ROCMOptimizedVAEDecode:
             overlap=overlap_adj,
             upscale_amount=vae.upscale_ratio,
             out_channels=3,  # RGB output channels, not latent channels
-            output_device=vae.output_device
+            output_device=device  # CRITICAL FIX: Use GPU device, not vae.output_device
         )
         
         # Handle WAN VAE output format - ensure correct shape and channels
@@ -926,9 +1105,14 @@ class ROCMOptimizedKSampler:
             if "noise_mask" in latent_image:
                 noise_mask = latent_image["noise_mask"]
             
-            # Prepare callback
-            callback = latent_preview.prepare_callback(model, steps)
-            disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+            # Prepare callback (disable for batch/video to reduce CPU RAM and I/O)
+            is_video_workflow = latent_image_tensor.shape[0] > 1
+            if is_video_workflow:
+                callback = None
+                disable_pbar = True
+            else:
+                callback = latent_preview.prepare_callback(model, steps)
+                disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
             
             # Sample
             samples = comfy.sample.sample(
@@ -1038,6 +1222,13 @@ class ROCMOptimizedKSamplerAdvanced:
                     "tooltip": "Enable memory optimization for AMD GPUs"
                 })
             }
+            ,
+            "optional": {
+                "compatibility_mode": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Enable compatibility mode for quantized models (disables optimizations)"
+                })
+            }
         }
     
     RETURN_TYPES = ("LATENT",)
@@ -1049,16 +1240,37 @@ class ROCMOptimizedKSamplerAdvanced:
     def sample(self, model, add_noise, noise_seed, steps, cfg, sampler_name, scheduler, 
                positive, negative, latent_image, start_at_step, end_at_step, 
                return_with_leftover_noise, use_rocm_optimizations=True, 
-               precision_mode="auto", memory_optimization=True, denoise=1.0):
+               precision_mode="auto", memory_optimization=True, denoise=1.0, compatibility_mode=False):
         """
-        Advanced optimized sampling for ROCm/AMD GPUs with video workflow optimizations
+        Advanced optimized sampling for ROCm/AMD GPUs with video workflow optimizations and quantized model support
         """
         start_time = time.time()
         
-        # Gentle memory cleanup before sampling (for mature ROCm)
+        # CRITICAL FIX: Detect quantized models to avoid breaking them
+        is_quantized_model = False
+        try:
+            model_dtype = model.model_dtype()
+            if hasattr(model_dtype, '__name__'):
+                dtype_name = str(model_dtype)
+                # Check for quantized dtypes - be more specific
+                quantized_indicators = ['int8', 'int4', 'float8', 'quantized']
+                if any(indicator in dtype_name.lower() for indicator in quantized_indicators):
+                    is_quantized_model = True
+                    print(f"🔍 Detected quantized model (dtype: {model_dtype})")
+        except Exception as e:
+            print(f"⚠️ Could not detect model dtype: {e}")
+        
+        # Compatibility mode: disable all optimizations for quantized models
+        if compatibility_mode or is_quantized_model:
+            print("🛡️ Compatibility mode enabled - using stock ComfyUI behavior")
+            use_rocm_optimizations = False
+            memory_optimization = False
+        
+        # Gentle memory cleanup before sampling only if critically low VRAM
         if torch.cuda.is_available():
-            # Gentle cleanup for mature drivers
-            gentle_memory_cleanup()
+            _total, _alloc, _reserved, _free = get_gpu_memory_info()
+            if _free is not None and _free < 2 * 1024**3:  # < 2GB free
+                gentle_memory_cleanup()
         
         # Detect video workflow by batch size
         batch_size = latent_image["samples"].shape[0]
@@ -1072,7 +1284,7 @@ class ROCMOptimizedKSamplerAdvanced:
         
         # ROCm optimizations
         if use_rocm_optimizations:
-            device = model.model_dtype()
+            device = model_management.get_torch_device()
             is_amd = hasattr(device, 'type') and device.type == 'cuda'
             
             # Video workflow specific optimizations
@@ -1158,25 +1370,46 @@ class ROCMOptimizedKSamplerAdvanced:
             
             # Use ComfyUI's sample function directly with advanced options
             latent_image_tensor = latent_image["samples"]
+            # Ensure latent on GPU to avoid CPU paging
+            if torch.cuda.is_available() and latent_image_tensor.device.type != 'cuda':
+                latent_image_tensor = latent_image_tensor.to(model_management.get_torch_device(), non_blocking=True)
             latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+
+            # Guard 1: Full denoise with fresh noise should not reuse previous latent contents
+            if add_noise == "enable" and start_at_step == 0:
+                # Zero-out latent contents to avoid pass-through artifacts/scrambled frames when resolution changed
+                latent_image_tensor = torch.zeros_like(latent_image_tensor, device=latent_image_tensor.device)
+                # If a noise_mask exists but is mismatched, drop it to prevent shape errors
+                if "noise_mask" in latent_image and isinstance(latent_image["noise_mask"], torch.Tensor):
+                    if tuple(latent_image["noise_mask"].shape) != tuple(latent_image_tensor.shape):
+                        latent_image["noise_mask"] = None
             
             # Prepare noise (minimal progress for video)
             if not is_video_workflow:
                 print("🎲 Preparing noise for sampling...")
             if disable_noise:
-                noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
+                # CRITICAL FIX: Create noise on same device as latent_image_tensor, not CPU
+                noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device=latent_image_tensor.device)
             else:
                 batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
+                # Guard 2: Recompute noise with current latent shape to avoid stale shapes after resolution changes
                 noise = comfy.sample.prepare_noise(latent_image_tensor, noise_seed, batch_inds)
+                # Move noise to GPU if created on CPU by upstream helper
+                if torch.cuda.is_available() and noise.device.type != 'cuda':
+                    noise = noise.to(latent_image_tensor.device, non_blocking=True)
             
             # Prepare noise mask
             noise_mask = None
             if "noise_mask" in latent_image:
                 noise_mask = latent_image["noise_mask"]
             
-            # Prepare callback with video-optimized progress
-            callback = latent_preview.prepare_callback(model, steps)
-            disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
+            # Prepare callback with video-optimized progress (disable for video)
+            if is_video_workflow:
+                callback = None
+                disable_pbar = True
+            else:
+                callback = latent_preview.prepare_callback(model, steps)
+                disable_pbar = not comfy.utils.PROGRESS_BAR_ENABLED
             
             # Minimal progress for video workflows
             if not is_video_workflow:
@@ -1218,9 +1451,18 @@ class ROCMOptimizedKSamplerAdvanced:
             
             try:
                 # Use a more conservative approach for fallback
+                latent_fallback = latent_image["samples"]
+                # Ensure latent on GPU
+                if torch.cuda.is_available() and latent_fallback.device.type != 'cuda':
+                    latent_fallback = latent_fallback.to(model_management.get_torch_device(), non_blocking=True)
+                # Prepare noise on same device as latent to avoid None/CPU issues
+                batch_inds_fb = latent_image["batch_index"] if "batch_index" in latent_image else None
+                noise_fb = comfy.sample.prepare_noise(latent_fallback, noise_seed, batch_inds_fb)
+                if torch.cuda.is_available() and noise_fb.device.type != 'cuda':
+                    noise_fb = noise_fb.to(latent_fallback.device, non_blocking=True)
                 samples = comfy.sample.sample(
-                    model, None, steps, cfg, sampler_name, scheduler, 
-                    positive, negative, latent_image["samples"], denoise=denoise, 
+                    model, noise_fb, steps, cfg, sampler_name, scheduler, 
+                    positive, negative, latent_fallback, denoise=denoise, 
                     start_step=start_at_step, last_step=end_at_step, 
                     force_full_denoise=force_full_denoise
                 )
@@ -1235,9 +1477,16 @@ class ROCMOptimizedKSamplerAdvanced:
                 # Last resort: try with minimal parameters
                 try:
                     print("🆘 Attempting minimal sampling...")
+                    latent_min = latent_image["samples"]
+                    if torch.cuda.is_available() and latent_min.device.type != 'cuda':
+                        latent_min = latent_min.to(model_management.get_torch_device(), non_blocking=True)
+                    batch_inds_min = latent_image["batch_index"] if "batch_index" in latent_image else None
+                    noise_min = comfy.sample.prepare_noise(latent_min, noise_seed, batch_inds_min)
+                    if torch.cuda.is_available() and noise_min.device.type != 'cuda':
+                        noise_min = noise_min.to(latent_min.device, non_blocking=True)
                     samples = comfy.sample.sample(
-                        model, None, min(steps, 10), min(cfg, 7.0), sampler_name, scheduler, 
-                        positive, negative, latent_image["samples"], denoise=min(denoise, 0.8), 
+                        model, noise_min, min(steps, 10), min(cfg, 7.0), sampler_name, scheduler, 
+                        positive, negative, latent_min, denoise=min(denoise, 0.8), 
                         start_step=0, last_step=min(steps, 10), 
                         force_full_denoise=False
                     )
@@ -1375,7 +1624,11 @@ class ROCMOptimizedCheckpointLoader:
                 }),
                 "precision_mode": (["auto", "fp32", "fp16", "bf16"], {
                     "default": "auto",
-                    "tooltip": "Precision mode - auto selects fp32 for gfx1151"
+                    "tooltip": "Precision mode - auto detects quantized models and preserves their dtype"
+                }),
+                "compatibility_mode": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Enable compatibility mode for quantized models (disables optimizations)"
                 })
             }
         }
@@ -1386,18 +1639,34 @@ class ROCMOptimizedCheckpointLoader:
     CATEGORY = "RocM Ninodes/Loaders"
     DESCRIPTION = "ROCM-optimized checkpoint loader for AMD GPUs (gfx1151)"
     
-    def load_checkpoint(self, ckpt_name, lazy_loading=True, optimize_for_flux=True, precision_mode="auto"):
+    def load_checkpoint(self, ckpt_name, lazy_loading=True, optimize_for_flux=True, precision_mode="auto", compatibility_mode=False):
         """
-        ROCM-optimized checkpoint loading - simple and reliable
+        ROCM-optimized checkpoint loading with quantized model support
         """
         import folder_paths
         import comfy.sd
         import torch
         import os
         
+        # CRITICAL FIX: Detect quantized models from filename
+        is_quantized_model = False
+        quantized_indicators = ['fp8', 'int8', 'int4', 'quantized', 'bnb', 'gguf']
+        ckpt_name_lower = ckpt_name.lower()
+        for indicator in quantized_indicators:
+            if indicator in ckpt_name_lower:
+                is_quantized_model = True
+                print(f"🔍 Detected quantized checkpoint: {ckpt_name}")
+                break
+        
+        # Compatibility mode: disable optimizations for quantized models
+        if compatibility_mode or is_quantized_model:
+            print("🛡️ Compatibility mode enabled - using stock ComfyUI behavior")
+            optimize_for_flux = False
+            lazy_loading = False
+        
         try:
-            # Force memory defragmentation before loading
-            if torch.cuda.is_available():
+            # Force memory defragmentation before loading (skip for quantized models)
+            if torch.cuda.is_available() and not is_quantized_model:
                 # Check if defragmentation is needed and perform it
                 simple_memory_cleanup()
                 
@@ -1405,6 +1674,8 @@ class ROCMOptimizedCheckpointLoader:
                 torch.cuda.synchronize()
                 torch.cuda.empty_cache()
                 gc.collect()
+            elif is_quantized_model:
+                print("🔒 Skipping memory cleanup for quantized model compatibility")
             
             # Get checkpoint path
             ckpt_path = folder_paths.get_full_path_or_raise("checkpoints", ckpt_name)
@@ -1913,4 +2184,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMFluxBenchmark": "ROCM Flux Benchmark",
     "ROCMMemoryOptimizer": "ROCM Memory Optimizer",
     "ROCMLoRALoader": "ROCM LoRA Loader",
+    "ROCMQuantizedModelOptimizer": "ROCM Quantized Model Optimizer",
 }

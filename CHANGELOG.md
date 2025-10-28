@@ -5,7 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.27] - 2025-01-19
+## [1.0.29] - 2025-01-22
+
+### Fixed
+- Video chunk processing boundary artifacts
+  - Added 2-frame temporal overlap to prevent darker frames at chunk boundaries
+  - Improved chunk concatenation logic with proper overlap cropping
+  - Fixed tensor size mismatch errors during concatenation
+  - Better handling of 5D video tensor formats
+
+### Improved
+- ROCM VAE Decode chunk processing for WAN video
+  - Automatic overlap detection and handling
+  - Cleaner boundary transitions between video chunks
+  - Reduced visual artifacts in chunked video processing
+
+## [1.0.28] - 2025-10-20
+
+### Fixed
+- Text-to-Video CPU RAM spikes and disk I/O in ROCMOptimizedKSamplerAdvanced
+  - Noise tensors now created on the same device as latents (GPU), not CPU
+  - Ensured latents/noise stay on GPU to prevent host paging
+- VAE decode moving tensors to CPU (output_device)
+  - All decode outputs remain on the active GPU device for end-to-end GPU execution
+- Performance regression from conservative defaults
+  - Restored tile_size=768, batch_optimization=True, video_chunk_size=8
+  - Only chunk videos when T > 20 frames to avoid unnecessary overhead
+
+### Improved
+- Quantized model compatibility without sacrificing speed
+  - Less aggressive detection; optimizations remain unless explicitly using compatibility_mode
+  - Preserved dtype for quantized models while keeping GPU residency
+- Reduced GPU idle time during video workflows by eliminating CPU transfers and minimizing sync points
+
+### Documentation
+- Updated README with quantization support details and GPU residency fixes
+- Clarified recommended defaults for WAN 2.2 text-to-video
+
+### Notes
+- This release focuses on keeping tensors on the GPU to avoid CPU RAM usage and heavy disk activity during text-to-video on WAN 2.2.
 
 ### Fixed
 - **Mature ROCm Driver Support**: Optimized for mature ROCm drivers and libraries
