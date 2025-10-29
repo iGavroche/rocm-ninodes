@@ -1096,6 +1096,31 @@ class ROCMOptimizedKSampler:
             latent_image_tensor = latent_image["samples"]
             latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
             
+            # CRITICAL FIX: When dimensions change, ensure latent_image_tensor is valid
+            # For img2img workflows (denoise < 1.0), if dimensions changed, the latent might contain stale data
+            # ComfyUI's sample function expects latent_image_tensor to either be:
+            # 1. Empty/zeroed for text2img (fresh generation)
+            # 2. Valid encoded image data matching the current dimensions for img2img
+            # If latent contains data but dimensions don't match what the model expects, it will generate noise
+            latent_shape = latent_image_tensor.shape
+            latent_mean = latent_image_tensor.mean().item()
+            latent_std = latent_image_tensor.std().item()
+            
+            print(f"📊 Latent tensor info: shape={latent_shape}, mean={latent_mean:.6f}, std={latent_std:.6f}, denoise={denoise}")
+            
+            if denoise < 1.0:
+                # For img2img, validate that latent dimensions are reasonable
+                # If the latent appears to have mismatched or stale data, log a warning
+                if len(latent_shape) >= 4:
+                    # Check if latent has reasonable values (not all zeros, not pure noise)
+                    # If latent is all zeros or has very unusual statistics, it might be stale
+                    if abs(latent_mean) < 0.001 and latent_std < 0.001:
+                        logging.warning(f"⚠️ Latent tensor appears empty (mean={latent_mean:.6f}, std={latent_std:.6f}) - this may cause noise-only output. Check if image encoding is working correctly.")
+                        print(f"⚠️ WARNING: Empty latent detected - this will cause noise-only output! This usually happens when dimensions change and the image isn't re-encoded properly.")
+                    elif latent_std > 1.5:
+                        logging.warning(f"⚠️ Latent tensor has high variance (std={latent_std:.6f}) - may contain noise instead of image data. This can happen when dimensions change.")
+                        print(f"⚠️ WARNING: Latent appears to be noise (std={latent_std:.6f}) - check if image encoding failed or dimensions mismatched.")
+            
             # Prepare noise
             batch_inds = latent_image["batch_index"] if "batch_index" in latent_image else None
             noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
@@ -1375,14 +1400,33 @@ class ROCMOptimizedKSamplerAdvanced:
                 latent_image_tensor = latent_image_tensor.to(model_management.get_torch_device(), non_blocking=True)
             latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
 
-            # Guard 1: Full denoise with fresh noise should not reuse previous latent contents
+            # Guard 1: Only zero-out latent if it's truly a fresh generation (text2img), not img2img
+            # CRITICAL FIX: Don't zero out latents for img2img workflows (denoise < 1.0) or when latent contains image data
             if add_noise == "enable" and start_at_step == 0:
-                # Zero-out latent contents to avoid pass-through artifacts/scrambled frames when resolution changed
-                latent_image_tensor = torch.zeros_like(latent_image_tensor, device=latent_image_tensor.device)
-                # If a noise_mask exists but is mismatched, drop it to prevent shape errors
-                if "noise_mask" in latent_image and isinstance(latent_image["noise_mask"], torch.Tensor):
-                    if tuple(latent_image["noise_mask"].shape) != tuple(latent_image_tensor.shape):
-                        latent_image["noise_mask"] = None
+                # If denoise < 1.0, this is img2img - preserve the latent content
+                if denoise < 1.0:
+                    logging.info(f"Preserving latent image content for img2img workflow (denoise={denoise})")
+                else:
+                    # For full denoise, check if latent contains actual image data vs noise
+                    latent_variance = latent_image_tensor.var().item()
+                    latent_mean_abs = latent_image_tensor.abs().mean().item()
+                    
+                    # Heuristic: image latents typically have lower variance and non-zero mean
+                    # Pure noise has high variance (>1.0) or very low values if already processed
+                    # Only zero out if it's clearly noise or already zero
+                    is_likely_noise = latent_variance > 1.2 or (latent_mean_abs < 0.005 and latent_variance < 0.05)
+                    
+                    # Only zero out if it's clearly noise, preserving img2img latents even in text2img mode
+                    if is_likely_noise:
+                        # Zero-out latent contents to avoid pass-through artifacts/scrambled frames when resolution changed
+                        latent_image_tensor = torch.zeros_like(latent_image_tensor, device=latent_image_tensor.device)
+                        # If a noise_mask exists but is mismatched, drop it to prevent shape errors
+                        if "noise_mask" in latent_image and isinstance(latent_image["noise_mask"], torch.Tensor):
+                            if tuple(latent_image["noise_mask"].shape) != tuple(latent_image_tensor.shape):
+                                latent_image["noise_mask"] = None
+                    else:
+                        # Preserve image content - this might be img2img even with denoise=1.0
+                        logging.info(f"Preserving latent image content (variance={latent_variance:.4f}, mean_abs={latent_mean_abs:.4f})")
             
             # Prepare noise (minimal progress for video)
             if not is_video_workflow:
