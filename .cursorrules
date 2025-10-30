@@ -1,0 +1,381 @@
+# ROCm Ninodes - Cursor AI Rules
+
+## Project Overview
+This project provides ROCm-optimized ComfyUI nodes for AMD GPUs (specifically gfx1151 architecture).
+Focus on performance, memory efficiency, and maintainability.
+
+## Naming Conventions (CRITICAL)
+
+### ROCm Branding
+- **Always use "ROCm"** (capital R, capital O, capital C, lowercase m)
+- ❌ Wrong: "RocM", "ROCM", "rocm", "Rocm"
+- ✅ Correct: "ROCm"
+- Examples:
+  - Class names: `ROCmDiffusionLoader` (when part of compound name)
+  - Display names: "ROCm Checkpoint Loader"
+  - Documentation: "ROCm-optimized nodes"
+  - Categories: "ROCm Ninodes/Loaders"
+
+## Environment Management (CRITICAL)
+
+### Using `uv` Package Manager
+This project uses **`uv`** (not pip, not conda) for dependency management:
+- **Lock file**: `uv.lock` (committed to git)
+- **Configuration**: `pyproject.toml` (project metadata and dependencies)
+- **Python version**: >=3.13 (defined in uv.lock)
+
+### Key `uv` Commands
+```bash
+# Sync dependencies (install from lockfile)
+uv sync
+
+# Add a new dependency
+uv add <package-name>
+
+# Add a dev dependency
+uv add --dev <package-name>
+
+# Update dependencies
+uv lock --upgrade
+
+# Run a command in the virtual environment
+uv run <command>
+
+# Run tests
+uv run pytest tests/
+
+# Activate the virtual environment (if needed)
+source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\activate     # Windows
+```
+
+### Why `uv`?
+- **Fast**: Rust-based, 10-100x faster than pip
+- **Reliable**: Deterministic dependency resolution via lock file
+- **Modern**: Designed for contemporary Python workflows
+- **Compatible**: Works with existing pip/PyPI infrastructure
+
+### PyTorch Installation
+PyTorch with ROCm is NOT in `pyproject.toml` because it requires platform-specific installation:
+```bash
+# Install PyTorch with ROCm (do this manually in ComfyUI environment)
+# See: https://pytorch.org/get-started/locally/
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.4
+```
+
+### Important Notes
+- **Don't use `pip install` directly** - use `uv add` to maintain lockfile
+- **Don't edit `uv.lock` manually** - let `uv` manage it
+- **Commit both `pyproject.toml` and `uv.lock`** to version control
+- **Platform-specific builds** (like PyTorch) installed separately in ComfyUI's environment
+
+## Code Organization (CRITICAL)
+
+### File Size Limits
+- **Maximum file size: 500 lines** (excluding comments/docstrings)
+- If a file exceeds 400 lines, consider splitting it
+- Each module should have a single, clear responsibility
+- AI tools struggle with files >1000 lines - keep modules focused
+
+### Package Structure
+```
+rocm_nodes/
+├── __init__.py          # Package exports
+├── nodes.py             # Node registry (NODE_CLASS_MAPPINGS)
+├── constants.py         # Project-wide constants
+├── core/                # Node implementations
+│   ├── __init__.py
+│   ├── vae.py          # VAE nodes (decode operations)
+│   ├── sampler.py      # Sampler nodes (KSampler, etc.)
+│   ├── checkpoint.py   # Checkpoint loader
+│   ├── lora.py         # LoRA loader
+│   └── monitors.py     # Monitoring/benchmark nodes
+└── utils/              # Utility functions
+    ├── __init__.py
+    ├── memory.py       # Memory management
+    ├── diagnostics.py  # ROCm diagnostics
+    ├── quantization.py # Quantization detection
+    └── debug.py        # Debug utilities
+```
+
+### Module Guidelines
+1. **One class per file** for complex nodes (>200 lines)
+2. **Group related utilities** in utils/ modules
+3. **Clear separation**: nodes vs utilities vs constants
+4. **Avoid circular imports**: use forward references if needed
+5. **Explicit imports**: avoid `from module import *`
+
+## Mandatory Testing (NON-NEGOTIABLE)
+
+### Test Requirements
+Every new feature/node MUST have:
+1. **Unit tests**: Test individual components in isolation
+2. **Integration tests**: Test node interaction with ComfyUI
+3. **Performance tests**: Verify no regression in speed/memory
+4. **Correctness tests**: Validate output quality
+
+### Test Organization
+```
+tests/
+├── unit/              # Unit tests (test individual functions/classes)
+│   ├── test_vae.py
+│   ├── test_sampler.py
+│   └── test_utils.py
+├── integration/       # Integration tests (test node workflows)
+│   ├── test_workflows.py
+│   └── test_flux.py
+└── benchmarks/        # Performance benchmarks
+    └── test_performance.py
+```
+
+### Test Execution
+- Run tests before every commit: `uv run pytest tests/`
+- Check coverage: `uv run pytest --cov=rocm_nodes`
+- Target: >80% code coverage
+- All tests must pass before merging
+
+### Writing Tests
+```python
+# Good: Focused, isolated, fast
+def test_memory_cleanup():
+    initial_mem = torch.cuda.memory_allocated()
+    simple_memory_cleanup()
+    final_mem = torch.cuda.memory_allocated()
+    assert final_mem <= initial_mem
+
+# Bad: Too broad, slow, unclear assertions
+def test_everything():
+    # Tests multiple unrelated things...
+    pass
+```
+
+## ComfyUI Best Practices
+
+### Node Structure
+Every node MUST have:
+```python
+class MyNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {...}, "optional": {...}}
+    
+    RETURN_TYPES = ("TYPE1", "TYPE2")
+    RETURN_NAMES = ("output1", "output2") 
+    FUNCTION = "process"
+    CATEGORY = "RocM Ninodes/Category"
+    DESCRIPTION = "Clear description of what this node does"
+    
+    def process(self, ...):
+        # Implementation
+        return (result1, result2)
+```
+
+### Node Registration
+- All nodes registered in `rocm_nodes/nodes.py`
+- Use descriptive node names: `ROCMOptimized{Function}`
+- Display names should be user-friendly
+
+## ROCm-Specific Patterns
+
+### Memory Management
+```python
+# Always cleanup before large operations
+from rocm_nodes.utils.memory import gentle_memory_cleanup
+
+def my_operation(self, ...):
+    gentle_memory_cleanup()
+    # ... perform operation ...
+    return result
+```
+
+### Quantization Support
+```python
+# Detect quantized models and skip optimizations
+from rocm_nodes.utils.quantization import detect_model_quantization
+
+def load_model(self, model):
+    quant_info = detect_model_quantization(model)
+    if quant_info['is_quantized']:
+        # Use compatibility mode
+        ...
+```
+
+### Performance Optimization
+- Use `fp32` precision by default for ROCm (gfx1151)
+- Tile size 768-1024 for optimal memory/speed balance
+- Implement progressive memory cleanup for video processing
+- Avoid unnecessary dtype conversions
+
+## Error Handling
+
+### Required Pattern
+```python
+try:
+    # Attempt operation
+    result = risky_operation()
+except SpecificException as e:
+    print(f"Operation failed: {e}")
+    # Cleanup
+    gentle_memory_cleanup()
+    # Fallback or re-raise
+    raise
+```
+
+### Logging
+- Use emojis for user-facing messages (makes logs easier to scan)
+- Log memory usage before/after large operations
+- Provide actionable error messages
+
+## Code Quality
+
+### Before Committing
+1. Run linter: `uv run ruff check rocm_nodes/`
+2. Run formatter: `uv run ruff format rocm_nodes/`
+3. Run tests: `uv run pytest tests/`
+4. Check no large files: `find rocm_nodes -name "*.py" -exec wc -l {} \; | sort -rn` (Linux/Mac)
+   or `Get-ChildItem -Path rocm_nodes -Filter "*.py" -Recurse | ForEach-Object { (Get-Content $_.FullName | Measure-Object -Line).Lines }` (Windows PowerShell)
+
+### Documentation
+- Every public function needs a docstring
+- Complex algorithms need inline comments
+- Update CHANGELOG.md for user-facing changes
+- **All documentation files go in `docs/` folder** (keep root clean)
+  - Technical docs: `docs/technical/`
+  - User guides: `docs/guides/`
+  - Architecture/design docs: `docs/`
+
+### Type Hints
+```python
+# Good: Clear types
+def process_image(self, image: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
+    ...
+
+# Bad: No hints
+def process_image(self, image, scale=1.0):
+    ...
+```
+
+## AI-Friendly Guidelines
+
+### For AI Code Generation
+1. **Read architecture docs first**: Check `ARCHITECTURE.md` and `RULES.md`
+2. **Check existing patterns**: Look at similar nodes before creating new ones
+3. **Keep context manageable**: Work on one module at a time
+4. **Test immediately**: Generate tests alongside code
+5. **Use TODO comments**: Mark incomplete sections clearly
+6. **Documentation placement**: All generated docs go in `docs/` folder (not root)
+
+### Code Style
+- **Clear variable names**: `latent_tensor` not `lt`
+- **Single responsibility**: Functions do one thing well
+- **Avoid deep nesting**: Extract complex logic into helper functions
+- **Comment the "why"**: Code shows "what", comments explain "why"
+
+## Benchmarking
+
+### Performance Targets (gfx1151, 16GB VRAM)
+- Flux 1024x1024 @ 20 steps: <60s
+- VAE decode 1024x1024: <5s
+- Memory overhead: <10% vs stock ComfyUI
+
+### Benchmark Workflow
+1. Establish baseline: Run with stock nodes
+2. Run with ROCm nodes
+3. Compare: speed, memory, quality
+4. Document: Update `Benchmarks.md`
+
+## Workflow Management
+
+### Maintain Test Workflows
+Keep these workflows updated in `comfyui_workflows/`:
+- `basic_image.json`: Simple image generation
+- `video_processing.json`: Video/batch processing
+- `performance_comparison.json`: Benchmark workflow
+
+### Workflow Testing
+```bash
+# Test workflow loads without errors
+uv run python tests/integration/test_workflows.py
+```
+
+## Version Control
+
+### Commit Messages
+```
+feat: Add ROCm-optimized VAE decode node
+fix: Resolve memory leak in video processing
+perf: Optimize tile size for gfx1151
+docs: Update benchmarks for Flux model
+test: Add unit tests for memory utilities
+```
+
+### Before Major Changes
+1. Create feature branch
+2. Update tests first (TDD)
+3. Implement feature
+4. Run full test suite
+5. Update documentation
+6. Create PR with benchmark results
+
+## File Organization
+
+### Root Directory
+Keep the root directory clean - only essential files:
+- `README.md` - Main project README
+- `CHANGELOG.md` - Version history
+- `LICENSE` - License file
+- `pyproject.toml` - Package configuration
+- `uv.lock` - Dependency lock file
+- `.cursorrules` - AI coding guidelines
+- Configuration files (`.gitignore`, `pytest.ini`, etc.)
+
+### Documentation Directory
+All documentation goes in `docs/`:
+- `docs/` - Architecture, design docs, technical specs
+- `docs/guides/` - User guides and tutorials (if needed)
+- `docs/technical/` - Deep technical documentation (if needed)
+
+**Examples:**
+- ✅ `docs/CHECKPOINT_LOADER_UPDATE.md`
+- ✅ `docs/ARCHITECTURE.md`
+- ❌ `FEATURE_DOCS.md` (wrong - should be in docs/)
+
+### Other Directories
+- `rocm_nodes/` - Source code
+- `tests/` - Test files
+- `comfyui_workflows/` - Example workflows
+- `web/` - Web/UI resources
+- `test_data/` - Test fixtures and data
+
+## Security & Privacy
+
+- No telemetry or data collection
+- No external API calls (except documentation)
+- Respect user's offline workflows
+- Handle errors gracefully without exposing system info
+
+## Quick Reference
+
+### Add a New Node
+1. Create class in appropriate `rocm_nodes/core/*.py`
+2. Add to `rocm_nodes/nodes.py` registry
+3. Write tests in `tests/unit/test_*.py`
+4. Create workflow in `comfyui_workflows/`
+5. Run tests and benchmarks
+6. Update documentation
+
+### Debug an Issue
+1. Enable debug mode: `export ROCM_NINODES_DEBUG=1`
+2. Check logs in `test_data/debug/`
+3. Use memory profiling utilities
+4. Add tests to prevent regression
+
+### Optimize Performance
+1. Profile with benchmark node
+2. Identify bottleneck
+3. Implement optimization
+4. A/B test (before/after)
+5. Document improvement
+
+Remember: **Code quality > Speed of development**. Take time to do it right.
+

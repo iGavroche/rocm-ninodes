@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.0.0
+- Samplers reset to stock behavior for correctness; added ROCm opt-in knobs:
+  - optimize_for_video: disables preview/progress for multi-frame latents
+  - precision_mode: auto|fp32|bf16 with ROCm bf16 safety guard (no forced cast yet)
+  - compatibility_mode: forces pure stock behavior
+- Advanced sampler made 1:1 with ComfyUI KSampler (Advanced) and categorized under "ROCm Ninodes/Sampling".
+- Import structure stabilized; fallback to legacy `rocm_nodes.py` retained.
+- Added SDPA preference via PyTorch native path (no CUDA-only toggles).
+- Version bumped to 2.0.0 across `__init__.py`, `rocm_nodes/__init__.py`, `pyproject.toml`, `package.json`.
+- Added workflow update helper script `scripts/update_workflows.py` to migrate node names.
+- Docs updated to reflect v2 changes and toggles.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

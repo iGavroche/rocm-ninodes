@@ -1,10 +1,46 @@
-# RocM Ninodes: ROCM Optimized Nodes for ComfyUI
+# ROCm Ninodes: ROCm Optimized Nodes for ComfyUI (v2)
+
+## ⬆️ Upgrade to v2 (Required for existing users)
+
+If you were on v1.x, run the upgrade script to clean legacy files and ensure the new package layout is detected by ComfyUI.
+
+### Windows (PowerShell)
+```powershell
+uv run python tools/upgrade_to_v2.py
+```
+
+### Linux/Mac
+```bash
+uv run python tools/upgrade_to_v2.py
+```
+
+What it does:
+- Backs up legacy `rocm_nodes.py` to `backup/rocm_nodes.py.bak` (if present)
+- Removes any temporary `temp_*.py` files from earlier extractions
+- Verifies `rocm_nodes/` package structure is intact
+- Prints next steps (restart ComfyUI)
+
+After running:
+1) Restart ComfyUI completely
+2) Verify nodes appear under "ROCm Ninodes" categories
+3) If nodes don’t appear, clear ComfyUI cache and restart again
+
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations, KSampler implementations, and LoRA loading designed to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What’s new in v2
+
+- Stock-correct samplers with ROCm opt-in controls:
+  - `optimize_for_video` (disable preview/progress on multi-frame latents)
+  - `precision_mode` (auto|fp32|bf16) with ROCm bf16 safety guard
+  - `compatibility_mode` to force pure stock behavior
+- Advanced sampler is a 1:1 copy of ComfyUI’s KSampler (Advanced), just categorized under `ROCm Ninodes/Sampling`.
+- Native SDPA preference via PyTorch (no CUDA-only flags).
+- Workflow update helper script to migrate node names.
 
 ## 🚀 **What We Do**
 
@@ -137,17 +173,14 @@ Our optimization approach focuses on three key areas:
 - **ROCm optimizations**: Same optimizations as the main decode node
 
 ### ROCMOptimizedKSampler
-- **Optimized sampling**: ROCm-tuned sampling algorithms for gfx1151
-- **Memory management**: Better VRAM usage during sampling
-- **Precision optimization**: Automatic fp32 selection for ROCm 6.4
-- **Attention optimization**: Optimized attention mechanisms for AMD GPUs
-- **Performance monitoring**: Built-in timing and logging
+- **Stock behavior** with ROCm-safe toggles
+- **optimize_for_video**: reduces host-device sync overhead on multi-frame latents
+- **precision_mode**: auto|fp32|bf16 (guarded; no forced casts)
+- **compatibility_mode**: revert to pure stock quickly
 
 ### ROCMOptimizedKSamplerAdvanced
-- **Advanced control**: More sampling parameters and options
-- **Step control**: Start/end step management
-- **Noise control**: Advanced noise handling options
-- **ROCm optimizations**: Same optimizations as the main sampler
+- 1:1 with ComfyUI KSampler (Advanced)
+- Same ROCm toggles as the basic sampler (video, precision, compatibility)
 
 ### ROCMVAEPerformanceMonitor
 - **Device analysis**: Shows your GPU information and current settings
@@ -397,6 +430,24 @@ python install.py
    - **RocM Ninodes/VAE**: VAE Decode, VAE Decode Tiled, VAE Performance Monitor
    - **RocM Ninodes/Sampling**: KSampler, KSampler Advanced, Sampler Performance Monitor
 3. **Test Performance**: Use the Performance Monitor nodes to verify optimizations
+
+## 🔄 Workflow name migration (helper script)
+
+We include a small helper to migrate workflow JSONs to the new node names.
+
+Usage (Windows PowerShell):
+```powershell
+uv run python scripts/update_workflows.py --paths "C:\path\to\ComfyUI\user\default\workflows" "comfyui_workflows"
+```
+
+What it does:
+- Scans .json files and replaces legacy node names with the current `ROCm` naming
+- Writes a `.bak` next to each changed file
+- Shows a summary of changes
+
+Node mappings applied:
+- `ROCMOptimizedUNetLoader` → `ROCmDiffusionLoader`
+- Ensures display names use "ROCm" capitalization in categories and titles
 
 ## 🔄 Plugin Updates
 
