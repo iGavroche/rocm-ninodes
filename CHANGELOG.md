@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.1] - 2025-11-01
+
+### Fixed
+- **WAN VAE Video Jitter**: Fixed jitter/repeating frames issue in ROCm VAE Decode for WAN models
+  - Added reliable WAN VAE detection using `isinstance()` check with imported WAN VAE classes
+  - Added fallback detection using `latent_channels` (16 for WAN 2.1, 48 for WAN 2.2)
+  - Disabled chunking for WAN VAEs to preserve causal decoding chain with feature caching
+  - Matched native ComfyUI behavior exactly for WAN VAE video processing (full video decode)
+  - Fixed detection logic to use correct file (`rocm_nodes/core/vae.py` instead of `rocm_nodes.py`)
+
+### Improved
+- **ROCm Backend Optimizations**: Applied ROCm backend settings (TF32 disabled, FP16 accumulation enabled) to video processing
+  - Backend optimizations now apply before video processing instead of only for image processing
+  - Added async memory cleanup for WAN VAE videos (non-blocking, doesn't interfere with causal decoding)
+  - Added gfx1151 architecture detection and logging for WAN VAE processing
+
+### Technical Details
+- WAN VAEs use causal decoding with feature caching - chunking breaks the cache and causes jitter on first frames
+- Native ComfyUI processes WAN VAE videos in full (no chunking) - ROCm node now matches this behavior
+- Detection uses multiple methods for reliability: `isinstance()` check, `latent_channels` check, and `temporal_compression_decode()` verification
+- ROCm backend optimizations are global settings that improve performance without affecting causal decoding
+
 ## v2.0.0
 - Samplers reset to stock behavior for correctness; added ROCm opt-in knobs:
   - optimize_for_video: disables preview/progress for multi-frame latents

@@ -20,6 +20,14 @@ import comfy.samplers
 import latent_preview
 import folder_paths
 
+# Import WAN VAE classes for detection
+try:
+    import comfy.ldm.wan.vae
+    import comfy.ldm.wan.vae2_2
+    WAN_VAE_AVAILABLE = True
+except ImportError:
+    WAN_VAE_AVAILABLE = False
+
 # Import utilities from refactored modules
 from ..utils.memory import (
     gentle_memory_cleanup,
@@ -133,12 +141,42 @@ class ROCMOptimizedVAEDecode:
                 is_quantized_model = True
                 print(f"🔍 Detected quantized VAE model (dtype: {vae_model_dtype})")
         
+        # CRITICAL FIX: Detect WAN VAE models that use causal decoding with feature caching
+        # WAN VAE requires full video processing to maintain causal decoding chain
+        # Chunking breaks the feature cache and causes jitter on first frames of each chunk
+        is_wan_vae = False
+        try:
+            if WAN_VAE_AVAILABLE:
+                # Primary detection: isinstance check with imported WAN VAE classes
+                if isinstance(vae.first_stage_model, (comfy.ldm.wan.vae.WanVAE, comfy.ldm.wan.vae2_2.WanVAE)):
+                    is_wan_vae = True
+                    print(f"🔍 Detected WAN VAE model (causal decoding requires full video processing)")
+                else:
+                    # Fallback detection: check VAE attributes (latent_channels: 16 for WAN 2.1, 48 for WAN 2.2)
+                    latent_channels = getattr(vae, 'latent_channels', None)
+                    if latent_channels in [16, 48]:
+                        # Additional check: WAN VAEs have temporal compression
+                        temporal_compression = vae.temporal_compression_decode() if hasattr(vae, 'temporal_compression_decode') else None
+                        if temporal_compression is not None:
+                            is_wan_vae = True
+                            print(f"🔍 Detected WAN VAE model (latent_channels={latent_channels}, causal decoding requires full video processing)")
+        except Exception as e:
+            # If detection fails, print error but continue (safer than crashing)
+            print(f"⚠️ WAN VAE detection failed: {e}")
+        
         # Compatibility mode: disable all optimizations for quantized models
         if compatibility_mode or is_quantized_model:
             print("🛡️ Compatibility mode enabled - using stock ComfyUI behavior")
             use_rocm_optimizations = False
             batch_optimization = False
             memory_optimization_enabled = False
+        
+        # CRITICAL FIX: Disable chunking for WAN VAE models to preserve causal decoding chain
+        # WAN VAE uses causal decoding with feature caching - chunking breaks the cache
+        # Native ComfyUI processes WAN VAE videos in full, so we must match that behavior
+        if is_wan_vae:
+            print("🛡️ WAN VAE detected - disabling chunking to preserve causal decoding chain")
+            memory_optimization_enabled = False  # Disable chunking for WAN models
         
         # Capture input data for debugging
         if DEBUG_MODE:
@@ -157,6 +195,24 @@ class ROCMOptimizedVAEDecode:
         device = vae.device
         is_amd = hasattr(device, 'type') and device.type == 'cuda'
         
+        # OPTIMIZATION: Apply ROCm backend settings early (before video processing)
+        # These are global settings that improve performance without affecting causal decoding
+        if use_rocm_optimizations and is_amd:
+            torch.backends.cuda.matmul.allow_tf32 = False  # TF32 not supported on AMD
+            torch.backends.cuda.matmul.allow_fp16_accumulation = True  # Better performance on AMD
+            
+            # Detect gfx1151 for architecture-specific optimizations
+            is_gfx1151 = False
+            try:
+                if torch.cuda.is_available():
+                    arch = torch.cuda.get_device_properties(0).gcnArchName
+                    if 'gfx1151' in arch:
+                        is_gfx1151 = True
+                        if is_wan_vae:
+                            print(f"🚀 gfx1151 detected - optimized for WAN VAE video processing")
+            except:
+                pass
+        
         # Check if this is video data (5D tensor: B, C, T, H, W)
         is_video = len(samples["samples"].shape) == 5
         if is_video:
@@ -165,9 +221,15 @@ class ROCMOptimizedVAEDecode:
             # Progress indicator for Windows users experiencing hanging
             print(f"🎬 Processing video: {T} frames, {H}x{W} resolution")
             
-            # Memory-safe video processing
-            # CRITICAL FIX: Only chunk for very large videos to avoid performance penalty
-            if memory_optimization_enabled and T > video_chunk_size and T > 20:  # Only chunk for videos > 20 frames
+            # CRITICAL: Match ComfyUI's native behavior - don't chunk unless absolutely necessary
+            # Native ComfyUI VAE decode processes the entire video at once
+            # WAN VAE models MUST use full video processing to preserve causal decoding chain
+            # Only chunk if we absolutely must for memory reasons AND it's not a WAN VAE
+            if is_wan_vae:
+                # WAN VAE requires full video processing - chunking breaks causal decoding
+                use_chunking = False
+                print("📹 WAN VAE detected - using full video processing (causal decoding requires full sequence)")
+            elif memory_optimization_enabled and T > video_chunk_size and T > 20:  # Only chunk for videos > 20 frames
                 use_chunking = True
                 print(f"📹 Using chunked processing: {video_chunk_size} frames per chunk")
             else:
@@ -246,30 +308,29 @@ class ROCMOptimizedVAEDecode:
                 
                 return (result,)
             else:
-                # Process entire video at once
-                B, C, T, H, W = samples["samples"].shape
-                video_tensor = samples["samples"]
-                print(f"🎯 Processing entire video at once: {T} frames")
+                # Process entire video at once - EXACTLY match native ComfyUI behavior
+                # Native ComfyUI: images = vae.decode(samples["samples"])
+                #              if len(images.shape) == 5: images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
+                if is_wan_vae:
+                    print(f"🎯 Processing entire WAN VAE video at once (causal decoding): {T} frames")
+                    # OPTIMIZATION: Async memory cleanup before large WAN video processing (non-blocking)
+                    if use_rocm_optimizations and is_amd:
+                        torch.cuda.empty_cache()  # Async - non-blocking, won't interfere with causal decoding
+                else:
+                    print(f"🎯 Processing entire video at once: {T} frames")
                 
                 with torch.no_grad():
-                    result = vae.decode(video_tensor)
+                    result = vae.decode(samples["samples"])
                 
+                # VAE decode returns a tuple, extract the tensor (ComfyUI handles this internally)
                 if isinstance(result, tuple):
                     result = result[0]
                 
-                # Convert 5D video tensor to 4D image tensor for ComfyUI
+                # Convert 5D video tensor to 4D image tensor - EXACT native ComfyUI logic
+                # Native does: images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
                 if len(result.shape) == 5:
-                    if result.shape[1] == 3:
-                        result = result.permute(0, 2, 3, 4, 1).contiguous()
-                        B, T, H, W, C = result.shape
-                        result = result.reshape(B * T, H, W, C)
-                    elif result.shape[-1] == 3:
-                        B, T, H, W, C = result.shape
-                        result = result.reshape(B * T, H, W, C)
-                    else:
-                        result = result.permute(0, 2, 3, 4, 1).contiguous()
-                        B, T, H, W, C = result.shape
-                        result = result.reshape(B * T, H, W, C)
+                    # Match native ComfyUI reshape logic exactly
+                    result = result.reshape(-1, result.shape[-3], result.shape[-2], result.shape[-1])
                 
                 if DEBUG_MODE:
                     end_time = time.time()

@@ -5,7 +5,7 @@ Main package for ROCm-optimized nodes for AMD GPUs with ROCm support.
 Organized into core nodes and utility modules.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 __author__ = "iGavroche"
 __email__ = "nino2k@proton.me"
 __description__ = "RocM-optimized ComfyUI nodes for AMD GPU performance"

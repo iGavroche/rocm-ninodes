@@ -32,13 +32,20 @@ After running:
 
 **RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations, KSampler implementations, and LoRA loading designed to maximize performance on AMD hardware with mature ROCm drivers.
 
-## 🚀 What’s new in v2
+## 🚀 What's new in v2.0.1
+
+- **WAN VAE Video Fix**: Fixed jitter/repeating frames issue for WAN models
+  - Automatic WAN VAE detection with multiple fallback methods
+  - Disabled chunking for WAN VAEs to preserve causal decoding chain
+  - Matches native ComfyUI behavior exactly for WAN video processing
+
+## 🚀 What's new in v2
 
 - Stock-correct samplers with ROCm opt-in controls:
   - `optimize_for_video` (disable preview/progress on multi-frame latents)
   - `precision_mode` (auto|fp32|bf16) with ROCm bf16 safety guard
   - `compatibility_mode` to force pure stock behavior
-- Advanced sampler is a 1:1 copy of ComfyUI’s KSampler (Advanced), just categorized under `ROCm Ninodes/Sampling`.
+- Advanced sampler is a 1:1 copy of ComfyUI's KSampler (Advanced), just categorized under `ROCm Ninodes/Sampling`.
 - Native SDPA preference via PyTorch (no CUDA-only flags).
 - Workflow update helper script to migrate node names.
 
@@ -117,6 +124,7 @@ Our optimization approach focuses on three key areas:
 - **480x480px, 2s**: **202s** (33 frames, 16fps) ✅
 - **480x720px, 2s**: **303s** (33 frames, 16fps) ✅
 - **Video Quality**: Fixed darker frames at chunk boundaries (v1.0.29) ✅
+- **WAN VAE Jitter Fix**: Fixed jitter/repeating frames issue for WAN models (v2.0.1) ✅
 
 #### **📊 Performance Metrics**
 - **Memory efficiency**: 50% reduction in attention memory requirements
