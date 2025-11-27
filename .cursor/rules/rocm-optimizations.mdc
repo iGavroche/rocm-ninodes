@@ -1,0 +1,54 @@
+---
+description: ROCm-specific optimization patterns and memory management
+globs: ["rocm_nodes/**/*.py"]
+alwaysApply: false
+---
+
+# ROCm-Specific Patterns
+
+## Memory Management
+```python
+# Always cleanup before large operations
+from rocm_nodes.utils.memory import gentle_memory_cleanup
+
+def my_operation(self, ...):
+    gentle_memory_cleanup()
+    # ... perform operation ...
+    return result
+```
+
+## Quantization Support
+```python
+# Detect quantized models and skip optimizations
+from rocm_nodes.utils.quantization import detect_model_quantization
+
+def load_model(self, model):
+    quant_info = detect_model_quantization(model)
+    if quant_info['is_quantized']:
+        # Use compatibility mode
+        ...
+```
+
+## Performance Optimization
+- Use `fp32` precision by default for ROCm (gfx1151)
+- Tile size 768-1024 for optimal memory/speed balance
+- Implement progressive memory cleanup for video processing
+- Avoid unnecessary dtype conversions
+
+## Error Handling
+```python
+try:
+    # Attempt operation
+    result = risky_operation()
+except SpecificException as e:
+    print(f"Operation failed: {e}")
+    # Cleanup
+    gentle_memory_cleanup()
+    # Fallback or re-raise
+    raise
+```
+
+## Logging
+- Use emojis for user-facing messages (makes logs easier to scan)
+- Log memory usage before/after large operations
+- Provide actionable error messages

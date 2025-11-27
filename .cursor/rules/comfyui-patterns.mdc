@@ -1,0 +1,31 @@
+---
+description: ComfyUI node structure and best practices
+globs: ["rocm_nodes/core/**/*.py", "rocm_nodes/nodes.py"]
+alwaysApply: false
+---
+
+# ComfyUI Best Practices
+
+## Node Structure
+Every node MUST have:
+```python
+class MyNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {...}, "optional": {...}}
+    
+    RETURN_TYPES = ("TYPE1", "TYPE2")
+    RETURN_NAMES = ("output1", "output2") 
+    FUNCTION = "process"
+    CATEGORY = "ROCm Ninodes/Category"
+    DESCRIPTION = "Clear description of what this node does"
+    
+    def process(self, ...):
+        # Implementation
+        return (result1, result2)
+```
+
+## Node Registration
+- All nodes registered in `rocm_nodes/nodes.py`
+- Use descriptive node names: `ROCMOptimized{Function}`
+- Display names should be user-friendly

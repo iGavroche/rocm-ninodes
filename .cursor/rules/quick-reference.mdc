@@ -1,0 +1,56 @@
+---
+description: Quick reference for common tasks and workflows
+alwaysApply: false
+---
+
+# Quick Reference
+
+## Add a New Node
+1. Create class in appropriate `rocm_nodes/core/*.py`
+2. Add to `rocm_nodes/nodes.py` registry
+3. Write tests in `tests/unit/test_*.py`
+4. Create workflow in `comfyui_workflows/`
+5. Run tests and benchmarks
+6. Update documentation
+
+## Debug an Issue
+1. Enable debug mode: `export ROCM_NINODES_DEBUG=1`
+2. Check logs in `test_data/debug/`
+3. Use memory profiling utilities
+4. Add tests to prevent regression
+
+## Optimize Performance
+1. Profile with benchmark node
+2. Identify bottleneck
+3. Implement optimization
+4. A/B test (before/after)
+5. Document improvement
+
+## Benchmarking
+
+### Performance Targets (gfx1151, 16GB VRAM)
+- Flux 1024x1024 @ 20 steps: <60s
+- VAE decode 1024x1024: <5s
+- Memory overhead: <10% vs stock ComfyUI
+
+### Benchmark Workflow
+1. Establish baseline: Run with stock nodes
+2. Run with ROCm nodes
+3. Compare: speed, memory, quality
+4. Document: Update `Benchmarks.md`
+
+## Workflow Management
+
+### Maintain Test Workflows
+Keep these workflows updated in `comfyui_workflows/`:
+- `basic_image.json`: Simple image generation
+- `video_processing.json`: Video/batch processing
+- `performance_comparison.json`: Benchmark workflow
+
+### Workflow Testing
+```bash
+# Test workflow loads without errors
+uv run python tests/integration/test_workflows.py
+```
+
+Remember: **Code quality > Speed of development**. Take time to do it right.

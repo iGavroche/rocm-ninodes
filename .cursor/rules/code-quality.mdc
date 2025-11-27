@@ -1,0 +1,62 @@
+---
+description: Code quality standards, documentation, and commit practices
+alwaysApply: true
+---
+
+# Code Quality
+
+## Before Committing
+1. Run linter: `uv run ruff check rocm_nodes/`
+2. Run formatter: `uv run ruff format rocm_nodes/`
+3. Run tests: `uv run pytest tests/`
+4. Check no large files: `find rocm_nodes -name "*.py" -exec wc -l {} \; | sort -rn` (Linux/Mac)
+
+## Documentation
+- Every public function needs a docstring
+- Complex algorithms need inline comments
+- Update CHANGELOG.md for user-facing changes
+- **All documentation files go in `docs/` folder** (keep root clean)
+
+## Type Hints
+```python
+# Good: Clear types
+def process_image(self, image: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
+    ...
+
+# Bad: No hints
+def process_image(self, image, scale=1.0):
+    ...
+```
+
+## AI-Friendly Guidelines
+1. **Read architecture docs first**: Check `ARCHITECTURE.md` and `RULES.md`
+2. **Check existing patterns**: Look at similar nodes before creating new ones
+3. **Keep context manageable**: Work on one module at a time
+4. **Test immediately**: Generate tests alongside code
+5. **Use TODO comments**: Mark incomplete sections clearly
+6. **Documentation placement**: All generated docs go in `docs/` folder (not root)
+
+## Code Style
+- **Clear variable names**: `latent_tensor` not `lt`
+- **Single responsibility**: Functions do one thing well
+- **Avoid deep nesting**: Extract complex logic into helper functions
+- **Comment the "why"**: Code shows "what", comments explain "why"
+
+## Version Control
+
+### Commit Messages
+```
+feat: Add ROCm-optimized VAE decode node
+fix: Resolve memory leak in video processing
+perf: Optimize tile size for gfx1151
+docs: Update benchmarks for Flux model
+test: Add unit tests for memory utilities
+```
+
+### Before Major Changes
+1. Create feature branch
+2. Update tests first (TDD)
+3. Implement feature
+4. Run full test suite
+5. Update documentation
+6. Create PR with benchmark results

@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.2] - 2025-01-XX
+
+### Fixed
+- **Video Stuttering in VAE Decode**: Removed chunk overlaps that caused stuttering in video processing
+  - Removed frame overlap logic that was causing duplicate frames and stuttering
+  - Videos are now processed in exact, non-overlapping chunks
+  - Increased default `video_chunk_size` from 8 to 81 frames to handle most videos without chunking
+  - Increased maximum `video_chunk_size` from 32 to 200 frames for larger videos
+  - Videos with 81 or fewer frames are now processed in a single pass without chunking
+
+### Improved
+- **Video Processing Performance**: Better default settings for video workflows
+  - Default chunk size now handles typical video lengths (81 frames) without chunking
+  - Eliminated frame duplication artifacts from overlap processing
+  - Cleaner video output without stuttering or frame boundary issues
+
+### Technical Details
+- Chunk processing now uses exact frame boundaries without any overlap
+- Removed `overlap_frames` variable and all overlap-related cropping logic
+- Default `video_chunk_size` of 81 allows most videos to be processed without chunking
+- Maximum `video_chunk_size` increased to 200 for very long videos
+
 ## [2.0.1] - 2025-11-01
 
 ### Fixed

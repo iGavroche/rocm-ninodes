@@ -1,0 +1,63 @@
+---
+description: Code organization, file structure, and module guidelines
+globs: ["rocm_nodes/**/*.py"]
+alwaysApply: false
+---
+
+# Code Organization
+
+## File Size Limits
+- **Maximum file size: 500 lines** (excluding comments/docstrings)
+- If a file exceeds 400 lines, consider splitting it
+- Each module should have a single, clear responsibility
+- AI tools struggle with files >1000 lines - keep modules focused
+
+## Package Structure
+```
+rocm_nodes/
+├── __init__.py          # Package exports
+├── nodes.py             # Node registry (NODE_CLASS_MAPPINGS)
+├── constants.py         # Project-wide constants
+├── core/                # Node implementations
+│   ├── __init__.py
+│   ├── vae.py          # VAE nodes (decode operations)
+│   ├── sampler.py      # Sampler nodes (KSampler, etc.)
+│   ├── checkpoint.py   # Checkpoint loader
+│   ├── lora.py         # LoRA loader
+│   └── monitors.py     # Monitoring/benchmark nodes
+└── utils/              # Utility functions
+    ├── __init__.py
+    ├── memory.py       # Memory management
+    ├── diagnostics.py  # ROCm diagnostics
+    ├── quantization.py # Quantization detection
+    └── debug.py        # Debug utilities
+```
+
+## Module Guidelines
+1. **One class per file** for complex nodes (>200 lines)
+2. **Group related utilities** in utils/ modules
+3. **Clear separation**: nodes vs utilities vs constants
+4. **Avoid circular imports**: use forward references if needed
+5. **Explicit imports**: avoid `from module import *`
+
+## File Organization
+
+### Root Directory
+Keep the root directory clean - only essential files:
+- `README.md` - Main project README
+- `CHANGELOG.md` - Version history
+- `LICENSE` - License file
+- `pyproject.toml` - Package configuration
+- `uv.lock` - Dependency lock file
+- Configuration files (`.gitignore`, `pytest.ini`, etc.)
+
+### Documentation Directory
+All documentation goes in `docs/`:
+- `docs/` - Architecture, design docs, technical specs
+- `docs/guides/` - User guides and tutorials (if needed)
+- `docs/technical/` - Deep technical documentation (if needed)
+
+**Examples:**
+- ✅ `docs/CHECKPOINT_LOADER_UPDATE.md`
+- ✅ `docs/ARCHITECTURE.md`
+- ❌ `FEATURE_DOCS.md` (wrong - should be in docs/)

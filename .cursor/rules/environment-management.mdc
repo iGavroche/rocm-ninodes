@@ -1,0 +1,46 @@
+---
+description: Environment setup and dependency management using uv package manager
+alwaysApply: true
+---
+
+# Environment Management
+
+## Using `uv` Package Manager
+This project uses **`uv`** (not pip, not conda) for dependency management:
+- **Lock file**: `uv.lock` (committed to git)
+- **Configuration**: `pyproject.toml` (project metadata and dependencies)
+- **Python version**: >=3.13 (defined in uv.lock)
+
+### Key `uv` Commands
+```bash
+# Sync dependencies (install from lockfile)
+uv sync
+
+# Add a new dependency
+uv add <package-name>
+
+# Add a dev dependency
+uv add --dev <package-name>
+
+# Update dependencies
+uv lock --upgrade
+
+# Run a command in the virtual environment
+uv run <command>
+
+# Run tests
+uv run pytest tests/
+```
+
+### Important Notes
+- **Don't use `pip install` directly** - use `uv add` to maintain lockfile
+- **Don't edit `uv.lock` manually** - let `uv` manage it
+- **Commit both `pyproject.toml` and `uv.lock`** to version control
+- **Platform-specific builds** (like PyTorch) installed separately in ComfyUI's environment
+
+### PyTorch Installation
+PyTorch with ROCm is NOT in `pyproject.toml` because it requires platform-specific installation:
+```bash
+# Install PyTorch with ROCm (do this manually in ComfyUI environment)
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.4
+```

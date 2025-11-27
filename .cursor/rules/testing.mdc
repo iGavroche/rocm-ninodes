@@ -1,0 +1,49 @@
+---
+description: Testing requirements and best practices
+globs: ["tests/**/*.py", "**/*test*.py"]
+alwaysApply: false
+---
+
+# Mandatory Testing
+
+## Test Requirements
+Every new feature/node MUST have:
+1. **Unit tests**: Test individual components in isolation
+2. **Integration tests**: Test node interaction with ComfyUI
+3. **Performance tests**: Verify no regression in speed/memory
+4. **Correctness tests**: Validate output quality
+
+## Test Organization
+```
+tests/
+├── unit/              # Unit tests (test individual functions/classes)
+│   ├── test_vae.py
+│   ├── test_sampler.py
+│   └── test_utils.py
+├── integration/       # Integration tests (test node workflows)
+│   ├── test_workflows.py
+│   └── test_flux.py
+└── benchmarks/        # Performance benchmarks
+    └── test_performance.py
+```
+
+## Test Execution
+- Run tests before every commit: `uv run pytest tests/`
+- Check coverage: `uv run pytest --cov=rocm_nodes`
+- Target: >80% code coverage
+- All tests must pass before merging
+
+## Writing Tests
+```python
+# Good: Focused, isolated, fast
+def test_memory_cleanup():
+    initial_mem = torch.cuda.memory_allocated()
+    simple_memory_cleanup()
+    final_mem = torch.cuda.memory_allocated()
+    assert final_mem <= initial_mem
+
+# Bad: Too broad, slow, unclear assertions
+def test_everything():
+    # Tests multiple unrelated things...
+    pass
+```

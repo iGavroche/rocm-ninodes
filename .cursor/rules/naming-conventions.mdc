@@ -1,0 +1,22 @@
+---
+description: ROCm branding and naming conventions for the project
+alwaysApply: true
+---
+
+# ROCm Branding and Naming Conventions
+
+## ROCm Branding (CRITICAL)
+- **Always use "ROCm"** (capital R, capital O, capital C, lowercase m)
+- ❌ Wrong: "RocM", "ROCM", "rocm", "Rocm"
+- ✅ Correct: "ROCm"
+
+### Examples
+- Class names: `ROCmDiffusionLoader` (when part of compound name)
+- Display names: "ROCm Checkpoint Loader"
+- Documentation: "ROCm-optimized nodes"
+- Categories: "ROCm Ninodes/Loaders"
+
+## Node Naming
+- Use descriptive node names: `ROCMOptimized{Function}`
+- Display names should be user-friendly
+- All nodes registered in `rocm_nodes/nodes.py`

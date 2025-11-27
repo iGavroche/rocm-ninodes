@@ -94,11 +94,11 @@ class ROCMOptimizedVAEDecode:
                     "tooltip": "Enable batch processing optimizations"
                 }),
                 "video_chunk_size": ("INT", {
-                    "default": 8,
+                    "default": 81,
                     "min": 1,
-                    "max": 32,
+                    "max": 200,
                     "step": 1,
-                    "tooltip": "Number of video frames to process at once (memory optimization)"
+                    "tooltip": "Number of video frames to process at once (memory optimization). Set to 81 or higher to process all frames without chunking."
                 }),
                 "memory_optimization_enabled": ("BOOLEAN", {
                     "default": True,
@@ -120,7 +120,7 @@ class ROCMOptimizedVAEDecode:
     DESCRIPTION = "ROCM-optimized VAE Decode for AMD GPUs (gfx1151)"
     
     def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True, 
-               precision_mode="auto", batch_optimization=True, video_chunk_size=8, 
+               precision_mode="auto", batch_optimization=True, video_chunk_size=81, 
                memory_optimization_enabled=True, compatibility_mode=False):
         """
         Optimized VAE decode for ROCm/AMD GPUs with video support and quantized model compatibility
@@ -237,23 +237,20 @@ class ROCMOptimizedVAEDecode:
                 print("📹 Using non-chunked processing for optimal speed")
             
             if use_chunking:
-                # Process video in chunks to avoid memory exhaustion with overlap to prevent boundary artifacts
+                # Process video in chunks to avoid memory exhaustion
+                # NO OVERLAP - overlaps cause stuttering in videos
                 chunk_results = []
                 num_chunks = (T + video_chunk_size - 1) // video_chunk_size
-                overlap_frames = 2  # Process overlap to blend boundaries smoothly
-                print(f"🔄 Processing {num_chunks} chunks with {overlap_frames} frame overlap...")
+                print(f"🔄 Processing {num_chunks} chunks (no overlap to prevent stuttering)...")
                 
                 for i in range(0, T, video_chunk_size):
                     chunk_idx = i // video_chunk_size + 1
                     end_idx = min(i + video_chunk_size, T)
                     print(f"  📦 Chunk {chunk_idx}/{num_chunks}: frames {i}-{end_idx-1}")
                     
-                    # Add overlap frames at boundaries (except at start and end)
-                    start_overlap = overlap_frames if i > 0 else 0
-                    end_overlap = overlap_frames if end_idx < T else 0
-                    
-                    chunk_start = max(0, i - start_overlap)
-                    chunk_end = min(T, end_idx + end_overlap)
+                    # NO OVERLAP - decode exactly the frames we need
+                    chunk_start = i
+                    chunk_end = end_idx
                     
                     chunk = samples["samples"][:, :, chunk_start:chunk_end, :, :]
                     
@@ -265,18 +262,7 @@ class ROCMOptimizedVAEDecode:
                     if isinstance(chunk_decoded, tuple):
                         chunk_decoded = chunk_decoded[0]
                     
-                    # Crop out overlap frames for clean concatenation
-                    crop_start = start_overlap
-                    crop_end = end_overlap
-                    
-                    total_frames = chunk_decoded.shape[2] if chunk_decoded.shape[1] == 3 else chunk_decoded.shape[1]
-                    
-                    if crop_start > 0 or crop_end > 0:
-                        if chunk_decoded.shape[1] == 3:
-                            chunk_decoded = chunk_decoded[:, :, crop_start:total_frames-crop_end, :, :]
-                        else:
-                            chunk_decoded = chunk_decoded[:, crop_start:total_frames-crop_end, :, :, :]
-                    
+                    # No cropping needed - we decoded exactly the frames we need
                     chunk_results.append(chunk_decoded)
                     
                     # Clear memory after each chunk (reduced frequency to prevent fragmentation)
