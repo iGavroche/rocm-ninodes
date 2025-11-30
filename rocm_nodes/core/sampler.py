@@ -115,16 +115,72 @@ class ROCMOptimizedKSampler:
 
         # Optional ROCm-aware knobs (default to stock behavior)
         use_video_optim = False
+        is_video_workflow = False
         if not compatibility_mode and optimize_for_video and latent_image_tensor.ndim == 5 and latent_image_tensor.shape[2] > 1:
             use_video_optim = True
+            is_video_workflow = True
 
-        callback = None if use_video_optim else latent_preview.prepare_callback(model, steps)
-        disable_pbar = True if use_video_optim else (not comfy.utils.PROGRESS_BAR_ENABLED)
+        # Always enable progress bar unless explicitly optimizing for video
+        disable_pbar = use_video_optim
+        
+        # Create progress bar for UI feedback (always create it, even if we disable ComfyUI's built-in one)
+        pbar = comfy.utils.ProgressBar(steps)
+        
+        # Enhanced callback for progress reporting (UI + terminal)
+        last_update_time = [time.time()]
+        start_time = time.time()
+        
+        def enhanced_callback(step, x0, x, total_steps):
+            """Enhanced callback that reports progress to both UI and terminal"""
+            current_time = time.time()
+            
+            # Always update UI progress bar (every 0.3 seconds or at completion)
+            if current_time - last_update_time[0] >= 0.3 or step == total_steps - 1:
+                # Generate preview for image workflows (not video to reduce overhead)
+                preview_bytes = None
+                if not is_video_workflow and step % 5 == 0:  # Preview every 5 steps for images
+                    try:
+                        previewer = latent_preview.get_previewer(model.load_device, model.model.latent_format)
+                        if previewer:
+                            preview_bytes = previewer.decode_latent_to_preview_image("JPEG", x0)
+                    except:
+                        preview_bytes = None  # Don't block on preview generation
+                
+                # Update progress bar with preview (UI feedback)
+                try:
+                    pbar.update_absolute(step + 1, total_steps, preview=preview_bytes)
+                except:
+                    pass  # Don't fail if progress bar update fails
+                last_update_time[0] = current_time
+            
+            # Terminal feedback every step
+            progress_pct = ((step + 1) / total_steps) * 100
+            elapsed = current_time - start_time
+            if step > 0:
+                est_total = elapsed / ((step + 1) / total_steps)
+                est_remaining = est_total - elapsed
+                avg_time_per_step = elapsed / (step + 1)
+                workflow_type = "Video" if is_video_workflow else "Image"
+                print(f"📊 {workflow_type} KSampler: Step {step + 1}/{total_steps} ({progress_pct:.1f}%) | "
+                      f"Elapsed: {elapsed:.1f}s | Remaining: ~{est_remaining:.1f}s | "
+                      f"Avg: {avg_time_per_step:.2f}s/step", flush=True)
+            else:
+                workflow_type = "Video" if is_video_workflow else "Image"
+                print(f"📊 {workflow_type} KSampler: Step {step + 1}/{total_steps} ({progress_pct:.1f}%) | Starting...", flush=True)
+        
+        # Always use enhanced callback for progress reporting
+        callback = enhanced_callback
+        
         # Prefer native SDPA where available (no CUDA flags toggled)
         _sdpa_available = hasattr(torch.backends, 'cuda') and hasattr(torch.backends.cuda, 'sdpa_kernel')
         # No-op on ROCm; PyTorch routes to HIP SDPA internally if present
+        
+        print(f"🚀 Starting sampling: {steps} steps, CFG {cfg}, {sampler_name} ({scheduler})", flush=True)
+        # Always pass callback and disable_pbar=False to ensure callback is called
+        # Our callback handles both UI and terminal progress
         samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image_tensor,
-                                      denoise=denoise, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)
+                                      denoise=denoise, noise_mask=noise_mask, callback=callback, disable_pbar=False, seed=seed)
+        print(f"✅ Sampling completed", flush=True)
         out = latent.copy()
         out["samples"] = samples
         return (out, )
@@ -200,15 +256,71 @@ class ROCMOptimizedKSamplerAdvanced:
             noise_mask = latent["noise_mask"]
 
         use_video_optim = False
+        is_video_workflow = False
         if not compatibility_mode and optimize_for_video and latent_image_tensor.ndim == 5 and latent_image_tensor.shape[2] > 1:
             use_video_optim = True
+            is_video_workflow = True
 
-        callback = None if use_video_optim else latent_preview.prepare_callback(model, steps)
-        disable_pbar = True if use_video_optim else not comfy.utils.PROGRESS_BAR_ENABLED
+        # Always enable progress bar unless explicitly optimizing for video
+        disable_pbar = use_video_optim
+        
+        # Create progress bar for UI feedback (always create it, even if we disable ComfyUI's built-in one)
+        pbar = comfy.utils.ProgressBar(steps)
+        
+        # Enhanced callback for progress reporting (UI + terminal)
+        last_update_time = [time.time()]
+        start_time = time.time()
+        
+        def enhanced_callback(step, x0, x, total_steps):
+            """Enhanced callback that reports progress to both UI and terminal"""
+            current_time = time.time()
+            
+            # Always update UI progress bar (every 0.3 seconds or at completion)
+            if current_time - last_update_time[0] >= 0.3 or step == total_steps - 1:
+                # Generate preview for image workflows (not video to reduce overhead)
+                preview_bytes = None
+                if not is_video_workflow and step % 5 == 0:  # Preview every 5 steps for images
+                    try:
+                        previewer = latent_preview.get_previewer(model.load_device, model.model.latent_format)
+                        if previewer:
+                            preview_bytes = previewer.decode_latent_to_preview_image("JPEG", x0)
+                    except:
+                        preview_bytes = None  # Don't block on preview generation
+                
+                # Update progress bar with preview (UI feedback)
+                try:
+                    pbar.update_absolute(step + 1, total_steps, preview=preview_bytes)
+                except:
+                    pass  # Don't fail if progress bar update fails
+                last_update_time[0] = current_time
+            
+            # Terminal feedback every step
+            progress_pct = ((step + 1) / total_steps) * 100
+            elapsed = current_time - start_time
+            if step > 0:
+                est_total = elapsed / ((step + 1) / total_steps)
+                est_remaining = est_total - elapsed
+                avg_time_per_step = elapsed / (step + 1)
+                workflow_type = "Video" if is_video_workflow else "Image"
+                print(f"📊 Advanced {workflow_type} KSampler: Step {step + 1}/{total_steps} ({progress_pct:.1f}%) | "
+                      f"Elapsed: {elapsed:.1f}s | Remaining: ~{est_remaining:.1f}s | "
+                      f"Avg: {avg_time_per_step:.2f}s/step", flush=True)
+            else:
+                workflow_type = "Video" if is_video_workflow else "Image"
+                print(f"📊 Advanced {workflow_type} KSampler: Step {step + 1}/{total_steps} ({progress_pct:.1f}%) | Starting...", flush=True)
+        
+        # Always use enhanced callback for progress reporting
+        callback = enhanced_callback
+        
         _sdpa_available = hasattr(torch.backends, 'cuda') and hasattr(torch.backends.cuda, 'sdpa_kernel')
+        
+        print(f"🚀 Starting advanced sampling: {steps} steps (range: {start_at_step}-{end_at_step}), CFG {cfg}, {sampler_name} ({scheduler})", flush=True)
+        # Always pass callback and disable_pbar=False to ensure callback is called
+        # Our callback handles both UI and terminal progress
         samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image_tensor,
                                       denoise=denoise, disable_noise=disable_noise, start_step=start_at_step, last_step=end_at_step,
-                                      force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=noise_seed)
+                                      force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback, disable_pbar=False, seed=noise_seed)
+        print(f"✅ Advanced sampling completed", flush=True)
         out = latent.copy()
         out["samples"] = samples
         return (out, )

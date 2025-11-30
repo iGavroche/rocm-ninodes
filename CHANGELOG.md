@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.0.3] - 2025-01-XX
+
+### Fixed
+- **KSampler Progress Reporting**: Fixed missing progress display in both UI and terminal
+  - Progress bar now always shows in ComfyUI UI for both basic and advanced KSampler nodes
+  - Terminal now displays step-by-step progress with detailed timing information
+  - Fixed issue where `disable_pbar` parameter was preventing callback execution
+  - Progress updates every step in terminal, every 0.3 seconds in UI
+  - Preview images now appear every 5 steps for image workflows
+
+### Improved
+- **Progress Feedback**: Enhanced progress reporting for better user experience
+  - Real-time step-by-step terminal output with elapsed time, remaining time, and average time per step
+  - UI progress bar updates smoothly with preview images
+  - Progress visible for both `ROCMOptimizedKSampler` and `ROCMOptimizedKSamplerAdvanced` nodes
+  - Added `flush=True` to print statements for immediate terminal output
+
+### Technical Details
+- Always create `comfy.utils.ProgressBar` instance for UI feedback
+- Always pass `disable_pbar=False` to `comfy.sample.sample()` to ensure callbacks are called
+- Enhanced callback function reports to both UI (via ProgressBar) and terminal (via print)
+- Progress bar updates throttled to 0.3 seconds to prevent UI lag
+- Preview generation limited to every 5 steps for image workflows to reduce overhead
+
 ## [2.0.2] - 2025-01-XX
 
 ### Fixed
