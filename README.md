@@ -550,11 +550,334 @@ cd ComfyUI-ROCM-Optimized-VAE
 3. **Install missing nodes** via ComfyUI Manager (if prompted)
 4. **Run** and enjoy 78% faster generation! 🎉
 
-## Usage
+## 📖 Node Usage Guide
+
+### Core Nodes
+
+#### 🖼️ **ROCm VAE Decode**
+**Location**: `ROCm Ninodes/VAE` → `ROCm VAE Decode`
+
+**Purpose**: Optimized VAE decoding for AMD GPUs with ROCm support.
+
+**How to Use**:
+1. Connect your `LATENT` output from a sampler to the `samples` input
+2. Connect your `VAE` model to the `vae` input
+3. Use default settings for most cases (optimized for gfx1151)
+4. For large images (>1024x1024), consider using `ROCm VAE Decode Tiled` instead
+
+**Key Settings**:
+- **tile_size**: 768-1024 for gfx1151 (default: 768)
+- **overlap**: 96-128 for good quality (default: 96)
+- **precision_mode**: "auto" selects optimal precision
+- **video_chunk_size**: 81 frames by default (handles most videos without chunking)
+- **memory_optimization_enabled**: Keep enabled for better VRAM usage
+
+**Output**: `IMAGE` - Decoded image tensor ready for saving or further processing
+
+---
+
+#### 🎨 **ROCm VAE Decode Tiled**
+**Location**: `ROCm Ninodes/VAE` → `ROCm VAE Decode Tiled`
+
+**Purpose**: Advanced tiled VAE decode for very large images or video with temporal support.
+
+**How to Use**:
+1. Connect `LATENT` to `samples` input
+2. Connect `VAE` model to `vae` input
+3. Use for images >1024x1024 or when you need temporal control for video
+4. Adjust `temporal_size` and `temporal_overlap` for video workflows
+
+**Key Settings**:
+- **tile_size**: 768-1024 (default: 768)
+- **temporal_size**: 64 frames for video (default: 64)
+- **temporal_overlap**: 8 frames overlap for video (default: 8)
+
+**Output**: `IMAGE` - Decoded image/video tensor
+
+---
+
+#### 🎲 **ROCm KSampler**
+**Location**: `ROCm Ninodes/Sampling` → `ROCm KSampler`
+
+**Purpose**: Optimized KSampler with ROCm-specific optimizations and progress reporting.
+
+**How to Use**:
+1. Connect your `MODEL` to `model` input
+2. Connect `CONDITIONING` (positive and negative) from your CLIP text encode nodes
+3. Connect `LATENT` image (usually from Empty Latent Image node)
+4. Set your desired `steps`, `cfg`, `sampler_name`, and `scheduler`
+5. Connect the output `LATENT` to your VAE Decode node
+
+**Key Settings**:
+- **steps**: 20-30 for most cases
+- **cfg**: 7.0-8.0 for gfx1151 (default: 8.0)
+- **sampler_name**: Euler, Heun, or dpmpp_2m work well with ROCm
+- **optimize_for_video**: Enable for multi-frame latents (disables previews)
+- **precision_mode**: "auto" selects fp32 for gfx1151
+
+**Output**: `LATENT` - Sampled latent tensor (connect to VAE Decode)
+
+**Progress**: Shows real-time progress in both UI and terminal with step-by-step information
+
+---
+
+#### 🎯 **ROCm KSampler Advanced**
+**Location**: `ROCm Ninodes/Sampling` → `ROCm KSampler Advanced`
+
+**Purpose**: Advanced KSampler with step control and more options.
+
+**How to Use**:
+1. Same as basic KSampler, but with additional controls:
+   - **start_at_step**: Start sampling from a specific step (default: 0)
+   - **end_at_step**: End sampling at a specific step (default: 10000)
+   - **add_noise**: Enable/disable noise addition
+   - **return_with_leftover_noise**: Enable to return with leftover noise
+
+**Use Cases**:
+- **Img2Img workflows**: Use `start_at_step` to control denoising strength
+- **Inpainting**: Use step ranges for precise control
+- **Video workflows**: Enable `optimize_for_video` for better performance
+
+**Output**: `LATENT` - Sampled latent tensor
+
+---
+
+#### 📦 **ROCm Checkpoint Loader**
+**Location**: `ROCm Ninodes/Loaders` → `ROCm Checkpoint Loader`
+
+**Purpose**: Optimized checkpoint loading with memory management.
+
+**How to Use**:
+1. Select your checkpoint file from the dropdown
+2. Connect outputs to your workflow:
+   - `MODEL` → Connect to KSampler
+   - `CLIP` → Connect to CLIP Text Encode nodes
+   - `VAE` → Connect to VAE Decode node
+
+**Key Settings**:
+- **use_rocm_optimizations**: Enable for best performance (default: True)
+- **memory_optimization**: Enable for better VRAM usage (default: True)
+
+**Outputs**: `MODEL`, `CLIP`, `VAE`
+
+---
+
+#### 🔄 **ROCm Diffusion Loader**
+**Location**: `ROCm Ninodes/Loaders` → `ROCm Diffusion Loader`
+
+**Purpose**: Load UNet/Diffusion models separately (useful for Flux and other models).
+
+**How to Use**:
+1. Select your UNet model file
+2. Connect `MODEL` output to your KSampler
+3. Use with separate VAE and CLIP loaders
+
+**Output**: `MODEL`
+
+---
+
+#### 🎨 **ROCm LoRA Loader**
+**Location**: `ROCm Ninodes/Loaders` → `ROCm LoRA Loader`
+
+**Purpose**: Load and apply LoRA weights to models with memory optimization.
+
+**How to Use**:
+1. Connect your `MODEL` to `model` input
+2. Connect your `CLIP` to `clip` input (optional)
+3. Select LoRA file from dropdown
+4. Set `strength_model` and `strength_clip` (0.0-2.0, default: 1.0)
+5. Connect outputs back to your workflow
+
+**Key Settings**:
+- **strength_model**: LoRA strength for model (default: 1.0)
+- **strength_clip**: LoRA strength for CLIP (default: 1.0)
+
+**Outputs**: `MODEL`, `CLIP` (if provided)
+
+---
+
+### 📊 Performance Monitoring Nodes
+
+#### 🔍 **ROCm VAE Performance Monitor**
+**Location**: `ROCm Ninodes/VAE` → `ROCm VAE Performance Monitor`
+
+**Purpose**: Analyze VAE performance and get optimization recommendations.
+
+**How to Use**:
+1. Connect your `VAE` model to the `vae` input
+2. Set `test_resolution` (default: 1024) - this is just for recommendations, not actual testing
+3. **Connect outputs to Show Text nodes** to display results:
+   - `DEVICE_INFO` → Shows GPU information and VAE settings
+   - `PERFORMANCE_TIPS` → Provides specific optimization tips
+   - `OPTIMAL_SETTINGS` → Shows recommended settings for your GPU
+
+**Example Workflow Connection**:
+```
+VAE → ROCm VAE Performance Monitor
+     ├─ DEVICE_INFO → Show Text (to display GPU info)
+     ├─ PERFORMANCE_TIPS → Show Text (to display tips)
+     └─ OPTIMAL_SETTINGS → Show Text (to display settings)
+```
+
+**Outputs**:
+- **DEVICE_INFO**: GPU name, VAE dtype, output device
+- **PERFORMANCE_TIPS**: Specific recommendations for your hardware
+- **OPTIMAL_SETTINGS**: Recommended tile_size, overlap, precision, etc.
+
+**Note**: This node doesn't run actual benchmarks - it analyzes your VAE and provides recommendations based on your GPU.
+
+---
+
+#### 📈 **ROCm Sampler Performance Monitor**
+**Location**: `ROCm Ninodes/Sampling` → `ROCm Sampler Performance Monitor`
+
+**Purpose**: Analyze sampler performance and get optimization recommendations.
+
+**How to Use**:
+1. Connect your `MODEL` to the `model` input
+2. Set `test_steps` (default: 20) - this is just for recommendations, not actual testing
+3. **Connect outputs to Show Text nodes** to display results:
+   - `DEVICE_INFO` → Shows GPU and model information
+   - `PERFORMANCE_TIPS` → Provides sampler-specific tips
+   - `OPTIMAL_SETTINGS` → Shows recommended samplers, schedulers, and CFG values
+
+**Example Workflow Connection**:
+```
+MODEL → ROCm Sampler Performance Monitor
+       ├─ DEVICE_INFO → Show Text
+       ├─ PERFORMANCE_TIPS → Show Text
+       └─ OPTIMAL_SETTINGS → Show Text
+```
+
+**Outputs**:
+- **DEVICE_INFO**: GPU name, model device, model dtype
+- **PERFORMANCE_TIPS**: Recommendations for samplers, precision, memory optimization
+- **OPTIMAL_SETTINGS**: Recommended samplers (euler, heun, etc.), schedulers, CFG range
+
+**Note**: This node provides recommendations based on your GPU, not actual performance measurements.
+
+---
+
+#### ⚡ **ROCm Flux Benchmark**
+**Location**: `ROCm Ninodes/Benchmark` → `ROCm Flux Benchmark`
+
+**Purpose**: Run comprehensive benchmark tests on your Flux workflow.
+
+**How to Use**:
+1. Connect your `MODEL`, `VAE`, and `CLIP` to the inputs
+2. Configure test parameters:
+   - **test_resolutions**: Comma-separated resolutions like "256x320,512x512,1024x1024"
+   - **test_steps**: Number of sampling steps (default: 20)
+   - **test_cfg_values**: Comma-separated CFG values like "1.0,3.5,8.0"
+3. **Connect all 4 outputs to Show Text nodes** to display results:
+   - `BENCHMARK_RESULTS` → Summary of benchmark results
+   - `PERFORMANCE_CHART` → Detailed timing for each resolution
+   - `OPTIMIZATION_RECOMMENDATIONS` → Specific recommendations
+   - `MEMORY_ANALYSIS` → Memory usage information
+
+**Example Workflow Connection**:
+```
+MODEL ─┐
+VAE   ├─→ ROCm Flux Benchmark
+CLIP  ─┘
+       ├─ BENCHMARK_RESULTS → Show Text
+       ├─ PERFORMANCE_CHART → Show Text
+       ├─ OPTIMIZATION_RECOMMENDATIONS → Show Text
+       └─ MEMORY_ANALYSIS → Show Text
+```
+
+**Outputs**:
+- **BENCHMARK_RESULTS**: Average decode times and peak memory for each resolution
+- **PERFORMANCE_CHART**: Detailed timing breakdown
+- **OPTIMIZATION_RECOMMENDATIONS**: Specific tips for your GPU
+- **MEMORY_ANALYSIS**: Total VRAM, current usage, device information
+
+**Note**: This node **actually runs benchmarks** - it will decode test latents and measure performance. This may take several minutes.
+
+---
+
+#### 💾 **ROCm Memory Optimizer**
+**Location**: `ROCm Ninodes/Memory` → `ROCm Memory Optimizer`
+
+**Purpose**: Monitor and optimize GPU memory usage.
+
+**How to Use**:
+1. Place this node anywhere in your workflow (it doesn't need inputs)
+2. Configure optimization settings:
+   - **optimization_level**: conservative, balanced, or aggressive
+   - **enable_gc**: Enable Python garbage collection (default: True)
+   - **clear_cache**: Clear CUDA cache (default: True)
+   - **cleanup_frequency**: How often to run cleanup (default: 10 operations)
+3. **Connect outputs to Show Text nodes**:
+   - `MEMORY_STATUS` → Current memory usage
+   - `OPTIMIZATION_LOG` → What optimizations were performed
+   - `RECOMMENDATIONS` → Memory optimization suggestions
+
+**Example Workflow Connection**:
+```
+ROCm Memory Optimizer (no inputs needed)
+├─ MEMORY_STATUS → Show Text
+├─ OPTIMIZATION_LOG → Show Text
+└─ RECOMMENDATIONS → Show Text
+```
+
+**Outputs**:
+- **MEMORY_STATUS**: Allocated, reserved, free, and total VRAM
+- **OPTIMIZATION_LOG**: What cleanup operations were performed
+- **RECOMMENDATIONS**: Suggestions based on current memory usage
+
+**Use Cases**:
+- Place after large operations to monitor memory
+- Use in loops to prevent memory buildup
+- Check memory before starting large workflows
+
+---
+
+### 🔗 Connecting Performance Nodes to Outputs
+
+All performance monitoring nodes output **STRING** values that need to be connected to **Show Text** nodes to be visible in ComfyUI.
+
+#### Step-by-Step: Adding Performance Monitoring to Your Workflow
+
+1. **Add the performance node** (e.g., `ROCm VAE Performance Monitor`)
+2. **Connect the required inputs** (e.g., `VAE` model)
+3. **Add Show Text nodes** for each output:
+   - Right-click → Add Node → **Show Text** (or search for "Show Text")
+   - You'll need one Show Text node per output
+4. **Connect the outputs**:
+   - Drag from the performance node's output to the Show Text node's `text` input
+5. **Run your workflow** - the text will appear in the UI showing the results
+
+#### Example: Complete VAE Performance Monitor Setup
+
+```
+[VAE Model] 
+    ↓
+[ROCm VAE Performance Monitor]
+    ├─ DEVICE_INFO ──→ [Show Text] ──→ (displays in UI)
+    ├─ PERFORMANCE_TIPS ──→ [Show Text] ──→ (displays in UI)
+    └─ OPTIMAL_SETTINGS ──→ [Show Text] ──→ (displays in UI)
+```
+
+#### Example: Complete Flux Benchmark Setup
+
+```
+[MODEL] ─┐
+[VAE]   ├─→ [ROCm Flux Benchmark]
+[CLIP]  ─┘
+         ├─ BENCHMARK_RESULTS ──→ [Show Text]
+         ├─ PERFORMANCE_CHART ──→ [Show Text]
+         ├─ OPTIMIZATION_RECOMMENDATIONS ──→ [Show Text]
+         └─ MEMORY_ANALYSIS ──→ [Show Text]
+```
+
+**Tip**: You can connect multiple Show Text nodes to the same output if you want to display the same information in multiple places, or use different Show Text nodes for each output to organize your workflow better.
+
+---
 
 ### Basic Usage
-1. Replace your standard VAE Decode node with "ROCM VAE Decode"
-2. Replace your standard KSampler with "ROCM KSampler"
+1. Replace your standard VAE Decode node with "ROCm VAE Decode"
+2. Replace your standard KSampler with "ROCm KSampler"
 3. Use the default settings (optimized for gfx1151)
 4. Enable "use_rocm_optimizations" for best performance
 
