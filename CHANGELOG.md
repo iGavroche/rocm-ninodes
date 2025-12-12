@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.0.9] - 2025-01-XX
+
+### Fixed
+- **LoRA Loader API Compatibility**: Fixed `load_lora() missing 1 required positional argument: 'to_load'` error
+  - ComfyUI's `load_lora()` function now requires a `to_load` parameter specifying which components to load
+  - Added automatic detection of model/clip presence to build `to_load` dictionary
+  - Defaults to loading both model and clip if neither is explicitly provided
+  - Fixes LoRA loading for all ComfyUI versions with the updated API
+
+### Changed
+- **LoRA Loader Output Messages**: Removed Unicode emojis from LoRA loader output
+  - Replaced with ASCII prefixes: `[LOADING]`, `[INFO]`, `[SUCCESS]`, `[ERROR]`, `[WARNING]`
+  - Improves Windows console compatibility and matches project style
+
 ## [2.0.8] - 2025-01-XX
 
 ### Changed

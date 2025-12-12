@@ -57,11 +57,11 @@ class ROCMLoRALoader:
         """
         Load LoRA with aggressive memory management to prevent fragmentation
         """
-        print(f"🔄 ROCM LoRA Loader: Loading {lora_name} with strengths {strength_model}/{strength_clip}")
+        print(f"[LOADING] ROCM LoRA Loader: Loading {lora_name} with strengths {strength_model}/{strength_clip}")
         
         # Pre-loading cleanup
         if torch.cuda.is_available():
-            print("🧹 Pre-loading memory cleanup...")
+            print("[INFO] Pre-loading memory cleanup...")
             gentle_memory_cleanup()
             
             allocated_memory = torch.cuda.memory_allocated(0)
@@ -77,13 +77,24 @@ class ROCMLoRALoader:
             if lora_path is None:
                 raise FileNotFoundError(f"LoRA file not found: {lora_name}")
             
-            print(f"📁 Loading LoRA from: {lora_path}")
+            print(f"[LOADING] Loading LoRA from: {lora_path}")
             
             if torch.cuda.is_available():
                 gentle_memory_cleanup()
             
             # Load the LoRA
-            lora = load_lora(lora_path)
+            # ComfyUI's load_lora requires 'to_load' parameter specifying which components to load
+            to_load = {}
+            if model is not None:
+                to_load["model"] = True
+            if clip is not None:
+                to_load["clip"] = True
+            
+            # If no components specified, load both by default
+            if not to_load:
+                to_load = {"model": True, "clip": True}
+            
+            lora = load_lora(lora_path, to_load)
             
             if torch.cuda.is_available():
                 gentle_memory_cleanup()
@@ -93,7 +104,7 @@ class ROCMLoRALoader:
             
             # Post-loading cleanup
             if torch.cuda.is_available():
-                print("🧹 Post-loading memory cleanup...")
+                print("[INFO] Post-loading memory cleanup...")
                 gentle_memory_cleanup()
                 
                 allocated_memory_after = torch.cuda.memory_allocated(0)
@@ -103,14 +114,14 @@ class ROCMLoRALoader:
                 print(f"Memory after LoRA loading: {allocated_memory_after/1024**3:.2f}GB allocated, {reserved_memory_after/1024**3:.2f}GB reserved")
                 print(f"Fragmentation: {fragmentation_after/1024**2:.1f}MB")
             
-            print(f"✅ ROCM LoRA Loader: Successfully loaded {lora_name}")
+            print(f"[SUCCESS] ROCM LoRA Loader: Successfully loaded {lora_name}")
             return (model_lora, clip_lora)
             
         except Exception as e:
-            print(f"❌ ROCM LoRA Loader: Failed to load {lora_name}: {e}")
+            print(f"[ERROR] ROCM LoRA Loader: Failed to load {lora_name}: {e}")
             
             if torch.cuda.is_available():
-                print("🚨 Emergency memory cleanup...")
+                print("[WARNING] Emergency memory cleanup...")
                 gentle_memory_cleanup()
             
             raise e
