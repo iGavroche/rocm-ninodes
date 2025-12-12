@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.0.6] - 2025-01-XX
+
+### Fixed
+- **Diffusion Model Loader File Listing**: Fixed issue where no files were showing in the file selector
+  - Now checks multiple folder names: `diffusion_models`, `unet`, and `unet_gguf`
+  - Combines ComfyUI's default file list with custom scanning for maximum compatibility
+  - Supports all model formats: `.safetensors`, `.gguf`, `.ckpt`, `.pt`, `.pth`, `.bin`, `.onnx`
+- **PyTorch 2.0+ GGUF Loading**: Fixed `weights_only` error when loading GGUF files
+  - PyTorch 2.0+ changed default `torch.load(weights_only=True)` which breaks GGUF files
+  - Temporarily patches `torch.load` to set `weights_only=False` for GGUF files only
+  - Restores original `torch.load` after loading to maintain security for other file types
+- **Unicode Emoji Removal**: Removed all Unicode emojis from output messages
+  - Replaced with ASCII alternatives: `[INFO]`, `[WARNING]`, `[ERROR]`, `[SUCCESS]`, `[CONFIG]`, `[LOADING]`, `[GPU]`, `[MEMORY]`
+  - Improves Windows console compatibility and avoids encoding errors
+
+### Technical Details
+- Enhanced `_get_model_files()` to check multiple folder names and combine sources
+- Added GGUF detection and PyTorch 2.0+ compatibility workaround
+- All print statements now use ASCII-only prefixes for cross-platform compatibility
+
 ## [2.0.5] - 2025-01-XX
 
 ### Fixed

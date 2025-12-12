@@ -44,36 +44,58 @@ class ROCmDiffusionLoader:
         Get all model files from the diffusion_models folder with supported extensions.
         
         This includes .safetensors, .gguf, .ckpt, .pt, .pth, .bin, and .onnx files.
+        Combines ComfyUI's default list with our custom scan for maximum compatibility.
         """
-        model_files = []
+        all_files = []
+        
+        # Method 1: Try ComfyUI's default list first (handles .safetensors and registered extensions)
         try:
-            # Get the diffusion_models folder path
-            model_paths = folder_paths.get_folder_paths("diffusion_models")
-            if not model_paths:
-                return []
-            
-            # Scan all diffusion_models folders (user can have multiple)
-            for model_path in model_paths:
-                if not os.path.exists(model_path):
-                    continue
-                
-                # List all files in the directory
-                for filename in os.listdir(model_path):
-                    file_path = os.path.join(model_path, filename)
-                    # Only include files (not directories) with supported extensions
-                    if os.path.isfile(file_path):
+            default_files = folder_paths.get_filename_list("diffusion_models")
+            if default_files:
+                all_files.extend(default_files)
+        except Exception:
+            pass  # If folder_paths isn't initialized or folder doesn't exist, continue
+        
+        # Method 2: Also check alternative folder names that users might have
+        alternative_folders = ["unet", "unet_gguf", "diffusion_models"]
+        for folder_name in alternative_folders:
+            try:
+                alt_files = folder_paths.get_filename_list(folder_name)
+                if alt_files:
+                    # Filter to only supported extensions
+                    for filename in alt_files:
                         _, ext = os.path.splitext(filename.lower())
                         if ext in cls.MODEL_EXTENSIONS:
-                            model_files.append(filename)
-            
-            # Remove duplicates and sort
-            model_files = sorted(list(set(model_files)))
-            return model_files
-        except Exception as e:
-            # Fallback to ComfyUI's default if our scan fails
-            print(f"⚠️  Warning: Could not scan diffusion_models folder: {e}")
-            print("   Falling back to ComfyUI's default file list")
-            return folder_paths.get_filename_list("diffusion_models")
+                            all_files.append(filename)
+            except Exception:
+                continue
+        
+        # Method 3: Manual scan of diffusion_models folder for additional formats
+        scanned_files = []
+        try:
+            model_paths = folder_paths.get_folder_paths("diffusion_models")
+            if model_paths:
+                for model_path in model_paths:
+                    if not os.path.exists(model_path):
+                        continue
+                    
+                    try:
+                        for filename in os.listdir(model_path):
+                            file_path = os.path.join(model_path, filename)
+                            if os.path.isfile(file_path):
+                                _, ext = os.path.splitext(filename.lower())
+                                if ext in cls.MODEL_EXTENSIONS:
+                                    scanned_files.append(filename)
+                    except (OSError, PermissionError):
+                        continue
+        except Exception:
+            pass
+        
+        # Combine all sources, remove duplicates, and sort
+        all_files.extend(scanned_files)
+        all_files = sorted(list(set(all_files)))
+        
+        return all_files
     
     @classmethod
     def INPUT_TYPES(cls):
@@ -113,17 +135,30 @@ class ROCmDiffusionLoader:
         is_quantized = any(indicator in unet_name_lower for indicator in quantized_indicators)
         
         if is_quantized:
-            print(f"🔍 Detected quantized diffusion model: {unet_name}")
-            print("💡 Quantized models use specialized dtypes - preserving original precision")
+            print(f"[INFO] Detected quantized diffusion model: {unet_name}")
+            print("[INFO] Quantized models use specialized dtypes - preserving original precision")
         
-        # Get model path
-        unet_path = folder_paths.get_full_path_or_raise("diffusion_models", unet_name)
+        # Get model path - try multiple folder names
+        unet_path = None
+        folder_names = ["diffusion_models", "unet", "unet_gguf"]
+        for folder_name in folder_names:
+            try:
+                unet_path = folder_paths.get_full_path_or_raise(folder_name, unet_name)
+                break
+            except Exception:
+                continue
+        
+        if unet_path is None:
+            raise FileNotFoundError(f"Could not find model '{unet_name}' in any of: {', '.join(folder_names)}")
+        
+        # Check if this is a GGUF file (needs special handling for PyTorch 2.0+ weights_only)
+        is_gguf = unet_name.lower().endswith('.gguf')
         
         # Log diagnostics (non-intrusive)
-        print(f"\n📁 Loading diffusion model: {unet_name}")
+        print(f"\n[LOADING] Loading diffusion model: {unet_name}")
         self._log_system_info()
         self._log_memory_status()
-        print("⏳ Loading model (may take 2-6 minutes for large models)...")
+        print("[LOADING] Loading model (may take 2-6 minutes for large models)...")
         
         try:
             # CRITICAL: fp8_scaled models require ComfyUI's automatic scaling detection
@@ -143,43 +178,62 @@ class ROCmDiffusionLoader:
                 model_options = {}
                 if weight_dtype == "fp8_e4m3fn":
                     model_options["dtype"] = torch.float8_e4m3fn
-                    print(f"🔧 Using FP8 E4M3FN precision (explicit)")
+                    print(f"[CONFIG] Using FP8 E4M3FN precision (explicit)")
                 elif weight_dtype == "fp8_e5m2":
                     model_options["dtype"] = torch.float8_e5m2
-                    print(f"🔧 Using FP8 E5M2 precision (explicit)")
+                    print(f"[CONFIG] Using FP8 E5M2 precision (explicit)")
             
             if is_fp8_scaled and weight_dtype != "default":
-                print(f"⚠️  WARNING: fp8_scaled models require 'default' dtype for automatic scaling")
+                print(f"[WARNING] fp8_scaled models require 'default' dtype for automatic scaling")
                 print(f"   Ignoring explicit dtype setting - using ComfyUI auto-detection")
                 # Clear model_options to let ComfyUI auto-detect (empty dict allows auto-detection)
                 model_options = {}
             
-            # Use ComfyUI's native loader - ALWAYS pass model_options (matches native behavior)
-            # For fp8_scaled models with "default" dtype, model_options is {} (empty dict)
-            # which allows ComfyUI to auto-detect the scaling mechanism
-            model = comfy.sd.load_diffusion_model(unet_path, model_options=model_options)
+            # PyTorch 2.0+ fix: GGUF files need weights_only=False
+            # Temporarily patch torch.load for GGUF files to handle PyTorch 2.0+ default change
+            original_torch_load = None
+            if is_gguf:
+                print("[CONFIG] GGUF file detected - applying PyTorch 2.0+ compatibility fix")
+                original_torch_load = torch.load
+                
+                def patched_torch_load(*args, **kwargs):
+                    # Force weights_only=False for GGUF files
+                    kwargs['weights_only'] = False
+                    return original_torch_load(*args, **kwargs)
+                
+                torch.load = patched_torch_load
+            
+            try:
+                # Use ComfyUI's native loader - ALWAYS pass model_options (matches native behavior)
+                # For fp8_scaled models with "default" dtype, model_options is {} (empty dict)
+                # which allows ComfyUI to auto-detect the scaling mechanism
+                model = comfy.sd.load_diffusion_model(unet_path, model_options=model_options)
+            finally:
+                # Restore original torch.load
+                if original_torch_load is not None:
+                    torch.load = original_torch_load
             
             if is_fp8_scaled:
-                print("🔧 ComfyUI auto-detected fp8_scaled precision and scaling")
+                print("[CONFIG] ComfyUI auto-detected fp8_scaled precision and scaling")
             
             # Validate output
             if model is None:
                 raise ValueError(f"Diffusion model loading returned None for: {unet_name}")
             
-            print("✅ Diffusion model loaded successfully")
+            print("[SUCCESS] Diffusion model loaded successfully")
             self._log_memory_status()
             
             return (model,)
             
         except torch.cuda.OutOfMemoryError as e:
-            print(f"\n❌ GPU Out of Memory Error")
+            print(f"\n[ERROR] GPU Out of Memory Error")
             print(f"Error: {e}")
             self._log_memory_status()
             self._suggest_solutions()
             raise
         
         except Exception as e:
-            print(f"\n❌ Diffusion model loading failed: {e}")
+            print(f"\n[ERROR] Diffusion model loading failed: {e}")
             print(f"Model: {unet_name}")
             print(f"Path: {unet_path}")
             print(f"Path exists: {os.path.exists(unet_path)}")
@@ -190,21 +244,21 @@ class ROCmDiffusionLoader:
         try:
             if torch.cuda.is_available():
                 device_name = torch.cuda.get_device_name(0)
-                print(f"🖥️  GPU: {device_name}")
+                print(f"[GPU] GPU: {device_name}")
                 
                 # Check for AMD/ROCm
                 is_amd = "AMD" in device_name or "Radeon" in device_name
                 if is_amd:
-                    print("🔧 ROCm backend detected")
+                    print("[CONFIG] ROCm backend detected")
                     # Check ROCm version if available
                     if hasattr(torch.version, 'hip') and torch.version.hip:
                         print(f"   ROCm version: {torch.version.hip}")
                 else:
-                    print("ℹ️  Non-AMD GPU detected")
+                    print("[INFO] Non-AMD GPU detected")
             else:
-                print("ℹ️  CUDA not available - using CPU")
+                print("[INFO] CUDA not available - using CPU")
         except Exception as e:
-            print(f"⚠️  GPU detection failed: {e}")
+            print(f"[WARNING] GPU detection failed: {e}")
     
     def _log_memory_status(self) -> None:
         """Log current memory usage (helpful for debugging OOM)"""
@@ -215,19 +269,19 @@ class ROCmDiffusionLoader:
                 reserved = torch.cuda.memory_reserved(0) / 1024**3
                 free = total - allocated
                 
-                print(f"📊 Memory: {allocated:.2f}GB used / {total:.2f}GB total ({free:.2f}GB free)")
+                print(f"[MEMORY] Memory: {allocated:.2f}GB used / {total:.2f}GB total ({free:.2f}GB free)")
                 
                 # Warn about high fragmentation
                 fragmentation = reserved - allocated
                 if fragmentation > 0.5:  # 500MB
-                    print(f"⚠️  Memory fragmentation detected: {fragmentation:.2f}GB")
-                    print(f"💡 Consider restarting ComfyUI to clear fragmentation")
+                    print(f"[WARNING] Memory fragmentation detected: {fragmentation:.2f}GB")
+                    print(f"[INFO] Consider restarting ComfyUI to clear fragmentation")
         except Exception:
             pass  # Silent failure for diagnostics
     
     def _suggest_solutions(self) -> None:
         """Suggest solutions for OOM errors"""
-        print("\n💡 Possible solutions:")
+        print("\n[INFO] Possible solutions:")
         print("   1. Run ComfyUI with --cache-none flag (disables model caching)")
         print("   2. Restart ComfyUI to clear all GPU memory")
         print("   3. Close other applications using GPU memory")
