@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.0.5] - 2025-01-XX
+
+### Fixed
+- **Windows Console Encoding Error**: Fixed UnicodeEncodeError in install.py on Windows
+  - Windows console (cp1252 encoding) cannot display emoji characters
+  - Added `safe_print()` function with automatic emoji fallbacks for Windows
+  - Emojis are replaced with ASCII alternatives: `[OK]`, `[ERROR]`, `[WARNING]`
+  - Issue reported by u/x5nder on Reddit - thank you for the bug report!
+
+### Technical Details
+- Detects Windows console encoding (cp1252, cp850, cp437) and replaces emojis proactively
+- Falls back to emoji replacement if UnicodeEncodeError occurs during printing
+- All print statements in install.py now use safe_print() for cross-platform compatibility
+
 ## [2.0.4] - 2025-01-XX
 
 ### Fixed
