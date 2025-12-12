@@ -26,7 +26,8 @@ class ROCmDiffusionLoader:
     - Provides ROCm-specific diagnostics and validation
     - Detects quantized models for compatibility warnings
     - No aggressive memory cleanup (prevents fragmentation)
-    - Supports multiple model formats: .safetensors, .gguf, .ckpt, .pt, .pth, .bin, .onnx
+    - Supports PyTorch model formats: .safetensors, .ckpt, .pt, .pth, .bin, .onnx
+    - Note: For GGUF files, use the ROCm GGUF Loader node instead
     
     Designed for:
     - PyTorch 2.7+ with ROCm 6.4+
@@ -35,8 +36,9 @@ class ROCmDiffusionLoader:
     - WAN, Flux, and other diffusion models
     """
     
-    # Supported model file extensions
-    MODEL_EXTENSIONS = {".safetensors", ".gguf", ".ckpt", ".pt", ".pth", ".bin", ".onnx"}
+    # Supported model file extensions (PyTorch formats only)
+    # GGUF files should use ROCmGGUFLoader instead
+    MODEL_EXTENSIONS = {".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx"}
     
     @classmethod
     def _get_model_files(cls) -> List[str]:
@@ -102,7 +104,7 @@ class ROCmDiffusionLoader:
         return {
             "required": {
                 "unet_name": (cls._get_model_files(), {
-                    "tooltip": "Diffusion model file to load (supports .safetensors, .gguf, .ckpt, .pt, .pth, .bin, .onnx)"
+                    "tooltip": "Diffusion model file to load (supports .safetensors, .ckpt, .pt, .pth, .bin, .onnx). For GGUF files, use ROCm GGUF Loader."
                 })
             },
             "optional": {
@@ -130,7 +132,7 @@ class ROCmDiffusionLoader:
               --cache-none flag to prevent model caching issues.
         """
         # Detect quantized models from filename
-        quantized_indicators = ['fp8', 'int8', 'int4', 'quantized', 'bnb', 'gguf']
+        quantized_indicators = ['fp8', 'int8', 'int4', 'quantized', 'bnb']
         unet_name_lower = unet_name.lower()
         is_quantized = any(indicator in unet_name_lower for indicator in quantized_indicators)
         
@@ -150,9 +152,6 @@ class ROCmDiffusionLoader:
         
         if unet_path is None:
             raise FileNotFoundError(f"Could not find model '{unet_name}' in any of: {', '.join(folder_names)}")
-        
-        # Check if this is a GGUF file (needs special handling for PyTorch 2.0+ weights_only)
-        is_gguf = unet_name.lower().endswith('.gguf')
         
         # Log diagnostics (non-intrusive)
         print(f"\n[LOADING] Loading diffusion model: {unet_name}")
@@ -189,29 +188,10 @@ class ROCmDiffusionLoader:
                 # Clear model_options to let ComfyUI auto-detect (empty dict allows auto-detection)
                 model_options = {}
             
-            # PyTorch 2.0+ fix: GGUF files need weights_only=False
-            # Temporarily patch torch.load for GGUF files to handle PyTorch 2.0+ default change
-            original_torch_load = None
-            if is_gguf:
-                print("[CONFIG] GGUF file detected - applying PyTorch 2.0+ compatibility fix")
-                original_torch_load = torch.load
-                
-                def patched_torch_load(*args, **kwargs):
-                    # Force weights_only=False for GGUF files
-                    kwargs['weights_only'] = False
-                    return original_torch_load(*args, **kwargs)
-                
-                torch.load = patched_torch_load
-            
-            try:
-                # Use ComfyUI's native loader - ALWAYS pass model_options (matches native behavior)
-                # For fp8_scaled models with "default" dtype, model_options is {} (empty dict)
-                # which allows ComfyUI to auto-detect the scaling mechanism
-                model = comfy.sd.load_diffusion_model(unet_path, model_options=model_options)
-            finally:
-                # Restore original torch.load
-                if original_torch_load is not None:
-                    torch.load = original_torch_load
+            # Use ComfyUI's native loader - ALWAYS pass model_options (matches native behavior)
+            # For fp8_scaled models with "default" dtype, model_options is {} (empty dict)
+            # which allows ComfyUI to auto-detect the scaling mechanism
+            model = comfy.sd.load_diffusion_model(unet_path, model_options=model_options)
             
             if is_fp8_scaled:
                 print("[CONFIG] ComfyUI auto-detected fp8_scaled precision and scaling")

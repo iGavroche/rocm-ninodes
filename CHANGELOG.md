@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.0.7] - 2025-01-XX
+
+### Added
+- **Complete GGUF Dequantization Support**: Implemented full on-the-fly dequantization for GGUF models
+  - Added dequantization functions for Q8_0, Q4_0, Q4_1, Q5_0, Q5_1, and BF16 quantization types
+  - Implemented `get_weight()` method that dequantizes tensors before PyTorch operations
+  - Implemented `cast_bias_weight()` method for proper dtype/device casting with dequantization
+  - Added `forward_comfy_cast_weights()` that routes to dequantization path for all ROCmGGMLTensor objects
+  - Based on City96's ComfyUI-GGUF implementation, optimized for ROCm/gfx1151
+
+### Fixed
+- **GGUF Model Runtime Error**: Fixed "Multiple dispatch failed for torch.nn.linear" error
+  - Issue occurred because ROCmGGMLTensor (custom tensor subclass) was being passed directly to PyTorch operations
+  - Now all ROCmGGMLTensor objects (quantized and non-quantized) are properly converted to regular torch.Tensor before operations
+  - Ensures F32/F16 tensors wrapped in ROCmGGMLTensor are also converted, not just quantized tensors
+  - Fixes model loading and sampling for GGUF models (e.g., flux1-dev-Q8_0.gguf)
+
+### Technical Details
+- Added dequantization utility functions: `dequantize_tensor()`, `dequantize()`, and block-level dequantization functions
+- Implemented lazy dequantization: tensors stay quantized in memory until needed during forward passes
+- Added LoRA patch support in `get_weight()` for compatibility with ComfyUI's LoRA system
+- Added VRAM estimation support via `ggml_save_to_state_dict()` for memory planning
+- All ROCmGGMLTensor objects are now properly handled, ensuring PyTorch operations work correctly
+
 ## [2.0.6] - 2025-01-XX
 
 ### Fixed

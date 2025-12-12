@@ -26,6 +26,10 @@ from .core.unet_loader import (
     ROCmDiffusionLoader,
 )
 
+from .core.gguf_loader import (
+    ROCmGGUFLoader,
+)
+
 from .core.lora import (
     ROCMLoRALoader,
 )
@@ -39,6 +43,7 @@ from .core.monitors import (
 NODE_CLASS_MAPPINGS = {
     "ROCMOptimizedCheckpointLoader": ROCMOptimizedCheckpointLoader,
     "ROCmDiffusionLoader": ROCmDiffusionLoader,
+    "ROCmGGUFLoader": ROCmGGUFLoader,
     "ROCMOptimizedVAEDecode": ROCMOptimizedVAEDecode,
     "ROCMOptimizedVAEDecodeTiled": ROCMOptimizedVAEDecodeTiled,
     "ROCMVAEPerformanceMonitor": ROCMVAEPerformanceMonitor,
@@ -54,6 +59,7 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMOptimizedCheckpointLoader": "ROCm Checkpoint Loader",
     "ROCmDiffusionLoader": "ROCm Diffusion Loader",
+    "ROCmGGUFLoader": "ROCm GGUF Loader",
     "ROCMOptimizedVAEDecode": "ROCm VAE Decode",
     "ROCMOptimizedVAEDecodeTiled": "ROCm VAE Decode Tiled", 
     "ROCMVAEPerformanceMonitor": "ROCm VAE Performance Monitor",

@@ -1,6 +1,6 @@
 {
   "name": "rocm-ninodes",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "description": "ROCM-optimized ComfyUI nodes for AMD GPU performance",
   "author": "Nino",
   "email": "nino2k@proton.me",
@@ -25,11 +25,13 @@
     "display_name": "RocM Ninodes",
     "description": "ROCM-optimized nodes for AMD GPU performance",
     "author": "Nino",
-    "version": "2.0.6",
+    "version": "2.0.7",
     "category": "Optimization",
     "tags": ["rocm", "amd", "gpu", "optimization", "vae", "sampling"],
     "nodes": [
       "ROCMOptimizedCheckpointLoader",
+      "ROCmDiffusionLoader",
+      "ROCmGGUFLoader",
       "ROCMOptimizedVAEDecode",
       "ROCMOptimizedVAEDecodeTiled", 
       "ROCMVAEPerformanceMonitor",
