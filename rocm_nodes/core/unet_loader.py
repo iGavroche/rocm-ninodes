@@ -10,7 +10,7 @@ ComfyUI's native memory management while providing ROCm-specific diagnostics.
 """
 
 import os
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 
 import torch
 import comfy.sd
@@ -26,6 +26,7 @@ class ROCmDiffusionLoader:
     - Provides ROCm-specific diagnostics and validation
     - Detects quantized models for compatibility warnings
     - No aggressive memory cleanup (prevents fragmentation)
+    - Supports multiple model formats: .safetensors, .gguf, .ckpt, .pt, .pth, .bin, .onnx
     
     Designed for:
     - PyTorch 2.7+ with ROCm 6.4+
@@ -34,12 +35,52 @@ class ROCmDiffusionLoader:
     - WAN, Flux, and other diffusion models
     """
     
+    # Supported model file extensions
+    MODEL_EXTENSIONS = {".safetensors", ".gguf", ".ckpt", ".pt", ".pth", ".bin", ".onnx"}
+    
+    @classmethod
+    def _get_model_files(cls) -> List[str]:
+        """
+        Get all model files from the diffusion_models folder with supported extensions.
+        
+        This includes .safetensors, .gguf, .ckpt, .pt, .pth, .bin, and .onnx files.
+        """
+        model_files = []
+        try:
+            # Get the diffusion_models folder path
+            model_paths = folder_paths.get_folder_paths("diffusion_models")
+            if not model_paths:
+                return []
+            
+            # Scan all diffusion_models folders (user can have multiple)
+            for model_path in model_paths:
+                if not os.path.exists(model_path):
+                    continue
+                
+                # List all files in the directory
+                for filename in os.listdir(model_path):
+                    file_path = os.path.join(model_path, filename)
+                    # Only include files (not directories) with supported extensions
+                    if os.path.isfile(file_path):
+                        _, ext = os.path.splitext(filename.lower())
+                        if ext in cls.MODEL_EXTENSIONS:
+                            model_files.append(filename)
+            
+            # Remove duplicates and sort
+            model_files = sorted(list(set(model_files)))
+            return model_files
+        except Exception as e:
+            # Fallback to ComfyUI's default if our scan fails
+            print(f"⚠️  Warning: Could not scan diffusion_models folder: {e}")
+            print("   Falling back to ComfyUI's default file list")
+            return folder_paths.get_filename_list("diffusion_models")
+    
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "unet_name": (folder_paths.get_filename_list("diffusion_models"), {
-                    "tooltip": "Diffusion model file to load"
+                "unet_name": (cls._get_model_files(), {
+                    "tooltip": "Diffusion model file to load (supports .safetensors, .gguf, .ckpt, .pt, .pth, .bin, .onnx)"
                 })
             },
             "optional": {

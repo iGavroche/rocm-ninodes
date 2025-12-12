@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.0.4] - 2025-01-XX
+
+### Fixed
+- **Diffusion Model Loader File Format Support**: Fixed ROCm Diffusion Model loader to accept multiple file formats
+  - Previously only accepted `.safetensors` files
+  - Now supports `.safetensors`, `.gguf`, `.ckpt`, `.pt`, `.pth`, `.bin`, and `.onnx` formats
+  - Custom file scanner replaces ComfyUI's default filter that was too restrictive
+  - Issue reported by u/x5nder on Reddit - thank you for the bug report!
+
+### Technical Details
+- Added `_get_model_files()` method that scans `diffusion_models` folder for all supported extensions
+- Falls back to ComfyUI's default file list if custom scanning fails
+- Updated documentation to reflect multi-format support
+
 ## [2.0.3] - 2025-01-XX
 
 ### Fixed
