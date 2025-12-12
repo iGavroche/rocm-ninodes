@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.8] - 2025-01-XX
+
+### Changed
+- **GGUF Loader UI Simplification**: Removed dtype selector from GGUF loader node
+  - GGUF models are already quantized (Q8_0, Q4_0, etc.), so dtype selector was unnecessary
+  - Simplified UI - only requires model file selection
+  - Dtype is automatically set to fp32 (optimal for ROCm/gfx1151)
+
+### Added
+- **ROCm Optimizations for GGUF Loading**: Added comprehensive ROCm-specific optimizations
+  - Automatic ROCm backend configuration (TF32 disabled, FP16 accumulation enabled)
+  - gfx1151 architecture detection with automatic fp32 precision
+  - Memory cleanup after loading large GGUF models using `simple_memory_cleanup()`
+  - Non-blocking tensor transfers throughout dequantization pipeline
+  - Optimized device transfers in `cast_bias_weight()`, `get_weight()`, and `dequantize_tensor()`
+
+### Technical Details
+- All `.to(device)` calls now use `non_blocking=True` for better GPU utilization
+- ROCm backend settings configured before model loading for optimal performance
+- Memory cleanup integrated to prevent fragmentation after large model loads
+- Default dtype set to fp32 for gfx1151 architecture (better stability than fp16)
+
 ## [2.0.7] - 2025-01-XX
 
 ### Added

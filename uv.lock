@@ -173,7 +173,7 @@ wheels = [
 
 [[package]]
 name = "rocm-ninodes"
-version = "2.0.6"
+version = "2.0.7"
 source = { virtual = "." }
 dependencies = [
     { name = "gguf" },

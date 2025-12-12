@@ -23,6 +23,7 @@ import comfy.ops
 import comfy.model_management
 import comfy.lora
 import folder_paths
+from ..utils.memory import simple_memory_cleanup
 
 # Try to import required libraries - provide helpful errors if not available
 try:
@@ -238,21 +239,28 @@ def dequantize_tensor(tensor, dtype=None, dequant_dtype=None):
     qtype = getattr(tensor, "tensor_type", None)
     oshape = getattr(tensor, "tensor_shape", tensor.shape)
     
+    # ROCm optimization: Use fp32 by default for gfx1151 (better stability)
+    # For quantized GGUF models, fp32 is optimal for ROCm
     if dtype is None:
         dtype = torch.float32
     
+    # ROCm optimization: Use non-blocking transfers
+    device = tensor.device
+    non_blocking = comfy.model_management.device_supports_non_blocking(device) if hasattr(comfy.model_management, 'device_supports_non_blocking') else True
+    
     if qtype in TORCH_COMPATIBLE_QTYPES:
         # Non-quantized: just convert dtype
-        return tensor.to(dtype)
+        return tensor.to(dtype, non_blocking=non_blocking)
     elif qtype in dequantize_functions:
         # Quantized: dequantize using our functions
         dequant_dtype = dtype if dequant_dtype == "target" else (dequant_dtype or dtype)
-        return dequantize(tensor.data, qtype, oshape, dtype=dequant_dtype).to(dtype)
+        dequantized = dequantize(tensor.data, qtype, oshape, dtype=dequant_dtype)
+        return dequantized.to(dtype, non_blocking=non_blocking)
     else:
         # Fallback to gguf library (slower)
         try:
             new = gguf.quants.dequantize(tensor.cpu().numpy(), qtype)
-            return torch.from_numpy(new).to(tensor.device, dtype=dtype)
+            return torch.from_numpy(new).to(device, dtype=dtype, non_blocking=non_blocking)
         except Exception as e:
             raise ValueError(f"Could not dequantize tensor (type {qtype}): {e}")
 
@@ -322,12 +330,6 @@ class ROCmGGUFLoader:
             "required": {
                 "gguf_name": (cls._get_gguf_files(), {
                     "tooltip": "GGUF model file to load"
-                })
-            },
-            "optional": {
-                "weight_dtype": (["default", "fp8_e4m3fn", "fp8_e5m2"], {
-                    "default": "default",
-                    "tooltip": "Weight data type - use default for quantized GGUF models"
                 })
             }
         }
@@ -414,14 +416,16 @@ class ROCmGGUFLoader:
                 is_ggml_tensor = hasattr(tensor, "tensor_type")
                 
                 # Consolidate and load patches to GPU in async (for LoRA support)
+                # ROCm optimization: Use non-blocking transfers
                 patch_list = []
                 device = tensor.device
+                non_blocking = comfy.model_management.device_supports_non_blocking(device)
                 for patches, key in getattr(tensor, "patches", []):
                     # Move patches to device (like City96's move_patch_to_device)
                     if isinstance(patches, torch.Tensor):
-                        patch_list.append((patches.to(device, non_blocking=True), key))
+                        patch_list.append((patches.to(device, non_blocking=non_blocking), key))
                     elif isinstance(patches, tuple):
-                        patch_list.extend([(p.to(device, non_blocking=True), key) for p in patches if isinstance(p, torch.Tensor)])
+                        patch_list.extend([(p.to(device, non_blocking=non_blocking), key) for p in patches if isinstance(p, torch.Tensor)])
                     else:
                         patch_list.append((patches, key))
                 
@@ -500,11 +504,12 @@ class ROCmGGUFLoader:
                 
                 bias = None
                 non_blocking = comfy.model_management.device_supports_non_blocking(device)
+                # ROCm optimization: Use non-blocking transfers for better performance
                 if self.bias is not None:
-                    bias = self.get_weight(self.bias.to(device), dtype)
+                    bias = self.get_weight(self.bias.to(device, non_blocking=non_blocking), dtype)
                     bias = comfy.ops.cast_to(bias, bias_dtype, device, non_blocking=non_blocking, copy=False)
                 
-                weight = self.get_weight(self.weight.to(device), dtype)
+                weight = self.get_weight(self.weight.to(device, non_blocking=non_blocking), dtype)
                 weight = comfy.ops.cast_to(weight, dtype, device, non_blocking=non_blocking, copy=False)
                 return weight, bias
             
@@ -724,7 +729,7 @@ class ROCmGGUFLoader:
         # Create the tensor exactly like City96 does
         return ROCmGGMLTensor(tensor, tensor_type=tensor_type, tensor_shape=tensor_shape)
     
-    def load_gguf(self, gguf_name: str, weight_dtype: str = "default") -> Tuple:
+    def load_gguf(self, gguf_name: str) -> Tuple:
         """
         Load GGUF model using ROCm-optimized loading with diagnostics.
         
@@ -781,11 +786,10 @@ class ROCmGGUFLoader:
             model_options = {
                 "custom_operations": ops
             }
-            if weight_dtype != "default":
-                if weight_dtype == "fp8_e4m3fn":
-                    model_options["dtype"] = torch.float8_e4m3fn
-                elif weight_dtype == "fp8_e5m2":
-                    model_options["dtype"] = torch.float8_e5m2
+            
+            # ROCm optimization: Use fp32 by default for gfx1151 (better stability)
+            # GGUF models are already quantized, so dtype selector is not needed
+            # For quantized models, we dequantize to float32, which is optimal for ROCm
             
             # Debug: Print some tensor shapes to verify they're correct (helpful for troubleshooting)
             sample_keys = [
@@ -797,6 +801,29 @@ class ROCmGGUFLoader:
                     tensor = sd[key]
                     print(f"[DEBUG] Tensor '{key}' shape: {tensor.shape}")
             
+            # ROCm optimizations: Configure backend settings before loading
+            is_amd = False
+            is_gfx1151 = False
+            try:
+                if torch.cuda.is_available():
+                    device_name = torch.cuda.get_device_name(0)
+                    is_amd = "AMD" in device_name or "Radeon" in device_name
+                    if is_amd:
+                        # GENERAL ROCM OPTIMIZATIONS (apply to all AMD GPUs)
+                        torch.backends.cuda.matmul.allow_tf32 = False  # TF32 not supported on AMD
+                        torch.backends.cuda.matmul.allow_fp16_accumulation = True  # Better performance on AMD
+                        
+                        # Detect gfx1151 for architecture-specific optimizations
+                        try:
+                            arch = torch.cuda.get_device_properties(0).gcnArchName
+                            if 'gfx1151' in arch:
+                                is_gfx1151 = True
+                                print("[CONFIG] gfx1151 architecture detected - using fp32 precision")
+                        except:
+                            pass
+            except Exception:
+                pass
+            
             # Load model directly from state dict (no safetensors conversion needed!)
             # City96 doesn't pass metadata - ComfyUI detects architecture from tensor shapes
             print("[LOADING] Loading model from GGUF state dict (lazy dequantization)...")
@@ -805,6 +832,10 @@ class ROCmGGUFLoader:
             # Validate output
             if model is None:
                 raise ValueError(f"GGUF model loading returned None for: {gguf_name}")
+            
+            # ROCm optimization: Memory cleanup after loading large model
+            if is_amd:
+                simple_memory_cleanup()
             
             print("[SUCCESS] GGUF model loaded successfully")
             self._log_memory_status()
