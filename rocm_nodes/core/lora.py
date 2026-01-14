@@ -9,7 +9,8 @@ from typing import Tuple, Optional
 
 import torch
 import folder_paths
-from comfy.lora import load_lora
+import comfy.utils
+import comfy.sd
 
 # Import utilities
 from ..utils.memory import gentle_memory_cleanup
@@ -82,25 +83,16 @@ class ROCMLoRALoader:
             if torch.cuda.is_available():
                 gentle_memory_cleanup()
             
-            # Load the LoRA
-            # ComfyUI's load_lora requires 'to_load' parameter specifying which components to load
-            to_load = {}
-            if model is not None:
-                to_load["model"] = True
-            if clip is not None:
-                to_load["clip"] = True
-            
-            # If no components specified, load both by default
-            if not to_load:
-                to_load = {"model": True, "clip": True}
-            
-            lora = load_lora(lora_path, to_load)
+            # Load the LoRA using ComfyUI's native pattern (matches nodes.py LoadLoRA)
+            # Step 1: Load the LoRA file as a dictionary
+            lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
             
             if torch.cuda.is_available():
                 gentle_memory_cleanup()
             
-            # Apply LoRA to model
-            model_lora, clip_lora = lora.apply_to_model(model, clip, strength_model, strength_clip)
+            # Step 2: Apply LoRA to model using ComfyUI's native function
+            # This matches ComfyUI's LoadLoRA node exactly
+            model_lora, clip_lora = comfy.sd.load_lora_for_models(model, clip, lora, strength_model, strength_clip)
             
             # Post-loading cleanup
             if torch.cuda.is_available():

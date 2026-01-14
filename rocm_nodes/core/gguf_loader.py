@@ -64,8 +64,17 @@ try:
                         spec.loader.exec_module(gguf_dequant)
                         is_quantized = gguf_dequant.is_quantized
                         
-                        CITY96_GGUF_AVAILABLE = True
-                        print("[INFO] Using City96's ComfyUI-GGUF implementation (recommended)")
+                        # Import nodes.py for GGUFModelPatcher
+                        spec = importlib.util.spec_from_file_location("gguf_nodes", os.path.join(gguf_path, "nodes.py"))
+                        if spec and spec.loader:
+                            gguf_nodes = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(gguf_nodes)
+                            GGUFModelPatcher = gguf_nodes.GGUFModelPatcher
+                            
+                            CITY96_GGUF_AVAILABLE = True
+                            print("[INFO] Using City96's ComfyUI-GGUF implementation (recommended)")
+                        else:
+                            CITY96_GGUF_AVAILABLE = False
                     else:
                         CITY96_GGUF_AVAILABLE = False
                 else:
@@ -576,6 +585,11 @@ class ROCmGGUFLoader:
         
         reader = gguf.GGUFReader(file_path)
         
+        # Architecture lists (matches City96's constants)
+        IMG_ARCH_LIST = {"flux", "sd1", "sdxl", "sd3", "aura", "hidream", "cosmos", "ltxv", "hyvid", "wan", "lumina2", "qwen_image"}
+        TXT_ARCH_LIST = {"t5", "t5encoder", "llama", "qwen2vl", "qwen3"}
+        VIS_TYPE_LIST = {"clip-vision", "mmproj"}
+        
         # Filter and strip prefix
         has_prefix = False
         if handle_prefix:
@@ -592,7 +606,34 @@ class ROCmGGUFLoader:
                 sd_key = tensor_name[prefix_len:]
             tensors.append((sd_key, tensor))
         
+        # Detect and verify architecture (matches City96 lines 73-94)
+        compat = None
+        arch_str = self._get_field(reader, "general.architecture", str)
+        type_str = self._get_field(reader, "general.type", str)
+        is_text_model = False  # We're loading diffusion models, not text models
+        
+        if arch_str in [None, "pig"]:
+            if is_text_model:
+                raise ValueError(f"This text model is incompatible with llama.cpp!\nConsider using the safetensors version\n({file_path})")
+            compat = "sd.cpp" if arch_str is None else arch_str
+            # Import here to avoid changes to convert.py breaking regular models
+            # For now, skip detect_arch import - we'll handle architecture detection differently
+            # If needed, we can add it later
+            if compat:
+                print(f"[WARNING] GGUF model file loaded in compatibility mode '{compat}' [arch:{arch_str}]")
+        elif arch_str not in TXT_ARCH_LIST and is_text_model:
+            if type_str not in VIS_TYPE_LIST:
+                raise ValueError(f"Unexpected text model architecture type in GGUF file: {arch_str!r}")
+        elif arch_str not in IMG_ARCH_LIST and not is_text_model:
+            # For diffusion models, validate architecture
+            if arch_str and arch_str not in IMG_ARCH_LIST:
+                print(f"[WARNING] Unknown image architecture '{arch_str}' in GGUF file - proceeding anyway")
+        
+        if compat:
+            print(f"[WARNING] This gguf model file is loaded in compatibility mode '{compat}' [arch:{arch_str}]")
+        
         # Main loading loop - create GGMLTensor objects (wraps raw data, no dequantization)
+        # Match City96's approach exactly - don't try to "fix" shapes
         state_dict = {}
         qtype_dict = {}
         
@@ -605,20 +646,81 @@ class ROCmGGUFLoader:
                 warnings.filterwarnings("ignore", message="The given NumPy array is not writable")
                 torch_tensor = torch.from_numpy(tensor.data)  # memmap - very memory efficient
             
-            # Get shape - exactly like City96's get_orig_shape() function
+            # Get shape - exactly like City96's get_orig_shape() function (line 108)
             shape = self._get_orig_shape(reader, tensor_name)
+            shape_source = "orig_shape_metadata" if shape is not None else None
+            
             if shape is None:
-                # GGUF stores shapes in reverse order (C-style), PyTorch uses F-style
-                # Reverse the shape to match PyTorch's expected format
+                # Fallback: GGUF stores shapes in reverse order (C-style), PyTorch uses F-style
+                # Match City96's approach exactly (line 110)
                 shape = torch.Size(tuple(int(v) for v in reversed(tensor.shape)))
+                shape_source = "reversed_tensor.shape"
+                
+                # Match City96's approach exactly - no special handling for data shape
+                # City96 uses reversed(tensor.shape) and that's it
+                
+                # Workaround for stable-diffusion.cpp SDXL detection (City96 lines 112-115)
+                if compat == "sd.cpp" and arch_str == "sdxl":
+                    if any([tensor_name.endswith(x) for x in (".proj_in.weight", ".proj_out.weight")]):
+                        while len(shape) > 2 and shape[-1] == 1:
+                            shape = shape[:-1]
+                        shape_source = "reversed_tensor.shape_sdxl_fix"
             
-            # CRITICAL: Wrap ALL tensors in ROCmGGMLTensor (like City96 wraps all in GGMLTensor)
-            # This ensures consistent shape handling for ComfyUI's architecture detection
+            # Debug: Log shape reading for critical tensors (especially those that cause LoRA mismatches)
+            # CRITICAL: Also check img_in.weight and txt_in.weight - ComfyUI uses these for hidden_size detection!
+            # Check both tensor_name (full name) and sd_key (name without prefix) for matching
+            debug_tensors = [
+                "img_in.weight",  # ComfyUI reads hidden_size from this (line 237)
+                "txt_in.weight",  # ComfyUI reads hidden_size from this (line 243)
+                "single_blocks.0.linear1.weight",
+                "double_blocks.0.img_mod.lin.weight",
+                "double_blocks.0.txt_attn.proj.weight",
+                "double_blocks.0.img_attn.proj.weight",
+                "double_blocks.0.txt_attn.qkv.weight",
+                "double_blocks.0.img_attn.qkv.weight"
+            ]
+            # Check both full tensor_name and sd_key (without prefix) for debug matching
+            should_debug = any(debug_name in tensor_name for debug_name in debug_tensors) or any(debug_name in sd_key for debug_name in debug_tensors)
+            if should_debug:
+                is_quantized = tensor.tensor_type not in {gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16}
+                print(f"[DEBUG] Tensor '{tensor_name}' (sd_key='{sd_key}'):")
+                print(f"[DEBUG]   Final shape={shape} (source: {shape_source})")
+                print(f"[DEBUG]   tensor_type={tensor.tensor_type} (quantized={is_quantized})")
+                # Check orig_shape metadata lookup
+                orig_shape_field_key = f"comfy.gguf.orig_shape.{tensor_name}"
+                orig_shape_field = reader.get_field(orig_shape_field_key)
+                print(f"[DEBUG]   orig_shape metadata lookup: field_key='{orig_shape_field_key}', found={orig_shape_field is not None}")
+                if hasattr(tensor, 'data') and tensor.data is not None:
+                    print(f"[DEBUG]   tensor.data.shape={tensor.data.shape}")
+                    print(f"[DEBUG]   tensor.data.size={tensor.data.size}")
+                    print(f"[DEBUG]   GGUF tensor.shape={tensor.shape} (reversed={tuple(reversed(tensor.shape))})")
+                    # For quantized tensors, calculate dequantized elements
+                    if is_quantized:
+                        block_size, type_size = gguf.GGML_QUANT_SIZES.get(tensor.tensor_type, (1, 1))
+                        data_size_bytes = tensor.data.nbytes if hasattr(tensor.data, 'nbytes') else tensor.data.size * tensor.data.itemsize
+                        n_blocks = data_size_bytes // type_size
+                        dequantized_elements = n_blocks * block_size
+                        elements_from_shape = 1
+                        for dim in shape:
+                            elements_from_shape *= dim
+                        print(f"[DEBUG]   Dequantized elements={dequantized_elements}, Elements from shape={elements_from_shape}")
+                        if dequantized_elements != elements_from_shape:
+                            print(f"[DEBUG]   [WARNING] Shape mismatch! Dequantized={dequantized_elements} != Shape={elements_from_shape}")
+                            # Try to infer correct shape from dequantized elements
+                            if dequantized_elements % 3264 == 0:
+                                possible_hidden = 3264
+                                other_dim = dequantized_elements // possible_hidden
+                                inferred_shape = torch.Size([possible_hidden, other_dim])
+                                print(f"[DEBUG]   [SUGGESTION] Inferred shape from dequantized elements: {inferred_shape}")
+                            elif dequantized_elements % 3072 == 0:
+                                possible_hidden = 3072
+                                other_dim = dequantized_elements // possible_hidden
+                                inferred_shape = torch.Size([possible_hidden, other_dim])
+                                print(f"[DEBUG]   [SUGGESTION] Inferred shape from dequantized elements: {inferred_shape}")
+            
+            # Match City96's approach exactly (lines 118-120)
             if tensor.tensor_type in {gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16}:
-                # Non-quantized: reshape directly, then wrap in ROCmGGMLTensor
                 torch_tensor = torch_tensor.view(*shape)
-            
-            # Always wrap in ROCmGGMLTensor (matches City96 line 120)
             state_dict[sd_key] = self._create_ggml_tensor(torch_tensor, tensor_type=tensor.tensor_type, tensor_shape=shape)
             
             # Track tensor types
@@ -645,14 +747,53 @@ class ROCmGGUFLoader:
         TORCH_COMPATIBLE_QTYPES = (None, gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16)
         return tensor_type not in TORCH_COMPATIBLE_QTYPES
     
-    def _get_orig_shape(self, reader, tensor_name: str) -> Optional[torch.Size]:
-        """Get original shape from GGUF metadata if available."""
-        field_key = f"comfy.gguf.orig_shape.{tensor_name}"
-        field = reader.get_field(field_key)
+    def _get_field(self, reader, field_name: str, field_type) -> Optional[Any]:
+        """
+        Get field from GGUF reader (matches City96's get_field function).
+        
+        Args:
+            reader: GGUFReader instance
+            field_name: Field name to retrieve
+            field_type: Expected type (str, int, float, bool)
+        
+        Returns:
+            Field value or None if not found
+        """
+        field = reader.get_field(field_name)
         if field is None:
             return None
-        if len(field.types) != 2 or field.types[0] != gguf.GGUFValueType.ARRAY or field.types[1] != gguf.GGUFValueType.INT32:
+        elif field_type == str:
+            # extra check here as this is used for checking arch string
+            if len(field.types) != 1 or field.types[0] != gguf.GGUFValueType.STRING:
+                raise TypeError(f"Bad type for GGUF {field_name} key: expected string, got {field.types!r}")
+            return str(field.parts[field.data[-1]], encoding="utf-8")
+        elif field_type in [int, float, bool]:
+            return field_type(field.parts[field.data[-1]])
+        else:
+            raise TypeError(f"Unknown field type {field_type}")
+    
+    def _get_orig_shape(self, reader, tensor_name: str) -> Optional[torch.Size]:
+        """Get original shape from GGUF metadata if available."""
+        # Try with full tensor_name (with prefix) first, matching City96
+        field_key = f"comfy.gguf.orig_shape.{tensor_name}"
+        field = reader.get_field(field_key)
+        
+        # If not found, try without prefix (in case metadata uses sd_key format)
+        if field is None and "." in tensor_name:
+            # Extract sd_key (name without prefix) and try that
+            parts = tensor_name.split(".", 1)
+            if len(parts) > 1:
+                sd_key = parts[1]  # Everything after first dot
+                field_key_no_prefix = f"comfy.gguf.orig_shape.{sd_key}"
+                field = reader.get_field(field_key_no_prefix)
+                if field is not None:
+                    field_key = field_key_no_prefix
+        
+        if field is None:
             return None
+        # Has original shape metadata, so we try to decode it.
+        if len(field.types) != 2 or field.types[0] != gguf.GGUFValueType.ARRAY or field.types[1] != gguf.GGUFValueType.INT32:
+            raise TypeError(f"Bad original shape metadata for {field_key}: Expected ARRAY of INT32, got {field.types}")
         return torch.Size(tuple(int(field.parts[part_idx][0]) for part_idx in field.data))
     
     
@@ -717,6 +858,8 @@ class ROCmGGUFLoader:
                     self.tensor_shape = self.size()
                 return self.tensor_shape
             
+            # NOTE: City96's GGMLTensor doesn't override numel()
+            # We keep it for VRAM estimation, but it should use tensor_shape
             def numel(self):
                 # Return numel based on tensor_shape (for VRAM estimation)
                 if hasattr(self, "tensor_shape"):
@@ -773,10 +916,9 @@ class ROCmGGUFLoader:
             print(f"[INFO] File size: {file_size:.2f} GB")
             
             # Load GGUF state dict with GGMLTensor wrappers (memory-efficient, no upfront dequantization)
-            # Using our ROCm-optimized implementation (based on City96's approach)
+            # Using our ROCm-optimized implementation
             print("[INFO] Using ROCm-optimized GGUF loader")
             sd = self._gguf_sd_loader(gguf_path)
-            # Create ops wrapper for lazy dequantization (we'll implement full GGMLOps later)
             ops = self._create_simple_ops()
             
             tensor_count = len(sd)
@@ -786,20 +928,6 @@ class ROCmGGUFLoader:
             model_options = {
                 "custom_operations": ops
             }
-            
-            # ROCm optimization: Use fp32 by default for gfx1151 (better stability)
-            # GGUF models are already quantized, so dtype selector is not needed
-            # For quantized models, we dequantize to float32, which is optimal for ROCm
-            
-            # Debug: Print some tensor shapes to verify they're correct (helpful for troubleshooting)
-            sample_keys = [
-                "single_blocks.0.linear1.weight", 
-                "double_blocks.0.img_mod.lin.weight"
-            ]
-            for key in sample_keys:
-                if key in sd:
-                    tensor = sd[key]
-                    print(f"[DEBUG] Tensor '{key}' shape: {tensor.shape}")
             
             # ROCm optimizations: Configure backend settings before loading
             is_amd = False
@@ -824,14 +952,17 @@ class ROCmGGUFLoader:
             except Exception:
                 pass
             
-            # Load model directly from state dict (no safetensors conversion needed!)
-            # City96 doesn't pass metadata - ComfyUI detects architecture from tensor shapes
+            # CRITICAL: Use load_diffusion_model_state_dict() instead of load_diffusion_model()
+            # This matches City96's UnetLoaderGGUF.load_unet() exactly
+            # load_diffusion_model() tries to load from file path, but we already have the state dict
             print("[LOADING] Loading model from GGUF state dict (lazy dequantization)...")
-            model = comfy.sd.load_diffusion_model_state_dict(sd, model_options=model_options)
+            model = comfy.sd.load_diffusion_model_state_dict(
+                sd, model_options=model_options
+            )
             
             # Validate output
             if model is None:
-                raise ValueError(f"GGUF model loading returned None for: {gguf_name}")
+                raise RuntimeError(f"ERROR: Could not detect model type of: {gguf_path}")
             
             # ROCm optimization: Memory cleanup after loading large model
             if is_amd:
@@ -906,4 +1037,3 @@ class ROCmGGUFLoader:
         print("   5. Load only one large model at a time")
         print("   6. Reduce batch size or image resolution")
         print("   7. Split workflow into multiple separate workflows")
-
