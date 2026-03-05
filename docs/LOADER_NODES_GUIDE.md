@@ -49,6 +49,7 @@ Output: MODEL, CLIP, VAE (all three components)
 - Automatic component detection
 - Quantized model support
 - Compatibility mode for unusual models
+- **Optional in-memory cache** for repeated API runs: when `use_cache` is True (default), the same checkpoint is not reloaded on subsequent runs; use `force_reload` to load from disk and refresh the cache. Single-slot eviction when switching checkpoints keeps RAM bounded (see [CHECKPOINT_CACHE_API.md](CHECKPOINT_CACHE_API.md)).
 
 ---
 

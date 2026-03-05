@@ -8,6 +8,7 @@ import pytest
 import torch
 import numpy as np
 from pathlib import Path
+from unittest.mock import Mock
 
 # Add ComfyUI to path
 sys.path.insert(0, '/home/nino/ComfyUI')
@@ -21,6 +22,13 @@ comfy.sd = types.ModuleType('comfy.sd')
 comfy.samplers = types.ModuleType('comfy.samplers')
 comfy.sample = types.ModuleType('comfy.sample')
 
+# Mock comfy.cli_args and latent_preview so rocm_nodes.core.vae can be imported
+comfy.cli_args = types.ModuleType('comfy.cli_args')
+comfy.cli_args.args = type('Args', (), {'preview_method': None, 'base_directory': None})()
+comfy.cli_args.LatentPreviewMethod = type('LatentPreviewMethod', (), {})
+latent_preview = types.ModuleType('latent_preview')
+latent_preview.get_previewer = lambda *args, **kwargs: None
+
 # Add modules to sys.modules BEFORE any imports
 sys.modules['comfy'] = comfy
 sys.modules['comfy.model_management'] = comfy.model_management
@@ -28,9 +36,12 @@ sys.modules['comfy.utils'] = comfy.utils
 sys.modules['comfy.sd'] = comfy.sd
 sys.modules['comfy.samplers'] = comfy.samplers
 sys.modules['comfy.sample'] = comfy.sample
+sys.modules['comfy.cli_args'] = comfy.cli_args
+sys.modules['latent_preview'] = latent_preview
 
 # Mock functions
 comfy.model_management.load_models_gpu = lambda *args, **kwargs: None
+comfy.sd.load_checkpoint_guess_config = lambda *args, **kwargs: (Mock(), Mock(), Mock())
 comfy.model_management.get_free_memory = lambda *args, **kwargs: 16 * 1024**3
 comfy.model_management.minimum_inference_memory = lambda *args, **kwargs: 8 * 1024**3
 comfy.model_management.extra_reserved_memory = lambda *args, **kwargs: 0

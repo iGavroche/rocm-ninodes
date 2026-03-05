@@ -46,3 +46,9 @@ nodes = [
     "ROCMEmergencyMemoryReset",
     "ROCMLoRALoader"
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "torch>=2.10.0",
+]
