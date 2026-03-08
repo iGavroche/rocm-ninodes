@@ -1,7 +1,7 @@
 [project]
 name = "rocm-ninodes"
 description = "ROCM Optimized Nodes for ComfyUI - High-performance VAE decode and sampling nodes specifically tuned for AMD GPUs with ROCm support, particularly targeting gfx1151 architecture"
-version = "2.0.10"
+version = "2.0.11"
 license = {file = "LICENSE"}
 dependencies = [
     "numpy>=1.20.0",
@@ -15,16 +15,16 @@ Repository = "https://github.com/iGavroche/rocm-ninodes"
 
 [tool.comfy]
 PublisherId = "igavroche"
-DisplayName = "RocM Ninodes"
+DisplayName = "ROCm Ninodes"
 Icon = "https://raw.githubusercontent.com/iGavroche/rocm-ninodes/refs/heads/main/icon.jpg"
 includes = ["nodes.py", "web/", "comfyui_manager.json"]
 requires-comfyui = ">=1.0.0"
 
 [tool.comfyui-manager]
 name = "rocm-ninodes"
-display_name = "RocM Ninodes"
-description = "ROCM Optimized Nodes for ComfyUI - High-performance VAE decode and sampling nodes specifically tuned for AMD GPUs with ROCm support"
-version = "2.0.10"
+display_name = "ROCm Ninodes"
+description = "ROCm-optimized nodes for ComfyUI: VAE decode, sampling, loaders, LTX2 prompt generation, and monitoring — tuned for AMD GPUs (gfx1151) with ROCm."
+version = "2.0.11"
 author = "iGavroche"
 author_email = "nino2k@proton.me"
 repository = "https://github.com/iGavroche/rocm-ninodes"
@@ -34,17 +34,15 @@ nodes = [
     "ROCmDiffusionLoader",
     "ROCmGGUFLoader",
     "ROCMOptimizedVAEDecode",
-    "ROCMOptimizedVAEDecodeTiled", 
+    "ROCMOptimizedVAEDecodeTiled",
     "ROCMVAEPerformanceMonitor",
     "ROCMOptimizedKSampler",
     "ROCMOptimizedKSamplerAdvanced",
-    "ROCMMemorySafeKSampler",
     "ROCMSamplerPerformanceMonitor",
     "ROCMFluxBenchmark",
     "ROCMMemoryOptimizer",
-    "ROCMMemoryDefragmenter",
-    "ROCMEmergencyMemoryReset",
-    "ROCMLoRALoader"
+    "ROCMLoRALoader",
+    "ROCmTextGenerateLTX2Prompt"
 ]
 
 [dependency-groups]

@@ -38,6 +38,7 @@ from .core.monitors import (
     ROCMFluxBenchmark,
     ROCMMemoryOptimizer,
 )
+from .core.textgen_ltx2 import ROCmTextGenerateLTX2Prompt
 
 # Define node class mappings for ComfyUI
 NODE_CLASS_MAPPINGS = {
@@ -53,6 +54,7 @@ NODE_CLASS_MAPPINGS = {
     "ROCMFluxBenchmark": ROCMFluxBenchmark,
     "ROCMMemoryOptimizer": ROCMMemoryOptimizer,
     "ROCMLoRALoader": ROCMLoRALoader,
+    "ROCmTextGenerateLTX2Prompt": ROCmTextGenerateLTX2Prompt,
 }
 
 # Define display name mappings for ComfyUI
@@ -69,6 +71,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMFluxBenchmark": "ROCm Flux Benchmark",
     "ROCMMemoryOptimizer": "ROCm Memory Optimizer",
     "ROCMLoRALoader": "ROCm LoRA Loader",
+    "ROCmTextGenerateLTX2Prompt": "ROCm Text Generate LTX2 Prompt",
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

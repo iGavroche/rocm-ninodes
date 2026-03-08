@@ -150,8 +150,7 @@ class TestPerformanceBenchmarks:
                 samples=samples,
                 tile_size=512,
                 overlap=64,
-                use_rocm_optimizations=True,
-                memory_optimization_enabled=True
+                use_rocm_optimizations=True
             )
             
             execution_time = time.time() - start_time

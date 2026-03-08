@@ -125,7 +125,6 @@ class TestROCMOptimizedVAEDecode:
                 tile_size=512,
                 overlap=64,
                 use_rocm_optimizations=True,
-                memory_optimization_enabled=memory_opt
             )
             
             assert isinstance(result, tuple)

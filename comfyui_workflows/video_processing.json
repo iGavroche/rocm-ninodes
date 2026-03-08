@@ -86,7 +86,6 @@
         "1",
         2
       ],
-      "video_chunk_size": 8,
       "temporal_consistency": true,
       "adaptive_optimization": true,
       "performance_monitoring": true

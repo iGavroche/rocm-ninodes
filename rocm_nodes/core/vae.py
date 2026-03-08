@@ -92,17 +92,6 @@ class ROCMOptimizedVAEDecode:
                 "batch_optimization": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "Enable batch processing optimizations"
-                }),
-                "video_chunk_size": ("INT", {
-                    "default": 81,
-                    "min": 1,
-                    "max": 200,
-                    "step": 1,
-                    "tooltip": "Number of video frames to process at once (memory optimization). Set to 81 or higher to process all frames without chunking."
-                }),
-                "memory_optimization_enabled": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable memory optimization for video processing"
                 })
             },
             "optional": {
@@ -119,9 +108,8 @@ class ROCMOptimizedVAEDecode:
     CATEGORY = "ROCm Ninodes/VAE"
     DESCRIPTION = "ROCM-optimized VAE Decode for AMD GPUs (gfx1151)"
     
-    def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True, 
-               precision_mode="auto", batch_optimization=True, video_chunk_size=81, 
-               memory_optimization_enabled=True, compatibility_mode=False):
+    def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True,
+               precision_mode="auto", batch_optimization=True, compatibility_mode=False):
         """
         Optimized VAE decode for ROCm/AMD GPUs with video support and quantized model compatibility
         """
@@ -169,15 +157,7 @@ class ROCMOptimizedVAEDecode:
             print("🛡️ Compatibility mode enabled - using stock ComfyUI behavior")
             use_rocm_optimizations = False
             batch_optimization = False
-            memory_optimization_enabled = False
-        
-        # CRITICAL FIX: Disable chunking for WAN VAE models to preserve causal decoding chain
-        # WAN VAE uses causal decoding with feature caching - chunking breaks the cache
-        # Native ComfyUI processes WAN VAE videos in full, so we must match that behavior
-        if is_wan_vae:
-            print("🛡️ WAN VAE detected - disabling chunking to preserve causal decoding chain")
-            memory_optimization_enabled = False  # Disable chunking for WAN models
-        
+
         # Capture input data for debugging
         if DEBUG_MODE:
             save_debug_data(samples, "vae_decode_input", "flux_1024x1024", {
@@ -186,9 +166,7 @@ class ROCMOptimizedVAEDecode:
                 'overlap': overlap,
                 'use_rocm_optimizations': use_rocm_optimizations,
                 'precision_mode': precision_mode,
-                'batch_optimization': batch_optimization,
-                'video_chunk_size': video_chunk_size,
-                'memory_optimization_enabled': memory_optimization_enabled
+                'batch_optimization': batch_optimization
             })
         
         # Get device information
@@ -220,125 +198,47 @@ class ROCMOptimizedVAEDecode:
             
             # Progress indicator for Windows users experiencing hanging
             print(f"🎬 Processing video: {T} frames, {H}x{W} resolution")
-            
-            # CRITICAL: Match ComfyUI's native behavior - don't chunk unless absolutely necessary
-            # Native ComfyUI VAE decode processes the entire video at once
-            # WAN VAE models MUST use full video processing to preserve causal decoding chain
-            # Only chunk if we absolutely must for memory reasons AND it's not a WAN VAE
+
+            # Always decode full video at once. Chunking is disabled for all temporal/causal VAEs
+            # (WAN, LTX, etc.) where it would break the decoding chain and cause artifacts.
             if is_wan_vae:
-                # WAN VAE requires full video processing - chunking breaks causal decoding
-                use_chunking = False
-                print("📹 WAN VAE detected - using full video processing (causal decoding requires full sequence)")
-            elif memory_optimization_enabled and T > video_chunk_size and T > 20:  # Only chunk for videos > 20 frames
-                use_chunking = True
-                print(f"📹 Using chunked processing: {video_chunk_size} frames per chunk")
+                print(f"🎯 Processing entire WAN VAE video at once (causal decoding): {T} frames")
+                if use_rocm_optimizations and is_amd:
+                    torch.cuda.empty_cache()
             else:
-                use_chunking = False
-                print("📹 Using non-chunked processing for optimal speed")
-            
-            if use_chunking:
-                # Process video in chunks to avoid memory exhaustion
-                # NO OVERLAP - overlaps cause stuttering in videos
-                chunk_results = []
-                num_chunks = (T + video_chunk_size - 1) // video_chunk_size
-                print(f"🔄 Processing {num_chunks} chunks (no overlap to prevent stuttering)...")
-                
-                for i in range(0, T, video_chunk_size):
-                    chunk_idx = i // video_chunk_size + 1
-                    end_idx = min(i + video_chunk_size, T)
-                    print(f"  📦 Chunk {chunk_idx}/{num_chunks}: frames {i}-{end_idx-1}")
-                    
-                    # NO OVERLAP - decode exactly the frames we need
-                    chunk_start = i
-                    chunk_end = end_idx
-                    
-                    chunk = samples["samples"][:, :, chunk_start:chunk_end, :, :]
-                    
-                    # Decode chunk
-                    with torch.no_grad():
-                        chunk_decoded = vae.decode(chunk)
-                    
-                    # VAE decode returns a tuple, extract the tensor
-                    if isinstance(chunk_decoded, tuple):
-                        chunk_decoded = chunk_decoded[0]
-                    
-                    # No cropping needed - we decoded exactly the frames we need
-                    chunk_results.append(chunk_decoded)
-                    
-                    # Clear memory after each chunk (reduced frequency to prevent fragmentation)
-                    if i % (video_chunk_size * 2) == 0:
-                        torch.cuda.empty_cache()
-                
-                # Concatenate results along temporal dimension
-                first = chunk_results[0]
-                if len(first.shape) == 5 and first.shape[1] == 3:
-                    result = torch.cat(chunk_results, dim=2)
-                elif len(first.shape) == 5 and first.shape[-1] == 3:
-                    result = torch.cat(chunk_results, dim=1)
-                else:
-                    result = torch.cat(chunk_results, dim=2)
-                
-                # Convert 5D video tensor to 4D image tensor for ComfyUI (B*T, H, W, C)
-                if len(result.shape) == 5:
-                    if result.shape[1] == 3:
-                        result = result.permute(0, 2, 3, 4, 1).contiguous()
-                        B, T, H, W, C = result.shape
-                        result = result.reshape(B * T, H, W, C)
-                    elif result.shape[-1] == 3:
-                        B, T, H, W, C = result.shape
-                        result = result.reshape(B * T, H, W, C)
-                    else:
-                        result = result.permute(0, 2, 3, 4, 1).contiguous()
-                        B, T, H, W, C = result.shape
-                        result = result.reshape(B * T, H, W, C)
-                
-                return (result,)
-            else:
-                # Process entire video at once - EXACTLY match native ComfyUI behavior
-                # Native ComfyUI: images = vae.decode(samples["samples"])
-                #              if len(images.shape) == 5: images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
-                if is_wan_vae:
-                    print(f"🎯 Processing entire WAN VAE video at once (causal decoding): {T} frames")
-                    # OPTIMIZATION: Async memory cleanup before large WAN video processing (non-blocking)
-                    if use_rocm_optimizations and is_amd:
-                        torch.cuda.empty_cache()  # Async - non-blocking, won't interfere with causal decoding
-                else:
-                    print(f"🎯 Processing entire video at once: {T} frames")
-                
-                with torch.no_grad():
-                    result = vae.decode(samples["samples"])
-                
-                # VAE decode returns a tuple, extract the tensor (ComfyUI handles this internally)
-                if isinstance(result, tuple):
-                    result = result[0]
-                
-                # Convert 5D video tensor to 4D image tensor - EXACT native ComfyUI logic
-                # Native does: images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])
-                if len(result.shape) == 5:
-                    # Match native ComfyUI reshape logic exactly
-                    result = result.reshape(-1, result.shape[-3], result.shape[-2], result.shape[-1])
-                
-                if DEBUG_MODE:
-                    end_time = time.time()
-                    save_debug_data(result, "vae_decode_output", "flux_1024x1024", {
-                        'node_type': 'ROCMOptimizedVAEDecode',
-                        'execution_time': end_time - start_time,
-                        'output_shape': result.shape,
-                        'output_dtype': str(result.dtype),
-                        'output_device': str(result.device)
-                    })
-                    capture_timing("vae_decode", start_time, end_time, {
-                        'node_type': 'ROCMOptimizedVAEDecode',
-                        'is_video': True,
-                        'video_chunks': len(chunk_results) if 'chunk_results' in locals() else 1
-                    })
-                    capture_memory_usage("vae_decode", {
-                        'node_type': 'ROCMOptimizedVAEDecode',
-                        'is_video': True
-                    })
-                
-                return (result,)
-        
+                print(f"🎯 Processing entire video at once: {T} frames")
+
+            with torch.no_grad():
+                result = vae.decode(samples["samples"])
+
+            # VAE decode returns a tuple, extract the tensor (ComfyUI handles this internally)
+            if isinstance(result, tuple):
+                result = result[0]
+
+            # Convert 5D video tensor to 4D image tensor - EXACT native ComfyUI logic
+            if len(result.shape) == 5:
+                result = result.reshape(-1, result.shape[-3], result.shape[-2], result.shape[-1])
+
+            if DEBUG_MODE:
+                end_time = time.time()
+                save_debug_data(result, "vae_decode_output", "flux_1024x1024", {
+                    'node_type': 'ROCMOptimizedVAEDecode',
+                    'execution_time': end_time - start_time,
+                    'output_shape': result.shape,
+                    'output_dtype': str(result.dtype),
+                    'output_device': str(result.device)
+                })
+                capture_timing("vae_decode", start_time, end_time, {
+                    'node_type': 'ROCMOptimizedVAEDecode',
+                    'is_video': True
+                })
+                capture_memory_usage("vae_decode", {
+                    'node_type': 'ROCMOptimizedVAEDecode',
+                    'is_video': True
+                })
+
+            return (result,)
+
         # CRITICAL FIX: Preserve quantized model dtypes
         if is_quantized_model:
             print(f"🔒 Preserving quantized model dtype: {vae_model_dtype}")

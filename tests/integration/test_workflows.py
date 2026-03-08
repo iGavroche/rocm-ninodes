@@ -54,9 +54,7 @@ class TestWorkflowIntegration:
             samples=wan_latent,
             tile_size=512,
             overlap=64,
-            use_rocm_optimizations=True,
-            video_chunk_size=8,
-            memory_optimization_enabled=True
+            use_rocm_optimizations=True
         )
         
         assert isinstance(result, tuple)
@@ -123,7 +121,6 @@ class TestWorkflowIntegration:
             tile_size=512,
             overlap=64,
             use_rocm_optimizations=True,
-            memory_optimization_enabled=True,
             adaptive_tiling=True
         )
         

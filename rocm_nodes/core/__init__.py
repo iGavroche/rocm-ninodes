@@ -24,6 +24,7 @@ from .checkpoint import ROCMOptimizedCheckpointLoader
 from .unet_loader import ROCmDiffusionLoader
 from .lora import ROCMLoRALoader
 from .monitors import ROCMFluxBenchmark, ROCMMemoryOptimizer
+from .textgen_ltx2 import ROCmTextGenerateLTX2Prompt
 
 __all__ = [
     # VAE nodes
@@ -41,5 +42,6 @@ __all__ = [
     # Monitor nodes
     'ROCMFluxBenchmark',
     'ROCMMemoryOptimizer',
+    'ROCmTextGenerateLTX2Prompt',
 ]
 

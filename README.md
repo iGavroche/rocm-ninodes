@@ -1,4 +1,6 @@
-# ROCm Ninodes: ROCm Optimized Nodes for ComfyUI (v2.0.10)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.0.11)
+
+**ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
 ## ⬆️ Upgrade to v2 (Required for existing users)
 
@@ -27,11 +29,16 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.0.10-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.0.11-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
-**RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations, KSampler implementations, and LoRA loading designed to maximize performance on AMD hardware with mature ROCm drivers.
+**ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.0.11
+
+- **ROCm Text Generate LTX2 Prompt**: Drop-in replacement for ComfyUI's TextGenerateLTX2Prompt — same inputs (clip, prompt, max_length, optional image, sampling params) and output. Tuned for ROCm/gfx1151 with device and memory handling; for best speed run ComfyUI with `--use-pytorch-attention`. Category: **ROCm Ninodes → Generative AI**.
+- **Generative AI category**: LTX2 prompt node appears under **ROCm Ninodes / Generative AI**.
 
 ## 🚀 What's new in v2.0.10
 
@@ -57,7 +64,7 @@ After running:
 
 ## 🚀 **What We Do**
 
-RocM Ninodes transforms your AMD GPU experience in ComfyUI by providing:
+ROCm Ninodes transforms your AMD GPU experience in ComfyUI by providing:
 
 - **🎯 ROCm-Optimized Nodes**: Custom implementations of VAE decode, KSampler, and LoRA loading specifically tuned for AMD GPUs
 - **⚡ Performance Boost**: 15-78% faster generation times with better memory efficiency
@@ -67,7 +74,7 @@ RocM Ninodes transforms your AMD GPU experience in ComfyUI by providing:
 
 ## 🔧 **Quantized Model Support**
 
-RocM Ninodes now includes comprehensive support for quantized models with automatic detection and optimization:
+ROCm Ninodes now includes comprehensive support for quantized models with automatic detection and optimization:
 
 ### **Supported Quantized Formats**
 - **FP8 Models**: Hardware-accelerated FP8 quantization (flux1-dev-fp8.safetensors)
@@ -148,12 +155,12 @@ Our optimization approach focuses on three key areas:
 - **Frames**: 17 frames
 - **Hardware**: GMTek Evo-X2 Strix Halo (gfx1151, 128GB Unified RAM)
 
-**With RocM Ninodes Optimizations:**
+**With ROCm Ninodes optimizations:**
 - **Run 1**: ROCM Advanced KSampler: 20.77s | ROCM VAE Decode: 7.73s | **Total: 92.78s**
 - **Run 2**: ROCM Advanced KSampler: 21.03s | ROCM VAE Decode: 7.41s | **Total: 93.32s**
 - **Average**: **93.05s** ⚡
 
-**Without RocM Ninodes (Standard ComfyUI):**
+**Without ROCm Ninodes (standard ComfyUI):**
 - **Run 1**: Standard KSampler: 22.06s | Standard VAE Decode: 7.48s | **Total: 98.33s**
 - **Run 2**: Standard KSampler: 22.71s | Standard VAE Decode: 7.20s | **Total: 104.01s**
 - **Average**: **101.17s** 🐌
@@ -440,9 +447,11 @@ python install.py
 ## Post-Installation
 
 1. **Restart ComfyUI** to load the new nodes
-2. **Verify Installation**: Check that nodes appear in "RocM Ninodes" folder in the node panel:
-   - **RocM Ninodes/VAE**: VAE Decode, VAE Decode Tiled, VAE Performance Monitor
-   - **RocM Ninodes/Sampling**: KSampler, KSampler Advanced, Sampler Performance Monitor
+2. **Verify Installation**: Check that nodes appear in "ROCm Ninodes" in the node panel:
+   - **ROCm Ninodes/VAE**: VAE Decode, VAE Decode Tiled, VAE Performance Monitor
+   - **ROCm Ninodes/Sampling**: KSampler, KSampler Advanced, Sampler Performance Monitor
+   - **ROCm Ninodes/Generative AI**: ROCm Text Generate LTX2 Prompt
+   - **ROCm Ninodes/Loaders**: Checkpoint, Diffusion, GGUF, LoRA
 3. **Test Performance**: Use the Performance Monitor nodes to verify optimizations
 
 ## 🔄 Workflow name migration (helper script)
@@ -575,8 +584,7 @@ cd ComfyUI-ROCM-Optimized-VAE
 - **tile_size**: 768-1024 for gfx1151 (default: 768)
 - **overlap**: 96-128 for good quality (default: 96)
 - **precision_mode**: "auto" selects optimal precision
-- **video_chunk_size**: 81 frames by default (handles most videos without chunking)
-- **memory_optimization_enabled**: Keep enabled for better VRAM usage
+- **Video**: Always decoded in one pass (no chunking) so temporal/causal VAEs (WAN, LTX, etc.) work correctly
 
 **Output**: `IMAGE` - Decoded image tensor ready for saving or further processing
 
@@ -953,7 +961,7 @@ python install.py
 
 #### **🚨 Quick Fix (Recommended)**
 Use the new **Windows Pagination Diagnostic** node in ComfyUI:
-1. Add "Windows Pagination Diagnostic" node from "RocM Ninodes/Diagnostics"
+1. Add "Windows Pagination Diagnostic" node from "ROCm Ninodes/Diagnostics"
 2. Connect it to your workflow
 3. Run it to automatically diagnose and fix the issue
 

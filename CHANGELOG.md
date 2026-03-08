@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.10] - 2025-03-XX
+
+### Changed
+- **ROCm VAE Decode: Video chunking removed**: Video is always decoded in a single pass (no chunking).
+  - Ensures correct behavior for all temporal/causal VAEs (WAN, LTX, and similar models).
+  - Chunking broke the decoding chain and caused artifacts; full-video decode matches ComfyUI native behavior.
+- **Removed parameters**: `video_chunk_size` and `memory_optimization_enabled` removed from the ROCm VAE Decode node (they only controlled chunking).
+
 ## [2.0.9] - 2025-01-XX
 
 ### Fixed
