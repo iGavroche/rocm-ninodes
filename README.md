@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm Optimized Nodes for ComfyUI (v2)
+# ROCm Ninodes: ROCm Optimized Nodes for ComfyUI (v2.0.10)
 
 ## ⬆️ Upgrade to v2 (Required for existing users)
 
@@ -27,10 +27,16 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/version-2.0.10-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **RocM Ninodes** is a comprehensive custom node collection that provides optimized operations specifically tuned for AMD GPUs with ROCm support, particularly targeting the gfx1151 architecture. This collection includes optimized VAE decode operations, KSampler implementations, and LoRA loading designed to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.0.10
+
+- **Checkpoint cache**: ROCm Checkpoint Loader caches the last loaded checkpoint by name; repeat runs with the same checkpoint skip reload (saves time and avoids extra VRAM churn). Use **use_cache** (default on) and **force_reload** when you need a fresh load.
+- **FP8 / quantized checkpoint reuse**: Fixed "Cannot set version_counter for inference tensor" when reusing a cached checkpoint that uses MixedPrecisionOps (e.g. LTX FP8 text encoder). Requires the corresponding fix in ComfyUI's `comfy/ops.py` (QuantizedTensor handling in `_apply`).
 
 ## 🚀 What's new in v2.0.1
 
