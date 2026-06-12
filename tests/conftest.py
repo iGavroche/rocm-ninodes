@@ -78,6 +78,17 @@ comfy.model_management.minimum_inference_memory = lambda *args, **kwargs: 8 * 10
 comfy.model_management.extra_reserved_memory = lambda *args, **kwargs: 0
 comfy.utils.tiled_scale = lambda *args, **kwargs: (torch.randn(1, 3, 512, 512), 512, 512)
 
+class MockProgressBar:
+    def __init__(self, total, node_id=None):
+        self.total = total
+        self.current = 0
+    def update_absolute(self, value, total=None, preview=None):
+        self.current = value
+    def update(self, value):
+        pass
+
+comfy.utils.ProgressBar = MockProgressBar
+
 # Need to mock folder_paths for constants import
 folder_paths = types.ModuleType('folder_paths')
 sys.modules['folder_paths'] = folder_paths

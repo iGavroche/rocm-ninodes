@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.1.0)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.1.1)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -29,11 +29,21 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.1.1-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.1.1
+
+- **ROCm KSampler auto-detection**: Sampler now detects GPU architecture and model type automatically. No new toggles.
+  - Flow-matching models (z-image, z-image-turbo, ernie, ideogram4) detected and logged
+  - Pixel-space models (z-image-turbo) recognized — no VAE decode needed downstream
+  - High-memory models (ideogram4, factor 11.6x) get automatic memory cleanup before/after sampling
+  - Architecture-aware backend settings: `allow_tf32=False`, `allow_fp16_accumulation=True`
+- **Shared architecture detection**: GPU architecture detection (`detect_architecture()`) extracted to shared module used by both VAE decode and KSampler.
+- **Updated Sampler Performance Monitor**: Architecture-aware and model-type-aware recommendations.
 
 ## 🚀 What's new in v2.1.0
 
@@ -648,7 +658,7 @@ How temporal tiling works:
 #### 🎲 **ROCm KSampler**
 **Location**: `ROCm Ninodes/Sampling` → `ROCm KSampler`
 
-**Purpose**: Optimized KSampler with ROCm-specific optimizations and progress reporting.
+**Purpose**: Optimized KSampler with ROCm-specific optimizations and progress reporting. **Auto-detects GPU architecture and model type** — no manual configuration needed.
 
 **How to Use**:
 1. Connect your `MODEL` to `model` input
@@ -662,7 +672,13 @@ How temporal tiling works:
 - **cfg**: 7.0-8.0 for gfx1151 (default: 8.0)
 - **sampler_name**: Euler, Heun, or dpmpp_2m work well with ROCm
 - **optimize_for_video**: Enable for multi-frame latents (disables previews)
-- **precision_mode**: "auto" selects fp32 for gfx1151
+- **precision_mode**: "auto" selects optimal precision (fp16 on AMD, fp32 on CPU)
+
+**Auto-detection** (no toggles needed):
+- **Architecture**: Detects gfx1151/gfx1100 (fp16), gfx942 (bf16) — applies backend settings automatically
+- **Flow-matching** (z-image, ernie, ideogram4): Logged and handled optimally
+- **Pixel-space** (z-image-turbo): Recognized — no VAE decode needed downstream
+- **High-memory** (ideogram4): Automatic `emergency_memory_cleanup` before sampling
 
 **Output**: `LATENT` - Sampled latent tensor (connect to VAE Decode)
 
@@ -780,15 +796,15 @@ VAE → ROCm VAE Performance Monitor
 #### 📈 **ROCm Sampler Performance Monitor**
 **Location**: `ROCm Ninodes/Sampling` → `ROCm Sampler Performance Monitor`
 
-**Purpose**: Analyze sampler performance and get optimization recommendations.
+**Purpose**: Analyze sampler performance and get optimization recommendations. **Auto-detects model type** (flow-matching, pixel-space, standard) and GPU architecture.
 
 **How to Use**:
 1. Connect your `MODEL` to the `model` input
-2. Set `test_steps` (default: 20) - this is just for recommendations, not actual testing
+2. Set `test_steps` (default: 20) — just for recommendations, not actual testing
 3. **Connect outputs to Show Text nodes** to display results:
-   - `DEVICE_INFO` → Shows GPU and model information
-   - `PERFORMANCE_TIPS` → Provides sampler-specific tips
-   - `OPTIMAL_SETTINGS` → Shows recommended samplers, schedulers, and CFG values
+   - `DEVICE_INFO` → Shows GPU, model architecture, sampling type, latent channels, memory factor
+   - `PERFORMANCE_TIPS` → Model-type-specific tips (flow matching, large latent format, etc.)
+   - `OPTIMAL_SETTINGS` → Architecture-aware recommendations
 
 **Example Workflow Connection**:
 ```
@@ -799,11 +815,11 @@ MODEL → ROCm Sampler Performance Monitor
 ```
 
 **Outputs**:
-- **DEVICE_INFO**: GPU name, model device, model dtype
-- **PERFORMANCE_TIPS**: Recommendations for samplers, precision, memory optimization
-- **OPTIMAL_SETTINGS**: Recommended samplers (euler, heun, etc.), schedulers, CFG range
+- **DEVICE_INFO**: Architecture, APU mode, model device/dtype, sampling type, latent channels, memory factor
+- **PERFORMANCE_TIPS**: Model-type-specific tips (e.g. "Flow-matching model — use euler/dpmpp_sde, sgm_uniform scheduler")
+- **OPTIMAL_SETTINGS**: Architecture-aware recommended samplers, schedulers, precision
 
-**Note**: This node provides recommendations based on your GPU, not actual performance measurements.
+**Note**: This node provides recommendations based on your GPU and model, not actual performance measurements.
 
 ---
 

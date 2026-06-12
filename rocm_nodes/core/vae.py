@@ -39,7 +39,6 @@ from ..utils.memory import (
     check_memory_safety,
     emergency_memory_cleanup,
     get_gpu_memory_info,
-    is_apu_architecture,
 )
 from ..utils.debug import (
     DEBUG_MODE,
@@ -49,77 +48,11 @@ from ..utils.debug import (
     capture_memory_usage,
 )
 from ..utils.quantization import detect_model_quantization
+from ..utils.architecture import detect_architecture, apply_rocm_backend_settings
 from ..constants import (
     DEFAULT_TILE_SIZE, DEFAULT_TILE_OVERLAP,
-    MAX_TILE_SIZE,
     MIN_LATENT_TILE_SIZE, MIN_LATENT_OVERLAP,
-    GFX1151_TILE_SIZE_RANGE, GFX1151_BATCH_CAP, GFX1151_IS_APU,
-    GFX1100_TILE_SIZE_RANGE, GFX1100_BATCH_CAP, GFX1100_IS_APU,
-    GFX1030_TILE_SIZE_RANGE, GFX1030_BATCH_CAP, GFX1030_IS_APU,
-    CDNA_TILE_SIZE_RANGE, CDNA_BATCH_CAP, CDNA_IS_APU,
-    DEFAULT_AMD_TILE_SIZE_RANGE, DEFAULT_AMD_BATCH_CAP, DEFAULT_AMD_IS_APU,
 )
-
-
-def _detect_architecture():
-    """Detect GPU architecture and return structured info for tuning.
-
-    Returns:
-        dict with keys:
-            - arch_name: raw gcnArchName string
-            - family: "rdna3_5" | "rdna3" | "rdna2" | "cdna" | "generic_amd"
-            - is_apu: bool (unified memory)
-            - tile_size_max: recommended upper tile bound
-            - batch_cap: max batch for tiled decode
-            - preferred_precision: "fp16" | "bf16"
-    """
-    if not torch.cuda.is_available():
-        return {
-            "arch_name": None, "family": "cpu", "is_apu": False,
-            "tile_size_max": MAX_TILE_SIZE, "batch_cap": 4,
-            "preferred_precision": "fp32",
-        }
-
-    try:
-        arch_name = torch.cuda.get_device_properties(0).gcnArchName
-    except Exception:
-        arch_name = ""
-
-    if 'gfx1151' in arch_name or 'gfx1150' in arch_name:
-        return {
-            "arch_name": arch_name, "family": "rdna3_5", "is_apu": GFX1151_IS_APU,
-            "tile_size_max": GFX1151_TILE_SIZE_RANGE[1],
-            "batch_cap": GFX1151_BATCH_CAP,
-            "preferred_precision": "fp16",
-        }
-    elif 'gfx110' in arch_name:
-        return {
-            "arch_name": arch_name, "family": "rdna3", "is_apu": GFX1100_IS_APU,
-            "tile_size_max": GFX1100_TILE_SIZE_RANGE[1],
-            "batch_cap": GFX1100_BATCH_CAP,
-            "preferred_precision": "fp16",
-        }
-    elif 'gfx103' in arch_name:
-        return {
-            "arch_name": arch_name, "family": "rdna2", "is_apu": GFX1030_IS_APU,
-            "tile_size_max": GFX1030_TILE_SIZE_RANGE[1],
-            "batch_cap": GFX1030_BATCH_CAP,
-            "preferred_precision": "fp16",
-        }
-    elif 'gfx90a' in arch_name or 'gfx942' in arch_name:
-        return {
-            "arch_name": arch_name, "family": "cdna", "is_apu": CDNA_IS_APU,
-            "tile_size_max": CDNA_TILE_SIZE_RANGE[1],
-            "batch_cap": CDNA_BATCH_CAP,
-            "preferred_precision": "bf16",
-        }
-    else:
-        return {
-            "arch_name": arch_name, "family": "generic_amd", "is_apu": DEFAULT_AMD_IS_APU,
-            "tile_size_max": DEFAULT_AMD_TILE_SIZE_RANGE[1],
-            "batch_cap": DEFAULT_AMD_BATCH_CAP,
-            "preferred_precision": "fp16",
-        }
 
 
 def _detect_vae_type(vae) -> str:
@@ -293,7 +226,7 @@ class ROCMOptimizedVAEDecode:
         samples_tensor = samples["samples"]
 
         # ── Architecture detection ──────────────────────────────────────────
-        arch_info = _detect_architecture()
+        arch_info = detect_architecture()
         is_amd = arch_info["family"] != "cpu"
 
         # ── VAE type detection ──────────────────────────────────────────────
@@ -894,7 +827,7 @@ class ROCMVAEPerformanceMonitor:
     def analyze(self, vae, test_resolution=1024):
         """Analyze VAE performance and provide recommendations"""
         device = vae.device
-        arch_info = _detect_architecture()
+        arch_info = detect_architecture()
         vae_type = _detect_vae_type(vae)
 
         device_info = f"Device: {device}\n"
