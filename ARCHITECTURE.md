@@ -39,17 +39,38 @@ ROCM_NINODES_DEBUG=0  # Set to 1 to enable data capture for testing
 ## GPU Architecture Specifics
 
 ### gfx1151 Optimizations
-- **Precision**: fp32 preferred over fp16 for stability
-- **Tile Sizes**: 768-1024 optimal for this architecture
+- **Precision**: fp16 default (VAE decode is numerically robust; halves memory bandwidth on unified pool)
+- **Tile Sizes**: 768-2048 (larger tiles for high-compression VAEs like LTX)
 - **TF32**: Disabled (not supported/beneficial on gfx1151)
 - **Memory Modifier**: Conservative 1.5x for attention operations
-- **Batch Processing**: Conservative approach to prevent OOM
+- **Batch Processing**: Capped at 8 for APU (prevents over-allocation from unified memory reporting)
+- **APU Mode**: Unified memory-aware memory estimation and safety checks
 
 ### Memory Management Strategy
 - **Attention Memory**: 1.5x modifier for conservative allocation
-- **VAE Processing**: Tiled decoding for large images/videos
-- **Video Support**: 5D tensor processing with 4D output conversion
+- **VAE Processing**: Tiled decoding for large images/videos; minimum tile size floor for high-compression VAEs
+- **Video Support**: 5D tensor processing with 4D output conversion; full-video causal decode for WAN/LTX
+- **VAE Type Detection**: Automatic classification into standard / WAN / LTX Video / pixel-space
+- **Pixel-Space Passthrough**: z-image / z-image-turbo detected and handled as passthrough (no VAE processing)
 - **Cache Management**: Regular `torch.cuda.empty_cache()` calls
+
+## Per-Architecture Tuning
+
+The VAE decode node dynamically detects GPU architecture and adjusts settings:
+
+| Architecture | Family | APU? | Precision | Max Tile | Batch Cap |
+|---|---|---|---|---|---|
+| gfx1150-1151 (Strix Halo) | RDNA 3.5 | ✅ Yes | fp16 | 2048 | 8 |
+| gfx1100-1102 (RX 7900) | RDNA 3 | ❌ No | fp16 | 2048 | 16 |
+| gfx1030-1032 (RX 6900) | RDNA 2 | ❌ No | fp16 | 1536 | 8 |
+| gfx90a (MI200), gfx942 (MI300) | CDNA | ❌ No | bf16 | 2048 | 32 |
+| Other AMD | generic | ❌ No | fp16 | 1024 | 4 |
+
+**APU-specific behavior** (Strix Halo):
+- `get_free_memory()` returns system available RAM (not just GPU-reserved)
+- Batch number is capped to 8 (prevents 1.8M batch from 120GB free memory)
+- Memory safety checks use `psutil` for system-wide available memory
+- Precision defaults to fp16 (reduces memory bandwidth pressure on unified pool)
 
 ## Quantization Support
 
@@ -96,9 +117,22 @@ ROCM_NINODES_DEBUG=0  # Set to 1 to enable data capture for testing
 
 ### WAN Workflow (320x320, 17 frames)
 - **Target Improvement**: 5.6% over baseline
-- **Video Processing**: 5D tensor support with 4D output
+- **Video Processing**: 5D tensor support with 4D output; causal decode (full video at once)
 - **Memory Usage**: Conservative allocation to prevent OOM
 - **Total Time**: <100s target
+
+### LTX Video Workflow (512x512, 49 frames)
+- **VAE Type**: LTX VideoVAE (128 channels, 32x spatial compression, 8x temporal)
+- **Channels**: 128-channel latent → 3-channel RGB output
+- **Precision**: fp16 strongly recommended (128ch × fp32 is memory-prohibitive on APU)
+- **Tile Size**: 1024-2048 recommended (32x compression makes 768→24px latent tiles; floor at 64px)
+- **Processing**: Full-video causal decode (no chunking to avoid temporal artifacts)
+- **Memory**: Memory estimation uses actual channel count (128× that of SD)
+
+### z-image / z-image-turbo (pixel-space, any resolution)
+- **VAE Type**: Pixel-space passthrough (latent_channels=3, spatial_compression=1)
+- **Behavior**: No actual VAE decoding — latents are RGB pixels; passthrough in <1ms
+- **Optimizations**: Skips all dtype conversion, model loading, memory estimation, and tiling
 
 ## Node Architecture
 
@@ -147,10 +181,10 @@ Monitor   Performance    Performance   Monitor
 - **ComfyUI**: Custom modifications needed for optimal performance
 
 ### Performance Constraints
-- **Precision**: fp32 preferred over fp16 for stability
+- **Precision**: fp16 default for AMD (VAE decode is inference-only, numerically robust)
 - **Memory**: Conservative allocation to prevent OOM
-- **Batch Size**: Limited by available memory
-- **Video Processing**: 5D tensor handling complexity
+- **Batch Size**: Limited by available memory; capped on APU to prevent over-allocation
+- **Video Processing**: 5D tensor handling complexity; causal decode prevents chunking
 
 ## Future Considerations
 

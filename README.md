@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.0.11)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.1.0)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -29,11 +29,22 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.0.11-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.1.0
+
+- **LTX Video VAE support**: Full support for Lightricks LTX VideoVAE (128 channels, 32× spatial compression). Automatic detection, fp16 optimized, full-video causal decode.
+- **z-image / z-image-turbo passthrough**: Pixel-space VAEs (latent_channels=3, spatial_compression=1) detected automatically and processed as passthrough — no VAE decode needed.
+- **fp16 default on AMD**: VAE decode defaults to fp16 on all AMD GPUs (Strix Halo, RDNA 2/3, CDNA). Doubles memory efficiency for large-channel VAEs.
+- **Per-architecture tuning**: Automatic GPU architecture detection (gfx1151, gfx1100, gfx1030, CDNA) with per-arch tile sizes, precision, and batch caps.
+- **Temporal tiling for long videos** (optional, disabled by default): Decode long LTX/WAN videos in temporal chunks with overlap to prevent OOM. See "ROCm VAE Decode" settings for `enable_temporal_tiling`.
+- **Chunked IO bypass for LTX**: Disables giant pre-allocation for LTX VideoVAE, fixing crashes with `PYTORCH_ALLOC_CONF=max_split_size_mb`.
+- **Fixed memory estimation**: Correctly accounts for all tensor dimensions (including temporal for 5D) and actual dtype size.
+- **Memory estimation for APU**: Strix Halo unified memory now uses `psutil` for system-wide available RAM.
 
 ## 🚀 What's new in v2.0.11
 
@@ -572,19 +583,43 @@ cd ComfyUI-ROCM-Optimized-VAE
 #### 🖼️ **ROCm VAE Decode**
 **Location**: `ROCm Ninodes/VAE` → `ROCm VAE Decode`
 
-**Purpose**: Optimized VAE decoding for AMD GPUs with ROCm support.
+**Purpose**: Optimized VAE decoding for AMD GPUs with ROCm support. Detects VAE type automatically and applies optimal settings for standard, WAN, LTX Video, and pixel-space (z-image) VAEs.
 
 **How to Use**:
 1. Connect your `LATENT` output from a sampler to the `samples` input
 2. Connect your `VAE` model to the `vae` input
-3. Use default settings for most cases (optimized for gfx1151)
-4. For large images (>1024x1024), consider using `ROCm VAE Decode Tiled` instead
+3. Use default settings for most cases
 
 **Key Settings**:
-- **tile_size**: 768-1024 for gfx1151 (default: 768)
+- **tile_size**: 768-2048 depending on architecture (default: 768)
 - **overlap**: 96-128 for good quality (default: 96)
-- **precision_mode**: "auto" selects optimal precision
-- **Video**: Always decoded in one pass (no chunking) so temporal/causal VAEs (WAN, LTX, etc.) work correctly
+- **precision_mode**: "auto" selects optimal precision (fp16 default on AMD)
+- **Video (WAN, LTX)**: Decoded in one pass with causal preservation. fp16 used for memory efficiency.
+
+**LTX Video-specific**:
+- Latent channels: 128 (automatically detected)
+- Spatial compression: 32× (tile sizes auto-scaled with 64px latent minimum)
+- Enabled full-video causal decode; chunked IO disabled to avoid pre-allocation OOM
+- **Temporal tiling** (optional, disabled by default): For very long videos (>200 frames). Decodes in overlapping temporal chunks with linear blending — no frame loss, no visible seams. Progress bar shown during decode.
+
+**Recommended temporal tiling settings for long LTX videos:**
+```
+enable_temporal_tiling=True
+temporal_chunk_size=16    # Latent frames per chunk (~121 output frames each)
+temporal_overlap=2        # Latent frames overlap (blended for smooth transition)
+last_frame_fix=True       # Prevents end-of-video artifacts
+```
+
+How temporal tiling works:
+- Video is split into overlapping chunks along the temporal axis
+- Each chunk is decoded independently (memory per chunk ~chunk_size, not full video)
+- The first output frame of each chunk is dropped (incomplete temporal context)
+- The next `temporal_overlap × temporal_comp` frames are linearly blended with the previous chunk's tail for a seamless transition
+- Result: **exact same frame count** as a full decode — zero frame loss
+
+**Pixel-space (z-image / z-image-turbo)**:
+- Detected automatically (latent_channels=3, compression=1)
+- Passthrough decode — no VAE model loaded or dtype converted
 
 **Output**: `IMAGE` - Decoded image tensor ready for saving or further processing
 
