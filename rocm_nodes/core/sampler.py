@@ -532,54 +532,65 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
         if not compatibility_mode and optimize_for_video and latent_image_tensor.ndim == 5 and latent_image_tensor.shape[2] > 1:
             is_video_workflow = True
 
-        # ── Enhanced callback ──────────────────────────────────────────
+        # ── Create previewer once (like stock prepare_callback) ──────
+        previewer = None
+        if not is_video_workflow:
+            try:
+                previewer = latent_preview.get_previewer(
+                    guider.model_patcher.load_device,
+                    guider.model_patcher.model.latent_format
+                )
+            except Exception:
+                pass
+
         pbar = comfy.utils.ProgressBar(total_steps)
         last_update_time = [time.time()]
         start_time = time.time()
+        reported_milestones = set()
 
         def enhanced_callback(step, x0, x, total_steps):
             if x0 is not None:
                 x0_output["x0"] = x0
 
             current_time = time.time()
+            progress_pct = ((step + 1) / total_steps) * 100
+            pct_key = (int(progress_pct) // 10) * 10
+
+            # ── Update progress bar with preview (throttled) ────────
             if current_time - last_update_time[0] >= 0.3 or step == total_steps - 1:
                 preview_bytes = None
-                if not is_video_workflow and step % 5 == 0:
+                if previewer and step % 5 == 0:
                     try:
-                        previewer = latent_preview.get_previewer(
-                            guider.model_patcher.load_device,
-                            guider.model_patcher.model.latent_format
-                        )
-                        if previewer:
-                            preview_bytes = previewer.decode_latent_to_preview_image("JPEG", x0)
+                        preview_bytes = previewer.decode_latent_to_preview_image("JPEG", x0)
                     except Exception:
-                        preview_bytes = None
-
+                        pass
                 try:
                     pbar.update_absolute(step + 1, total_steps, preview=preview_bytes)
                 except Exception:
                     pass
                 last_update_time[0] = current_time
 
-            progress_pct = ((step + 1) / total_steps) * 100
-            elapsed = current_time - start_time
-            if step > 0:
-                est_total = elapsed / ((step + 1) / total_steps)
-                est_remaining = est_total - elapsed
-                avg_time_per_step = elapsed / (step + 1)
+            # ── Console timing at 10% milestones only ──────────────
+            if step == 0 or step == total_steps - 1 or pct_key not in reported_milestones:
+                reported_milestones.add(pct_key)
+                elapsed = current_time - start_time
                 wf_type = "Video" if is_video_workflow else "Image"
-                print(f"📊 ROCm CustomAdvanced: Step {step + 1}/{total_steps} ({progress_pct:.1f}%) | "
-                      f"Elapsed: {elapsed:.1f}s | Remaining: ~{est_remaining:.1f}s | "
-                      f"Avg: {avg_time_per_step:.2f}s/step", flush=True)
-            else:
-                wf_type = "Video" if is_video_workflow else "Image"
-                print(f"📊 ROCm CustomAdvanced: Step {step + 1}/{total_steps} ({progress_pct:.1f}%) | Starting...", flush=True)
+                if step == 0:
+                    print(f"📊 ROCm CustomAdvanced: Starting {total_steps} steps...", flush=True)
+                else:
+                    avg = elapsed / (step + 1)
+                    est_total = elapsed / ((step + 1) / total_steps)
+                    est_remaining = est_total - elapsed
+                    print(f"📊 ROCm CustomAdvanced: {progress_pct:.0f}% | "
+                          f"Step {step + 1}/{total_steps} | "
+                          f"{elapsed:.1f}s elapsed ~{est_remaining:.1f}s remain "
+                          f"({avg:.2f}s/step)", flush=True)
 
         callback = enhanced_callback
         disable_pbar = is_video_workflow
 
         # ── Sampling ────────────────────────────────────────────────────
-        print(f"🚀 ROCm SamplerCustomAdvanced: starting {total_steps} steps"
+        print(f"🚀 ROCm SamplerCustomAdvanced: {total_steps} steps"
               f"{' (video mode)' if is_video_workflow else ''}", flush=True)
         samples = guider.sample(
             noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
@@ -587,7 +598,9 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
             seed=noise.seed
         )
         samples = samples.to(comfy.model_management.intermediate_device())
-        print(f"✅ ROCm SamplerCustomAdvanced completed", flush=True)
+        elapsed = time.time() - start_time
+        print(f"✅ ROCm SamplerCustomAdvanced: {total_steps} steps in {elapsed:.1f}s "
+              f"({total_steps / elapsed:.2f} it/s)", flush=True)
 
         # ── Post-sample memory cleanup ──────────────────────────────────
         if not compatibility_mode:
