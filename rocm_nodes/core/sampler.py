@@ -481,25 +481,15 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
                 compatibility_mode=False) -> io.NodeOutput:
         model = guider.model_patcher
 
-        # ── ROCm setup (skipped in compatibility_mode) ──────────────────
+        # ── ROCm info logging (safe — no GPU state changes) ────────────
         if not compatibility_mode:
             arch_info = detect_architecture()
-            model_info = detect_model_sampling_type(model)
-
-            # Only apply safe settings: disable TF32 (no precision impact)
-            if arch_info["family"] != "cpu":
-                torch.backends.cuda.matmul.allow_tf32 = False
-
             is_rocm = bool(getattr(torch.version, 'hip', None))
             if is_rocm:
                 print(f"🚀 ROCm detected on {arch_info['family']} "
                       f"({arch_info.get('arch_name', 'unknown')})", flush=True)
 
-            if model_info["has_high_memory"]:
-                print(f"💾 High-memory model (factor: {model_info['memory_usage_factor']}x, "
-                      f"{model_info['latent_channels']}ch latent) — defragging VRAM", flush=True)
-                emergency_memory_cleanup()
-
+            model_info = detect_model_sampling_type(model)
             if model_info["model_type"] == "flow":
                 print(f"🌊 Flow-matching model ({model_info['latent_channels']}ch)", flush=True)
 
@@ -590,15 +580,6 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
         elapsed = time.time() - start_time
         print(f"✅ ROCm SamplerCustomAdvanced: {total_steps} steps in {elapsed:.1f}s "
               f"({total_steps / elapsed:.2f} it/s)", flush=True)
-
-        # ── Post-sample memory cleanup ──────────────────────────────────
-        if not compatibility_mode:
-            try:
-                model_info = detect_model_sampling_type(model)
-                if model_info["has_high_memory"]:
-                    gentle_memory_cleanup()
-            except Exception:
-                pass
 
         # ── Build output (identical to stock) ──────────────────────────
         out = latent.copy()
