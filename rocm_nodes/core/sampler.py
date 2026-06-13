@@ -485,13 +485,15 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
         if not compatibility_mode:
             arch_info = detect_architecture()
             model_info = detect_model_sampling_type(model)
-            apply_rocm_backend_settings(arch_info)
+
+            # Only apply safe settings: disable TF32 (no precision impact)
+            if arch_info["family"] != "cpu":
+                torch.backends.cuda.matmul.allow_tf32 = False
 
             is_rocm = bool(getattr(torch.version, 'hip', None))
             if is_rocm:
                 print(f"🚀 ROCm detected on {arch_info['family']} "
-                      f"({arch_info.get('arch_name', 'unknown')}) "
-                      f"— applying backend tuning", flush=True)
+                      f"({arch_info.get('arch_name', 'unknown')})", flush=True)
 
             if model_info["has_high_memory"]:
                 print(f"💾 High-memory model (factor: {model_info['memory_usage_factor']}x, "
