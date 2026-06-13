@@ -1,7 +1,7 @@
 [project]
 name = "rocm-ninodes"
 description = "ROCM Optimized Nodes for ComfyUI - High-performance VAE decode and sampling nodes specifically tuned for AMD GPUs with ROCm support, particularly targeting gfx1151 architecture"
-version = "2.1.1"
+version = "2.2.0"
 license = {file = "LICENSE"}
 dependencies = [
     "numpy>=1.20.0",
@@ -23,8 +23,8 @@ requires-comfyui = ">=1.0.0"
 [tool.comfyui-manager]
 name = "rocm-ninodes"
 display_name = "ROCm Ninodes"
-description = "ROCm-optimized nodes for ComfyUI: VAE decode, sampling, loaders, LTX2 prompt generation, and monitoring — tuned for AMD GPUs (gfx1151) with ROCm."
-version = "2.1.1"
+description = "ROCm-optimized nodes for ComfyUI: VAE decode, sampling, SamplerCustomAdvanced drop-in, loaders, LTX2 prompt generation, and monitoring — tuned for AMD GPUs (gfx1151) with ROCm."
+version = "2.2.0"
 author = "iGavroche"
 author_email = "nino2k@proton.me"
 repository = "https://github.com/iGavroche/rocm-ninodes"
