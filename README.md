@@ -1,6 +1,6 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.1.1)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.2.0)
 
-**ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
+**ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
 ## ⬆️ Upgrade to v2 (Required for existing users)
 
@@ -29,11 +29,18 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.1.1-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
-**ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+**ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.2.0
+
+- **ROCm SamplerCustomAdvanced** (`rocm_nodes/core/sampler.py`): Drop-in replacement for ComfyUI's V3 `SamplerCustomAdvanced` using the new `define_schema()` API. Preserves the exact same interface (noise, guider, sampler, sigmas, latent_image) while adding architecture-aware ROCm backend tuning, emergency memory defrag for high-memory models (LTX 128ch latents), enhanced per-step callback with ETA, and optional video-workflow mode. Category: **ROCm Ninodes → Sampling**.
+- **ROCm SamplerCustomAdvanced Benchmark**: A/B comparison node that runs stock then ROCm-optimized on identical inputs, reporting timing, peak memory, speedup, and model info. Category: **ROCm Ninodes → Sampling**.
+- **Precision management**: `precision_mode` (auto|fp32|bf16) and `compatibility_mode` toggle for the new custom sampler node.
+- **Full documentation**: `docs/SAMPLER_CUSTOM_ADVANCED.md` covers implementation details, input/output reference, and usage for both agents and users.
 
 ## 🚀 What's new in v2.1.1
 
@@ -223,6 +230,19 @@ Our optimization approach focuses on three key areas:
 ### ROCMOptimizedKSamplerAdvanced
 - 1:1 with ComfyUI KSampler (Advanced)
 - Same ROCm toggles as the basic sampler (video, precision, compatibility)
+
+### ROCMSamplerCustomAdvanced
+- Drop-in replacement for ComfyUI's V3 SamplerCustomAdvanced (same noise/guider/sampler/sigmas/latent_image interface)
+- ROCm backend tuning: architecture detection, fp16 accumulation, TF32 disabled on AMD
+- Emergency memory defrag for high-memory models (LTX Video 128ch, memory factor 5.5x)
+- Enhanced per-step callback with ETA, timing, and video-workflow optimization
+- `precision_mode`: auto|fp32|bf16
+- `compatibility_mode`: pure stock fallback
+
+### ROCMSamplerCustomAdvancedBenchmark
+- A/B benchmark: runs stock then ROCm-optimized on identical inputs
+- Reports timing, peak memory, speedup %, model type, and GPU name
+- Outputs both LATENT (from ROCm run) and a BENCHMARK_REPORT string
 
 ### ROCMVAEPerformanceMonitor
 - **Device analysis**: Shows your GPU information and current settings

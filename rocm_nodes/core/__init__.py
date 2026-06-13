@@ -19,6 +19,8 @@ from .sampler import (
     ROCMOptimizedKSampler,
     ROCMOptimizedKSamplerAdvanced,
     ROCMSamplerPerformanceMonitor,
+    ROCMSamplerCustomAdvanced,
+    ROCMSamplerCustomAdvancedBenchmark,
 )
 from .checkpoint import ROCMOptimizedCheckpointLoader
 from .unet_loader import ROCmDiffusionLoader
@@ -35,6 +37,8 @@ __all__ = [
     'ROCMOptimizedKSampler',
     'ROCMOptimizedKSamplerAdvanced',
     'ROCMSamplerPerformanceMonitor',
+    'ROCMSamplerCustomAdvanced',
+    'ROCMSamplerCustomAdvancedBenchmark',
     # Loader nodes
     'ROCMOptimizedCheckpointLoader',
     'ROCmDiffusionLoader',

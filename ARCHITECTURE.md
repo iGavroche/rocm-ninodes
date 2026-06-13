@@ -140,12 +140,14 @@ The VAE decode node dynamically detects GPU architecture and adjusts settings:
 1. **ROCMOptimizedCheckpointLoader**: Flux-optimized checkpoint loading
 2. **ROCMOptimizedKSampler**: Basic sampling with ROCm tuning
 3. **ROCMOptimizedKSamplerAdvanced**: Advanced sampling with step control
-4. **ROCMOptimizedVAEDecode**: VAE decode with video support
-5. **ROCMOptimizedVAEDecodeTiled**: Tiled VAE decode for large images
-6. **ROCMVAEPerformanceMonitor**: VAE performance metrics
-7. **ROCMSamplerPerformanceMonitor**: Sampler performance metrics
-8. **ROCMFluxBenchmark**: Flux workflow benchmarking
-9. **ROCMMemoryOptimizer**: Memory management helper
+4. **ROCMSamplerCustomAdvanced**: V3 drop-in for SamplerCustomAdvanced with ROCm optimizations and enhanced progress tracking
+5. **ROCMSamplerCustomAdvancedBenchmark**: A/B benchmark comparing stock vs ROCm-optimized custom sampler
+6. **ROCMOptimizedVAEDecode**: VAE decode with video support
+7. **ROCMOptimizedVAEDecodeTiled**: Tiled VAE decode for large images
+8. **ROCMVAEPerformanceMonitor**: VAE performance metrics
+9. **ROCMSamplerPerformanceMonitor**: Sampler performance metrics
+10. **ROCMFluxBenchmark**: Flux workflow benchmarking
+11. **ROCMMemoryOptimizer**: Memory management helper
 
 ### Data Flow
 ```

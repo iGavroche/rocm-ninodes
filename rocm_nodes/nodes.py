@@ -16,6 +16,8 @@ from .core.sampler import (
     ROCMOptimizedKSampler,
     ROCMOptimizedKSamplerAdvanced,
     ROCMSamplerPerformanceMonitor,
+    ROCMSamplerCustomAdvanced,
+    ROCMSamplerCustomAdvancedBenchmark,
 )
 
 from .core.checkpoint import (
@@ -50,7 +52,9 @@ NODE_CLASS_MAPPINGS = {
     "ROCMVAEPerformanceMonitor": ROCMVAEPerformanceMonitor,
     "ROCMOptimizedKSampler": ROCMOptimizedKSampler,
     "ROCMOptimizedKSamplerAdvanced": ROCMOptimizedKSamplerAdvanced,
+    "ROCMSamplerCustomAdvanced": ROCMSamplerCustomAdvanced,
     "ROCMSamplerPerformanceMonitor": ROCMSamplerPerformanceMonitor,
+    "ROCMSamplerCustomAdvancedBenchmark": ROCMSamplerCustomAdvancedBenchmark,
     "ROCMFluxBenchmark": ROCMFluxBenchmark,
     "ROCMMemoryOptimizer": ROCMMemoryOptimizer,
     "ROCMLoRALoader": ROCMLoRALoader,
@@ -67,7 +71,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMVAEPerformanceMonitor": "ROCm VAE Performance Monitor",
     "ROCMOptimizedKSampler": "ROCm KSampler",
     "ROCMOptimizedKSamplerAdvanced": "ROCm KSampler Advanced",
+    "ROCMSamplerCustomAdvanced": "ROCm SamplerCustomAdvanced",
     "ROCMSamplerPerformanceMonitor": "ROCm Sampler Performance Monitor",
+    "ROCMSamplerCustomAdvancedBenchmark": "ROCm SamplerCustomAdvanced Benchmark",
     "ROCMFluxBenchmark": "ROCm Flux Benchmark",
     "ROCMMemoryOptimizer": "ROCm Memory Optimizer",
     "ROCMLoRALoader": "ROCm LoRA Loader",

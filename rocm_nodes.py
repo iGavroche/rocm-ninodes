@@ -2660,5 +2660,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMFluxBenchmark": "ROCM Flux Benchmark",
     "ROCMMemoryOptimizer": "ROCM Memory Optimizer",
     "ROCMLoRALoader": "ROCM LoRA Loader",
-    "ROCMQuantizedModelOptimizer": "ROCM Quantized Model Optimizer",
 }
