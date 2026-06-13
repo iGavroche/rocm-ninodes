@@ -323,11 +323,17 @@ class ROCMOptimizedVAEDecode:
 
                 current_dtype = getattr(vae.first_stage_model, 'dtype', None)
                 if current_dtype is not None and current_dtype != video_dtype:
-                    try:
-                        vae.first_stage_model = vae.first_stage_model.to(video_dtype)
-                        print(f"💾 Converted VAE model from {current_dtype} to {video_dtype}")
-                    except Exception as e:
-                        print(f"⚠️ Model dtype conversion skipped: {e}")
+                    # Causal video VAEs (LTX, WAN) need full precision for
+                    # temporal state propagation — keep model weights native
+                    if vae_type in ("ltxv_vae", "wan_vae") and video_dtype != current_dtype:
+                        print(f"🔄 Causal VAE detected — keeping model in {current_dtype}, "
+                              f"input in {video_dtype}", flush=True)
+                    else:
+                        try:
+                            vae.first_stage_model = vae.first_stage_model.to(video_dtype)
+                            print(f"💾 Converted VAE model from {current_dtype} to {video_dtype}", flush=True)
+                        except Exception as e:
+                            print(f"⚠️ Model dtype conversion skipped: {e}", flush=True)
 
                 samples_processed = samples_tensor.to(device).to(video_dtype)
                 print(f"🎯 Video input: {video_dtype}")
