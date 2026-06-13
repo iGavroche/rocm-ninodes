@@ -39,9 +39,7 @@ This is the standard pattern for LTX Video, LTX 2.3 AV, and many other advanced 
 | `sampler` | SAMPLER | Yes | e.g. KSamplerSelect |
 | `sigmas` | SIGMAS | Yes | e.g. BasicScheduler |
 | `latent_image` | LATENT | Yes | e.g. LTXVConcatAVLatent |
-| `optimize_for_video` | BOOLEAN | No (default: False) | Disables previews when latent is 5D with T > 1 |
-| `precision_mode` | COMBO | No (default: auto) | `auto`, `fp32`, `bf16` — ROCm precision hint |
-| `compatibility_mode` | BOOLEAN | No (default: False) | When True, skips all ROCm optimizations (pure stock behavior) |
+| `compatibility_mode` | BOOLEAN | No (advanced) | Skip all ROCm optimizations, use pure stock behavior |
 
 ## Outputs
 
@@ -57,18 +55,21 @@ This is the standard pattern for LTX Video, LTX 2.3 AV, and many other advanced 
 1. Delete the stock `SamplerCustomAdvanced` node
 2. Add `ROCM SamplerCustomAdvanced` from `ROCm Ninodes/Sampling`
 3. Wire the same connections (noise, guider, sampler, sigmas, latent_image)
-4. Optionally configure `optimize_for_video`, `precision_mode`, or `compatibility_mode`
-5. Run — the console will show per-step progress, model detection, and completion
+4. Run — the console will show GPU architecture, model detection, and per-step progress
 
 ### LTX 2.3 / LTX Video Workflows
 
-For LTX-based workflows (like `LTX2.3-Director-App-Mariah.json`), the `latent_image` input typically comes from `LTXVConcatAVLatent`. ROCMSamplerCustomAdvanced detects the flow-matching model type (128ch latent, memory factor 5.5x) and applies appropriate memory management before and after sampling.
+For LTX-based workflows (like `LTX2.3-Director-App-Mariah.json`), the `latent_image` input typically comes from `LTXVConcatAVLatent`. ROCMSamplerCustomAdvanced detects the flow-matching model type (128ch latent, memory factor 5.5x) and applies appropriate memory management before and after sampling. Video (5D latent with T > 1) is auto-detected — previews are disabled for multi-frame latents to reduce overhead.
+
+### When to Use `compatibility_mode`
+
+Enable it via the node's advanced properties panel if you suspect the ROCm optimizations are causing issues. This returns the exact stock behavior for debugging.
 
 ## Benchmark Node
 
 `ROCMSamplerCustomAdvancedBenchmark` (`ROCm Ninodes/Sampling > ROCm SamplerCustomAdvanced Benchmark`) runs both the stock and ROCm-optimized sampler in sequence on identical inputs and outputs a comparison string.
 
-**Inputs:** Same as SamplerCustomAdvanced.
+**Inputs:** Same as SamplerCustomAdvanced (no extra params).
 
 **Outputs:**
 - `LATENT` — result from the ROCm-optimized run

@@ -449,8 +449,8 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
     Key enhancements over stock SamplerCustomAdvanced:
     - Auto-detects AMD GPU architecture and applies optimal backend settings
     - Emergency memory defrag for high-memory models (128ch latents)
-    - Optional BF16 precision hint for supported AMD GPUs
-    - Enhanced callback with ETA, per-step timing, and video-workflow optimization
+    - Enhanced callback with ETA and per-step timing
+    - Video workflow auto-detection (5D latent → no previews)
     - Gentle post-sample memory cleanup
     """
 
@@ -458,7 +458,7 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
     def define_schema(cls):
         return io.Schema(
             node_id="ROCMSamplerCustomAdvanced",
-            display_name="ROCM SamplerCustomAdvanced",
+            display_name="ROCm SamplerCustomAdvanced",
             category="ROCm Ninodes/Sampling",
             description="Drop-in replacement for SamplerCustomAdvanced with ROCm memory management, backend tuning, and detailed progress tracking. Particularly beneficial for high-memory models like LTX Video (128ch latent).",
             inputs=[
@@ -467,13 +467,8 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
                 io.Sampler.Input("sampler"),
                 io.Sigmas.Input("sigmas"),
                 io.Latent.Input("latent_image"),
-                io.Boolean.Input("optimize_for_video", optional=True, default=False,
-                    tooltip="Disable previews for multi-frame latents (video workflows)"),
-                io.Combo.Input("precision_mode", optional=True, default="auto",
-                    options=["auto", "fp32", "bf16"],
-                    tooltip="ROCm precision hint (no-op on CUDA/CPU)"),
-                io.Boolean.Input("compatibility_mode", optional=True, default=False,
-                    tooltip="Force pure stock behavior, no ROCm optimizations"),
+                io.Boolean.Input("compatibility_mode", optional=True, default=False, advanced=True,
+                    tooltip="Skip all ROCm optimizations, force pure stock behavior"),
             ],
             outputs=[
                 io.Latent.Output(display_name="output"),
@@ -483,31 +478,28 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
 
     @classmethod
     def execute(cls, noise, guider, sampler, sigmas, latent_image,
-                optimize_for_video=False, precision_mode="auto", compatibility_mode=False) -> io.NodeOutput:
-        # ── Detect architecture and model type ──────────────────────────
+                compatibility_mode=False) -> io.NodeOutput:
         model = guider.model_patcher
 
+        # ── ROCm setup (skipped in compatibility_mode) ──────────────────
         if not compatibility_mode:
             arch_info = detect_architecture()
             model_info = detect_model_sampling_type(model)
             apply_rocm_backend_settings(arch_info)
 
+            is_rocm = bool(getattr(torch.version, 'hip', None))
+            if is_rocm:
+                print(f"🚀 ROCm detected on {arch_info['family']} "
+                      f"({arch_info.get('arch_name', 'unknown')}) "
+                      f"— applying backend tuning", flush=True)
+
             if model_info["has_high_memory"]:
-                print(f"💾 High-memory model detected (factor: {model_info['memory_usage_factor']}) — cleaning up")
+                print(f"💾 High-memory model (factor: {model_info['memory_usage_factor']}x, "
+                      f"{model_info['latent_channels']}ch latent) — defragging VRAM", flush=True)
                 emergency_memory_cleanup()
 
             if model_info["model_type"] == "flow":
-                print(f"🌊 Flow-matching model detected ({model_info['latent_channels']}ch latent)")
-            elif model_info["is_pixel_space"]:
-                print(f"📷 Pixel-space model detected — no VAE decode needed downstream")
-
-            is_rocm = bool(getattr(torch.version, 'hip', None))
-            if is_rocm and torch.cuda.is_available() and precision_mode == "bf16":
-                try:
-                    if getattr(torch.cuda, 'is_bf16_supported', lambda: False)():
-                        pass
-                except Exception:
-                    pass
+                print(f"🌊 Flow-matching model ({model_info['latent_channels']}ch)", flush=True)
 
         # ── Stock SamplerCustomAdvanced logic ──────────────────────────
         latent = latent_image
@@ -527,14 +519,12 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
         x0_output = {}
         total_steps = sigmas.shape[-1] - 1
 
-        # ── Video optimization ──────────────────────────────────────────
-        is_video_workflow = False
-        if not compatibility_mode and optimize_for_video and latent_image_tensor.ndim == 5 and latent_image_tensor.shape[2] > 1:
-            is_video_workflow = True
+        # ── Auto-detect video (5D latent with T > 1) ──────────────────────
+        is_video = latent_image_tensor.ndim == 5 and latent_image_tensor.shape[2] > 1
 
-        # ── Create previewer once (like stock prepare_callback) ──────
+        # ── Create previewer once (like stock prepare_callback) ──────────
         previewer = None
-        if not is_video_workflow:
+        if not is_video:
             try:
                 previewer = latent_preview.get_previewer(
                     guider.model_patcher.load_device,
@@ -556,7 +546,6 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
             progress_pct = ((step + 1) / total_steps) * 100
             pct_key = (int(progress_pct) // 10) * 10
 
-            # ── Update progress bar with preview (throttled) ────────
             if current_time - last_update_time[0] >= 0.3 or step == total_steps - 1:
                 preview_bytes = None
                 if previewer and step % 5 == 0:
@@ -570,11 +559,9 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
                     pass
                 last_update_time[0] = current_time
 
-            # ── Console timing at 10% milestones only ──────────────
             if step == 0 or step == total_steps - 1 or pct_key not in reported_milestones:
                 reported_milestones.add(pct_key)
                 elapsed = current_time - start_time
-                wf_type = "Video" if is_video_workflow else "Image"
                 if step == 0:
                     print(f"📊 ROCm CustomAdvanced: Starting {total_steps} steps...", flush=True)
                 else:
@@ -587,11 +574,11 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
                           f"({avg:.2f}s/step)", flush=True)
 
         callback = enhanced_callback
-        disable_pbar = is_video_workflow
+        disable_pbar = is_video
 
         # ── Sampling ────────────────────────────────────────────────────
         print(f"🚀 ROCm SamplerCustomAdvanced: {total_steps} steps"
-              f"{' (video mode)' if is_video_workflow else ''}", flush=True)
+              f"{' (video mode)' if is_video else ''}", flush=True)
         samples = guider.sample(
             noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
             denoise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar,
@@ -649,10 +636,6 @@ class ROCMSamplerCustomAdvancedBenchmark:
                 "sampler": ("SAMPLER",),
                 "sigmas": ("SIGMAS",),
                 "latent_image": ("LATENT",),
-            },
-            "optional": {
-                "optimize_for_video": ("BOOLEAN", {"default": False}),
-                "precision_mode": (["auto", "fp32", "bf16"], {"default": "auto"}),
             }
         }
 
@@ -662,8 +645,7 @@ class ROCMSamplerCustomAdvancedBenchmark:
     CATEGORY = "ROCm Ninodes/Sampling"
     DESCRIPTION = "Compare stock vs ROCm-optimized custom sampler performance"
 
-    def run(self, noise, guider, sampler, sigmas, latent_image,
-            optimize_for_video=False, precision_mode="auto"):
+    def run(self, noise, guider, sampler, sigmas, latent_image):
         import time as time_module
         import gc
 
@@ -713,9 +695,7 @@ class ROCMSamplerCustomAdvancedBenchmark:
         if model_info["has_high_memory"]:
             emergency_memory_cleanup()
 
-        is_video_workflow = False
-        if optimize_for_video and latent_image_tensor.ndim == 5 and latent_image_tensor.shape[2] > 1:
-            is_video_workflow = True
+        is_video = latent_image_tensor.ndim == 5 and latent_image_tensor.shape[2] > 1
 
         mem_before_rocm = torch.cuda.memory_allocated(0) if torch.cuda.is_available() else 0
 
@@ -739,7 +719,7 @@ class ROCMSamplerCustomAdvancedBenchmark:
         rocm_samples = guider.sample(
             noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
             denoise_mask=noise_mask, callback=rocm_callback,
-            disable_pbar=is_video_workflow, seed=noise.seed
+            disable_pbar=is_video, seed=noise.seed
         )
         rocm_samples = rocm_samples.to(comfy.model_management.intermediate_device())
         t3 = time_module.time()
