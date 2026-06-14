@@ -558,6 +558,7 @@ class ROCMOptimizedVAEDecode:
             self._vae_model_cache[cache_key] = True
 
         def decode_fn(samples_tile):
+            model_management.throw_exception_if_processing_interrupted()
             samples_tile = samples_tile.to(vae.device).to(dtype)
             result = vae.decode(samples_tile)
             if isinstance(result, tuple):
@@ -666,6 +667,7 @@ class ROCMOptimizedVAEDecode:
         first_chunk_processed = False
 
         for chunk_idx, (c_start, c_end) in enumerate(chunks):
+            model_management.throw_exception_if_processing_interrupted()
             chunk_frames = c_end - c_start
             chunk_latent = samples_tensor[:, :, c_start:c_end, :, :].to(device).to(dtype)
 

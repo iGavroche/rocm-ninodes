@@ -531,6 +531,7 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
         reported_milestones = set()
 
         def enhanced_callback(step, x0, x, total_steps):
+            comfy.model_management.throw_exception_if_processing_interrupted()
             if x0 is not None:
                 x0_output["x0"] = x0
 
@@ -688,6 +689,7 @@ class ROCMSamplerCustomAdvancedBenchmark:
         x0_output = {}
 
         def rocm_callback(step, x0, x, total_steps):
+            comfy.model_management.throw_exception_if_processing_interrupted()
             if x0 is not None:
                 x0_output["x0"] = x0
             now = time_module.time()
