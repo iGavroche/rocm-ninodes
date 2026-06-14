@@ -469,6 +469,9 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
                 io.Latent.Input("latent_image"),
                 io.Boolean.Input("compatibility_mode", optional=True, default=False, advanced=True,
                     tooltip="Skip all ROCm optimizations, force pure stock behavior"),
+                io.Combo.Input("flash_attention", options=["auto", "disable_flash", "force_flash"],
+                    optional=True, default="auto", advanced=True,
+                    tooltip="Override flash attention behavior. 'auto' = use ComfyUI defaults, 'disable_flash' = use math/efficient SDP (fixes illegal memory access on some ROCm models), 'force_flash' = prefer flash SDP with math/efficient fallback"),
             ],
             outputs=[
                 io.Latent.Output(display_name="output"),
@@ -478,20 +481,57 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
 
     @classmethod
     def execute(cls, noise, guider, sampler, sigmas, latent_image,
-                compatibility_mode=False) -> io.NodeOutput:
+                compatibility_mode=False, flash_attention="auto") -> io.NodeOutput:
         model = guider.model_patcher
+        arch_info = detect_architecture()
+        is_rocm = bool(getattr(torch.version, 'hip', None))
+        model_info = detect_model_sampling_type(model)
 
-        # ── ROCm info logging (safe — no GPU state changes) ────────────
+        # ── Flash attention override ──────────────────────────────────
+        _flash_restore = None
+        if flash_attention != "auto" and torch.cuda.is_available():
+            try:
+                _flash_restore = {
+                    "flash": torch.backends.cuda.flash_sdp_enabled(),
+                    "math": torch.backends.cuda.math_sdp_enabled(),
+                    "efficient": torch.backends.cuda.mem_efficient_sdp_enabled(),
+                }
+                if flash_attention == "disable_flash":
+                    torch.backends.cuda.enable_flash_sdp(False)
+                    torch.backends.cuda.enable_math_sdp(True)
+                    torch.backends.cuda.enable_mem_efficient_sdp(True)
+                    print("⚠️  Flash attention disabled for this node (using math/efficient SDP)", flush=True)
+                elif flash_attention == "force_flash":
+                    torch.backends.cuda.enable_flash_sdp(True)
+                    # Don't disable math/mem_efficient — they serve as fallback
+                    # if flash SDP fails on this ROCm config
+                    if not torch.backends.cuda.math_sdp_enabled():
+                        torch.backends.cuda.enable_math_sdp(True)
+                    if not torch.backends.cuda.mem_efficient_sdp_enabled():
+                        torch.backends.cuda.enable_mem_efficient_sdp(True)
+                    print("⚡ Flash attention preferred (fallback backends kept available)", flush=True)
+            except Exception:
+                _flash_restore = None
+
+        # ── ROCm info logging + backend tuning ────────────────────────
         if not compatibility_mode:
-            arch_info = detect_architecture()
-            is_rocm = bool(getattr(torch.version, 'hip', None))
-            if is_rocm:
-                print(f"🚀 ROCm detected on {arch_info['family']} "
-                      f"({arch_info.get('arch_name', 'unknown')})", flush=True)
+            apply_rocm_backend_settings(arch_info)
 
-            model_info = detect_model_sampling_type(model)
+            if is_rocm:
+                arch_str = model_info.get("model_architecture", "").upper()
+                print(f"🚀 ROCm detected on {arch_info['family']} "
+                      f"({arch_info.get('arch_name', 'unknown')})"
+                      f"{f' — {arch_str}' if arch_str and arch_str != 'UNKNOWN' else ''}",
+                      flush=True)
+
             if model_info["model_type"] == "flow":
                 print(f"🌊 Flow-matching model ({model_info['latent_channels']}ch)", flush=True)
+
+            if model_info.get("has_high_memory"):
+                print(f"💾 High-memory model detected (factor: "
+                      f"{model_info['memory_usage_factor']}) — cleaning up before sampling",
+                      flush=True)
+                emergency_memory_cleanup()
 
         # ── Stock SamplerCustomAdvanced logic ──────────────────────────
         latent = latent_image
@@ -569,14 +609,48 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
         callback = enhanced_callback
         disable_pbar = is_video
 
+        # ── VRAM safety check ──────────────────────────────────────────
+        if not compatibility_mode and torch.cuda.is_available():
+            try:
+                _, _, _, free = get_gpu_memory_info(
+                    is_apu=arch_info.get("is_apu", False)
+                )
+                if free is not None:
+                    free_gb = free / (1024**3)
+                    total_avail = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                    used_gb = total_avail - free_gb
+                    if free_gb < 2.0 or used_gb > total_avail * 0.95:
+                        arch_name = model_info.get("model_architecture", "unknown").upper()
+                        print(
+                            f"⚠️  Low VRAM: ~{free_gb:.1f}GB free "
+                            f"({arch_name} model, factor "
+                            f"{model_info.get('memory_usage_factor', '?')}x). "
+                            f"OOM / illegal memory access likely. "
+                            f"Try: disable CacheDiT, remove --reserve-vram, "
+                            f"reduce frame count, or use --use-pytorch-attention",
+                            flush=True
+                        )
+            except Exception:
+                pass
+
         # ── Sampling ────────────────────────────────────────────────────
         print(f"🚀 ROCm SamplerCustomAdvanced: {total_steps} steps"
               f"{' (video mode)' if is_video else ''}", flush=True)
-        samples = guider.sample(
-            noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
-            denoise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar,
-            seed=noise.seed
-        )
+        try:
+            samples = guider.sample(
+                noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
+                denoise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar,
+                seed=noise.seed
+            )
+        finally:
+            if _flash_restore is not None:
+                try:
+                    torch.backends.cuda.enable_flash_sdp(_flash_restore["flash"])
+                    torch.backends.cuda.enable_math_sdp(_flash_restore["math"])
+                    torch.backends.cuda.enable_mem_efficient_sdp(_flash_restore["efficient"])
+                except Exception:
+                    pass
+
         samples = samples.to(comfy.model_management.intermediate_device())
         elapsed = time.time() - start_time
         print(f"✅ ROCm SamplerCustomAdvanced: {total_steps} steps in {elapsed:.1f}s "

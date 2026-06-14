@@ -87,6 +87,7 @@ def detect_model_sampling_type(model) -> dict:
             - is_pixel_space: bool (z-image-turbo style, no VAE)
             - memory_usage_factor: float
             - has_high_memory: bool (memory_usage_factor > 5)
+            - model_architecture: str (e.g. "ltx", "flux", "wan", "sd", "unknown")
     """
     result = {
         "model_type": "unknown",
@@ -94,6 +95,7 @@ def detect_model_sampling_type(model) -> dict:
         "is_pixel_space": False,
         "memory_usage_factor": 1.0,
         "has_high_memory": False,
+        "model_architecture": "unknown",
     }
 
     try:
@@ -137,6 +139,22 @@ def detect_model_sampling_type(model) -> dict:
     except Exception:
         pass
 
+    # Model architecture detection (class name based)
+    try:
+        class_name = getattr(inner, '__class__', None)
+        if class_name is not None:
+            cn = class_name.__name__.lower()
+            if any(x in cn for x in ('ltx', 'ltxv', 'lightricks')):
+                result["model_architecture"] = "ltx"
+            elif 'flux' in cn:
+                result["model_architecture"] = "flux"
+            elif 'wan' in cn:
+                result["model_architecture"] = "wan"
+            elif 'stable_diffusion' in cn or 'sd_' in cn:
+                result["model_architecture"] = "sd"
+    except Exception:
+        pass
+
     return result
 
 
@@ -174,7 +192,11 @@ def apply_rocm_backend_settings(arch_info: dict):
         return
 
     torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cuda.matmul.allow_fp16_accumulation = True
+    # allow_fp16_accumulation is intentionally NOT set here:
+    # It causes numerical drift / illegal memory access in bf16 flow-matching
+    # models (LTX Video, etc.) on RDNA 3.5 (gfx1151). See README.
+    if arch_info.get("family") not in ("rdna3_5",):
+        torch.backends.cuda.matmul.allow_fp16_accumulation = True
 
     has_hip = bool(getattr(torch.version, 'hip', None))
     if not has_hip:

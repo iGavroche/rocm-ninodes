@@ -9,7 +9,7 @@ It imports from the rocm_nodes package structure.
 import sys
 import os
 
-__version__ = "2.2.4"
+__version__ = "2.2.5"
 __author__ = "iGavroche"
 __email__ = "nino2k@proton.me"
 __description__ = "ROCm-optimized ComfyUI nodes for AMD GPU performance"
