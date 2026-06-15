@@ -191,7 +191,6 @@ def apply_rocm_backend_settings(arch_info: dict):
     if not is_amd:
         return
 
-    torch.backends.cuda.matmul.allow_tf32 = False
     # allow_fp16_accumulation is intentionally NOT set here:
     # It causes numerical drift / illegal memory access in bf16 flow-matching
     # models (LTX Video, etc.) on RDNA 3.5 (gfx1151). See README.

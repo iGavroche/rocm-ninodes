@@ -269,7 +269,6 @@ class ROCMOptimizedVAEDecode:
 
         # ── ROCm backend settings ───────────────────────────────────────────
         if use_rocm_optimizations and is_amd:
-            torch.backends.cuda.matmul.allow_tf32 = False
             torch.backends.cuda.matmul.allow_fp16_accumulation = True
 
         # ── Debug capture ───────────────────────────────────────────────────

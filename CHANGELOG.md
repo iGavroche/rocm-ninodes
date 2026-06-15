@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.2.6] - 2025-06-15
+
+### Fixed
+- **ROCm sampler 2x slowdown on LTX 2.3 video** (`architecture.py:194`, `vae.py:272`): Removed `torch.backends.cuda.matmul.allow_tf32 = False` which unconditionally disabled TF32-accelerated GEMMs on AMD GPUs. This caused all matmuls to fall back to full fp32, hitting DiT-based models (LTX Video) hardest due to their matmul-heavy transformer architecture. TF32 is now left at its ROCm default (`True`), restoring stock performance.
+- **Inconsistent backend settings**: VAE decode also duplicated the same `allow_tf32 = False` inline; now aligned to not set it.
+
 ## [2.0.10] - 2025-03-XX
 
 ### Changed
