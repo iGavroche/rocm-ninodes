@@ -690,14 +690,18 @@ class ROCMOptimizedVAEDecode:
                 # artifacts since the first latent frame lacks backward context.
                 decoded = decoded[1:]  # [out_T - 1, H, W, C]
 
-                # Blend the overlap region with the previous chunk's tail
+                # Blend the overlap region with the previous chunk's tail.
+                # NOTE: avoid in-place slice assignment (e.g. result_parts[-1][-N:] = ...)
+                # — it triggers an access violation on Windows under the ZLUDA/ROCm
+                # backend. Build the blended chunk fresh and swap the list entry.
                 blend_frames = min(temporal_overlap * temporal_comp, decoded.shape[0], result_parts[-1].shape[0])
                 if blend_frames > 0:
                     prev_tail = result_parts[-1][-blend_frames:]
                     curr_head = decoded[:blend_frames]
                     w = torch.linspace(0, 1, blend_frames, device=decoded.device, dtype=decoded.dtype)
                     w = w.view(-1, 1, 1, 1)
-                    result_parts[-1][-blend_frames:] = prev_tail * (1 - w) + curr_head * w
+                    blended = prev_tail * (1.0 - w) + curr_head * w
+                    result_parts[-1] = torch.cat([result_parts[-1][:-blend_frames], blended], dim=0)
 
                 # Append the clean tail of the current chunk
                 result_parts.append(decoded[blend_frames:])
