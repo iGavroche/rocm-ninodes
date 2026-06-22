@@ -163,7 +163,8 @@ class ROCMOptimizedKSampler:
                         previewer = latent_preview.get_previewer(model.load_device, model.model.latent_format)
                         if previewer:
                             preview_bytes = previewer.decode_latent_to_preview_image("JPEG", x0)
-                    except:
+                    except Exception as e:
+                        print(f"⚠ ROCm sampler preview failed (will retry next step): {type(e).__name__}: {e}", flush=True)
                         preview_bytes = None
 
                 try:
@@ -307,7 +308,8 @@ class ROCMOptimizedKSamplerAdvanced:
                         previewer = latent_preview.get_previewer(model.load_device, model.model.latent_format)
                         if previewer:
                             preview_bytes = previewer.decode_latent_to_preview_image("JPEG", x0)
-                    except:
+                    except Exception as e:
+                        print(f"⚠ ROCm sampler preview failed (will retry next step): {type(e).__name__}: {e}", flush=True)
                         preview_bytes = None
 
                 try:
@@ -584,8 +586,9 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
                 if previewer and step % 5 == 0:
                     try:
                         preview_bytes = previewer.decode_latent_to_preview_image("JPEG", x0)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"⚠ ROCm sampler preview failed (will retry next step): {type(e).__name__}: {e}", flush=True)
+                        preview_bytes = None
                 try:
                     pbar.update_absolute(step + 1, total_steps, preview=preview_bytes)
                 except Exception:

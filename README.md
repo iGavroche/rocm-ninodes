@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.2.7)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.2.8)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -29,11 +29,17 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.2.7-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.2.8-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.2.8
+
+- **Fixed Windows access violation on LTX video decode** (`rocm_nodes/core/vae.py`): Removed the unconditional `comfy_has_chunked_io = False` override for LTX. Disabling chunked IO pushed ComfyUI's decode through `out.to(device=cpu, dtype=fp32, copy=True)`, a combined op that crashes on Windows with a `memmove` access violation under the ZLUDA/ROCm backend. LTX now uses the stock chunked path, which streams writes into a pre-allocated CPU buffer — no combined cast, lower GPU peak memory, no crash.
+- **`enable_temporal_tiling` is now a 3-way combo** (`auto` / `enable` / `disable`, default `auto`): `auto` enables temporal tiling when the estimated decode output exceeds 3 GB, and logs a one-line recommendation when the output is long but still under the threshold. Explicit `enable` / `disable` are honored verbatim. Boolean `True` / `False` from old workflows are accepted and mapped to `enable` / `disable` for backward compatibility.
+- **Visible previewer errors on Windows** (`rocm_nodes/core/sampler.py`): the three ROCm sampler callbacks used to swallow the previewer's `decode_latent_to_preview_image` exception silently, which is why LTX video previews appeared to vanish on Windows (the `taeltx_2` TAESD previewer hit the same ZLUDA crash internally). The exception type and message are now logged once per failed step.
 
 ## 🚀 What's new in v2.2.7
 

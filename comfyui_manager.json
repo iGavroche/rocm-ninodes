@@ -2,7 +2,7 @@
     "name": "rocm-ninodes",
     "display_name": "ROCm Ninodes",
     "description": "ROCm-optimized nodes for ComfyUI: VAE decode, sampling (KSampler + SamplerCustomAdvanced), checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, and monitoring — tuned for AMD GPUs (gfx1151) with ROCm.",
-    "version": "2.2.7",
+    "version": "2.2.8",
     "author": "iGavroche",
     "author_email": "nino2k@proton.me",
     "repository": "https://github.com/iGavroche/rocm-ninodes",

@@ -182,9 +182,9 @@ class ROCMOptimizedVAEDecode:
                     "default": False,
                     "tooltip": "Enable stock ComfyUI compatibility mode (disables all ROCm optimizations)"
                 }),
-                "enable_temporal_tiling": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "For LTX/WAN videos: decode in temporal chunks to reduce memory. Enable for long videos."
+                "enable_temporal_tiling": (["auto", "enable", "disable"], {
+                    "default": "auto",
+                    "tooltip": "For LTX/WAN videos: 'auto' enables temporal tiling for large outputs, 'enable' forces it on, 'disable' turns it off."
                 }),
                 "temporal_chunk_size": ("INT", {
                     "default": 16,
@@ -215,7 +215,7 @@ class ROCMOptimizedVAEDecode:
 
     def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True,
                precision_mode="auto", batch_optimization=True, compatibility_mode=False,
-               enable_temporal_tiling=False, temporal_chunk_size=16,
+               enable_temporal_tiling="auto", temporal_chunk_size=16,
                temporal_overlap=2, last_frame_fix=False):
         """
         Optimized VAE decode for ROCm/AMD GPUs with video support and quantized model compatibility
@@ -296,6 +296,7 @@ class ROCMOptimizedVAEDecode:
 
             # ── Output size estimation for large videos ──────────────────────
             out_frames, out_h, out_w = T, H, W
+            est_gb = 0.0
             try:
                 temporal_comp = vae.temporal_compression_decode() or 1
                 spatial_comp = vae.spacial_compression_decode() or 8
@@ -304,10 +305,26 @@ class ROCMOptimizedVAEDecode:
                 out_w = W * spatial_comp
                 est_gb = (B * out_frames * out_h * out_w * 3 * 4 * 3) / (1024**3)
                 print(f"📊 Estimated output: {out_frames} frames at {out_h}x{out_w}, ~{est_gb:.1f}GB peak")
-                if est_gb > 6:
-                    print(f"⚠️ Large video decode — consider enabling temporal tiling")
             except Exception:
                 pass
+
+            # ── Resolve enable_temporal_tiling (auto / enable / disable) ───
+            # Backward-compat: older workflows may pass a bool.
+            if isinstance(enable_temporal_tiling, bool):
+                enable_temporal_tiling = "enable" if enable_temporal_tiling else "disable"
+            if enable_temporal_tiling not in ("auto", "enable", "disable"):
+                enable_temporal_tiling = "auto"
+            if enable_temporal_tiling == "auto":
+                if vae_type in ("ltxv_vae", "wan_vae") and est_gb > 3.0:
+                    tiling_enabled = True
+                    print(f"🧩 Temporal tiling: auto-enabled (output ~{est_gb:.1f}GB > 3.0GB threshold)")
+                else:
+                    tiling_enabled = False
+                    if vae_type in ("ltxv_vae", "wan_vae") and out_frames > 60:
+                        print(f"⚠ Output is {out_frames} frames — set enable_temporal_tiling='enable' "
+                              f"to cut peak memory")
+            else:
+                tiling_enabled = (enable_temporal_tiling == "enable")
 
             # ── Convert model + input to efficient dtype for video ───────────
             video_dtype = None
@@ -346,21 +363,18 @@ class ROCMOptimizedVAEDecode:
                 gc.collect()
 
             # ── Temporal tiling path (for long videos) ───────────────────────
-            if enable_temporal_tiling and vae_type in ("ltxv_vae", "wan_vae"):
+            if tiling_enabled and vae_type in ("ltxv_vae", "wan_vae"):
                 print(f"🧩 Temporal tiling enabled: chunk_size={temporal_chunk_size}, overlap={temporal_overlap}")
                 result = self._decode_video_temporal_tiled(
                     vae, samples_processed, vae_type, temporal_chunk_size,
                     temporal_overlap, last_frame_fix, device, video_dtype or torch.float32
                 )
             else:
-                # ── Direct decode path (with chunked_io disabled for LTX) ────
-                was_chunked = False
-                if vae_type in ("ltxv_vae",):
-                    was_chunked = getattr(vae.first_stage_model, 'comfy_has_chunked_io', False)
-                    if was_chunked:
-                        vae.first_stage_model.comfy_has_chunked_io = False
-                        print("🔄 Disabled chunked IO to prevent giant pre-allocation")
-
+                # ── Direct decode path — keep LTX chunked_io on so the model
+                #    streams writes into a pre-allocated CPU buffer. This avoids
+                #    the combined `.to(device, dtype, copy=True)` op at the end
+                #    of ComfyUI's decode, which crashes with a `memmove` access
+                #    violation on Windows under the ZLUDA/ROCm backend.
                 try:
                     with torch.no_grad():
                         result = vae.decode(samples_processed)
@@ -380,16 +394,13 @@ class ROCMOptimizedVAEDecode:
                         raise RuntimeError(
                             f"Video VAE decode failed for {out_frames} frames at "
                             f"{out_h}x{out_w}. Try enabling temporal tiling "
-                            f"(enable_temporal_tiling=True, temporal_chunk_size=16)."
+                            f"(enable_temporal_tiling='enable', temporal_chunk_size=16)."
                         ) from e
                     else:
                         raise RuntimeError(
                             f"Video VAE decode failed for {out_frames} frames at "
                             f"{out_h}x{out_w}. Try a shorter clip or reduce resolution."
                         ) from e
-                finally:
-                    if was_chunked:
-                        vae.first_stage_model.comfy_has_chunked_io = True
 
             if isinstance(result, tuple):
                 result = result[0]
