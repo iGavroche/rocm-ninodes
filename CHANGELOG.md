@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.2.9] - 2025-06-28
+
+### Fixed
+- **Visible seams + extra frames in temporal VAE tiling** (`rocm_nodes/core/vae.py:673`): The overlap-blend step was blending each new chunk against the *truncated tail* of the previous chunk (`result_parts[-1]`) instead of the *cumulative* result tensor. After chunk 1 was shortened by `[1:]` to drop the first decoded frame, the next blend used that 24/32-frame tail as its reference, so `blend_frames` alternated 32 → 24 → 32 → 24 across chunks. This left a visible seam every two chunks in the back half of long videos and appended 8 extra frames per 2 chunks (1393 frames instead of 1201 for a 50 s LTX job). Blending is now done against the cumulative `result` tensor with `torch.cat` (which returns a fresh tensor), so the count is exact and seams disappear.
+
 ## [2.2.6] - 2025-06-15
 
 ### Fixed
