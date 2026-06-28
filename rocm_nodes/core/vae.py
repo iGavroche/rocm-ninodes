@@ -673,7 +673,17 @@ class ROCMOptimizedVAEDecode:
                 pass
 
         # ── Decode each chunk with overlap + blend ──────────────────────────
-        result_parts = []
+        # NOTE: the previous implementation kept a list `result_parts` and blended
+        # against `result_parts[-1]`. That element is the already-truncated tail
+        # of the previous chunk (24 or 32 pixel frames depending on the previous
+        # blend size), not the cumulative previous result. This made `blend_frames`
+        # alternate 32/24 every other chunk, which (a) left visible seams every two
+        # chunks in the back half of long videos and (b) appended 8 extra frames per
+        # 2 chunks, yielding 1393 frames for a 50 s LTX job instead of the
+        # expected 1201. The fix is to blend against the cumulative `result`
+        # tensor; `torch.cat` returns a fresh tensor so the ZLUDA in-place
+        # access violation that motivated the list approach is still avoided.
+        result = None
         first_chunk_processed = False
 
         for chunk_idx, (c_start, c_end) in enumerate(chunks):
@@ -690,7 +700,7 @@ class ROCMOptimizedVAEDecode:
             decoded = decoded.squeeze(0)  # [out_T, H, W, C]
 
             if not first_chunk_processed:
-                result_parts.append(decoded)
+                result = decoded
                 first_chunk_processed = True
                 out_T = decoded.shape[0]
                 print(f"  Chunk 0: latent [{c_start}:{c_end}] ({chunk_frames}) → {out_T} output frames")
@@ -701,21 +711,24 @@ class ROCMOptimizedVAEDecode:
                 # artifacts since the first latent frame lacks backward context.
                 decoded = decoded[1:]  # [out_T - 1, H, W, C]
 
-                # Blend the overlap region with the previous chunk's tail.
-                # NOTE: avoid in-place slice assignment (e.g. result_parts[-1][-N:] = ...)
-                # — it triggers an access violation on Windows under the ZLUDA/ROCm
-                # backend. Build the blended chunk fresh and swap the list entry.
-                blend_frames = min(temporal_overlap * temporal_comp, decoded.shape[0], result_parts[-1].shape[0])
+                # Blend the overlap region with the CUMULATIVE previous tail.
+                blend_frames = min(temporal_overlap * temporal_comp, decoded.shape[0], result.shape[0])
                 if blend_frames > 0:
-                    prev_tail = result_parts[-1][-blend_frames:]
+                    prev_tail = result[-blend_frames:]
                     curr_head = decoded[:blend_frames]
                     w = torch.linspace(0, 1, blend_frames, device=decoded.device, dtype=decoded.dtype)
                     w = w.view(-1, 1, 1, 1)
                     blended = prev_tail * (1.0 - w) + curr_head * w
-                    result_parts[-1] = torch.cat([result_parts[-1][:-blend_frames], blended], dim=0)
-
-                # Append the clean tail of the current chunk
-                result_parts.append(decoded[blend_frames:])
+                    # Replace the tail of the cumulative result with the blended
+                    # region, then append the clean tail of the new chunk. The
+                    # outer torch.cat returns a fresh tensor, so no in-place
+                    # slice writeback is needed.
+                    result = torch.cat(
+                        [result[:-blend_frames], blended, decoded[blend_frames:]],
+                        dim=0,
+                    )
+                else:
+                    result = torch.cat([result, decoded], dim=0)
 
                 print(f"  Chunk {chunk_idx}: latent [{c_start}:{c_end}] ({chunk_frames}) → "
                       f"{out_T} output, dropped 1, blended {blend_frames}")
@@ -725,8 +738,6 @@ class ROCMOptimizedVAEDecode:
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-
-        result = torch.cat(result_parts, dim=0)
 
         if last_frame_fix and result.shape[0] > temporal_comp:
             result = result[:-temporal_comp]

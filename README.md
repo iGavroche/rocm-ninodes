@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.2.8)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.2.9)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -29,11 +29,15 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.2.8-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.2.9-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.2.9
+
+- **Fixed visible seams + extra frames in temporal VAE tiling** (`rocm_nodes/core/vae.py:673`): The overlap-blend step was blending each new chunk against the *truncated tail* of the previous chunk (`result_parts[-1]`) instead of the *cumulative* result tensor. After chunk 1 was shortened by `[1:]` to drop the first decoded frame, the next blend used that 24/32-frame tail as its reference, so `blend_frames` alternated 32 → 24 → 32 → 24 across chunks. This left a visible seam every two chunks in the back half of long videos and appended 8 extra frames per 2 chunks (1393 frames instead of 1201 for a 50 s LTX job). Blending is now done against the cumulative `result` tensor with `torch.cat` (which returns a fresh tensor), so the count is exact and seams disappear.
 
 ## 🚀 What's new in v2.2.8
 
