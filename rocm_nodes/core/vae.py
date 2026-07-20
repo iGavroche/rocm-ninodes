@@ -2,9 +2,9 @@
 VAE Decode nodes for ROCM Ninodes.
 
 Contains all VAE-related node implementations:
-- ROCMOptimizedVAEDecode: Main VAE decode node with ROCm optimizations
-- ROCMOptimizedVAEDecodeTiled: Advanced tiled VAE decode
-- ROCMVAEPerformanceMonitor: Performance monitoring and recommendations
+        - ROCmVAEDecode: Main VAE decode node with ROCm optimizations
+ - ROCmVAEDecodeTiled: Advanced tiled VAE decode
+ - ROCmVAEPerformanceMonitor: Performance monitoring and recommendations
 """
 
 import time
@@ -39,6 +39,7 @@ from ..utils.memory import (
     check_memory_safety,
     emergency_memory_cleanup,
     get_gpu_memory_info,
+    discard_between_chunks,
 )
 from ..utils.debug import (
     DEBUG_MODE,
@@ -52,6 +53,8 @@ from ..utils.architecture import detect_architecture, apply_rocm_backend_setting
 from ..constants import (
     DEFAULT_TILE_SIZE, DEFAULT_TILE_OVERLAP,
     MIN_LATENT_TILE_SIZE, MIN_LATENT_OVERLAP,
+    GFX1151_TEMPORAL_CHUNK_SIZE,
+    DEFAULT_TEMPORAL_CHUNK_SIZE, DEFAULT_TEMPORAL_OVERLAP,
 )
 
 
@@ -130,7 +133,7 @@ def _select_precision(precision_mode: str, vae_type: str, vae, is_quantized: boo
     return vae.vae_dtype
 
 
-class ROCMOptimizedVAEDecode:
+class ROCmVAEDecode:
     """
     ROCM-optimized VAE Decode node specifically tuned for gfx1151 architecture.
 
@@ -221,7 +224,7 @@ class ROCMOptimizedVAEDecode:
         Optimized VAE decode for ROCm/AMD GPUs with video support and quantized model compatibility
         """
         start_time = time.time()
-        log_debug(f"ROCMOptimizedVAEDecode.decode started with samples shape: {samples['samples'].shape}")
+        log_debug(f"ROCmVAEDecode.decode started with samples shape: {samples['samples'].shape}")
 
         samples_tensor = samples["samples"]
 
@@ -274,7 +277,7 @@ class ROCMOptimizedVAEDecode:
         # ── Debug capture ───────────────────────────────────────────────────
         if DEBUG_MODE:
             save_debug_data(samples, "vae_decode_input", "flux_1024x1024", {
-                'node_type': 'ROCMOptimizedVAEDecode',
+                'node_type': 'ROCmVAEDecode',
                 'tile_size': tile_size,
                 'overlap': overlap,
                 'use_rocm_optimizations': use_rocm_optimizations,
@@ -356,11 +359,33 @@ class ROCMOptimizedVAEDecode:
             else:
                 samples_processed = samples_tensor
 
+            # ── Load VAE model + offload diffusion model ─────────────────────
+            # The video path must explicitly request model loading so that
+            # model_management offloads the diffusion model before decode.
+            # Without this, a 24 GB diffusion model stays loaded and there
+            # is not enough VRAM for the VAE decode output buffers.
+            vae_memory_required = est_gb * (1024**3) if est_gb > 0 else 4 * (1024**3)
+            try:
+                model_management.load_models_gpu([vae.patcher], memory_required=vae_memory_required)
+            except Exception as e:
+                if "out of memory" in str(e).lower():
+                    print("💾 VAE model loading OOM — performing cleanup and retrying")
+                    emergency_memory_cleanup()
+                    model_management.load_models_gpu([vae.patcher], memory_required=vae_memory_required // 2)
+                else:
+                    raise e
+
             # ── Aggressive cleanup before video decode ──────────────────────
             if use_rocm_optimizations and is_amd:
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
                 gc.collect()
+
+            # ── Architecture-aware chunk sizing ─────────────────────────────
+            # APUs (gfx1151) need smaller chunks to avoid HIP allocator
+            # fragmentation in the unified memory pool.
+            if arch_info["family"] == "rdna3_5":
+                temporal_chunk_size = min(temporal_chunk_size, GFX1151_TEMPORAL_CHUNK_SIZE)
 
             # ── Temporal tiling path (for long videos) ───────────────────────
             if tiling_enabled and vae_type in ("ltxv_vae", "wan_vae"):
@@ -412,12 +437,12 @@ class ROCMOptimizedVAEDecode:
             if DEBUG_MODE:
                 end_time = time.time()
                 save_debug_data(result, "vae_decode_output", "flux_1024x1024", {
-                    'node_type': 'ROCMOptimizedVAEDecode',
+                    'node_type': 'ROCmVAEDecode',
                     'execution_time': end_time - start_time,
                     'output_shape': result.shape,
                 })
                 capture_timing("vae_decode", start_time, end_time, {
-                    'node_type': 'ROCMOptimizedVAEDecode',
+                    'node_type': 'ROCmVAEDecode',
                     'is_video': True,
                     'vae_type': vae_type,
                 })
@@ -601,7 +626,7 @@ class ROCMOptimizedVAEDecode:
         if DEBUG_MODE:
             end_time = time.time()
             save_debug_data(result, "vae_decode_output", "flux_1024x1024", {
-                'node_type': 'ROCMOptimizedVAEDecode',
+                'node_type': 'ROCmVAEDecode',
                 'execution_time': end_time - time.time(),
                 'output_shape': result.shape,
                 'output_dtype': str(result.dtype),
@@ -696,6 +721,9 @@ class ROCMOptimizedVAEDecode:
             if isinstance(decoded, tuple):
                 decoded = decoded[0]
 
+            # Free input latent immediately after decode — before cleanup
+            del chunk_latent
+
             # vae.decode() returns [B, out_T, H, W, C] with B=1
             decoded = decoded.squeeze(0)  # [out_T, H, W, C]
 
@@ -736,8 +764,11 @@ class ROCMOptimizedVAEDecode:
             if pbar is not None:
                 pbar.update_absolute(chunk_idx + 1)
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            # Aggressive cleanup: sync + GC + empty cache
+            # This is more effective than simple empty_cache() for the HIP
+            # caching allocator on APUs (gfx1151), where fragmentation
+            # between reserved blocks causes OOM even with free system memory.
+            discard_between_chunks()
 
         if last_frame_fix and result.shape[0] > temporal_comp:
             result = result[:-temporal_comp]
@@ -747,7 +778,7 @@ class ROCMOptimizedVAEDecode:
         return result
 
 
-class ROCMOptimizedVAEDecodeTiled:
+class ROCmVAEDecodeTiled:
     """Advanced tiled VAE decode with ROCm optimizations"""
 
     @classmethod
@@ -833,7 +864,7 @@ class ROCMOptimizedVAEDecodeTiled:
         return (images,)
 
 
-class ROCMVAEPerformanceMonitor:
+class ROCmVAEPerformanceMonitor:
     """Monitor VAE performance and provide optimization suggestions"""
 
     @classmethod

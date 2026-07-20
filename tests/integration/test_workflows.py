@@ -10,14 +10,14 @@ import json
 # Add the custom nodes directory to path
 sys.path.insert(0, '/home/nino/ComfyUI/custom_nodes/rocm_ninodes')
 
-from nodes import ROCMOptimizedVAEDecodeInstrumented
+from nodes import ROCmVAEDecodeInstrumented
 
 class TestWorkflowIntegration:
     """Integration tests for ROCM workflows"""
     
     def test_flux_workflow_simulation(self, sample_vae):
         """Test simulation of Flux workflow components"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         # Simulate Flux workflow latent
         flux_latent = {
@@ -42,7 +42,7 @@ class TestWorkflowIntegration:
     @pytest.mark.skip(reason="Video processing needs more complex implementation")
     def test_wan_video_workflow_simulation(self, sample_vae):
         """Test simulation of WAN video workflow components"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         # Simulate WAN video workflow latent
         wan_latent = {
@@ -63,7 +63,7 @@ class TestWorkflowIntegration:
     
     def test_high_resolution_workflow(self, sample_vae):
         """Test high resolution workflow simulation"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         # Test 1280x1280 image
         high_res_latent = {
@@ -85,7 +85,7 @@ class TestWorkflowIntegration:
     
     def test_batch_workflow_simulation(self, sample_vae):
         """Test batch processing workflow simulation"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         # Test batch processing
         batch_latent = {
@@ -108,7 +108,7 @@ class TestWorkflowIntegration:
     
     def test_memory_constrained_workflow(self, sample_vae):
         """Test memory-constrained workflow simulation"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         # Test with memory optimizations
         memory_latent = {
@@ -130,7 +130,7 @@ class TestWorkflowIntegration:
     
     def test_precision_workflow_simulation(self, sample_vae):
         """Test different precision modes in workflow context"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         precision_modes = ["auto", "fp32", "fp16"]
         for precision_mode in precision_modes:
@@ -149,7 +149,7 @@ class TestWorkflowIntegration:
     
     def test_workflow_consistency(self, sample_vae):
         """Test workflow consistency across multiple runs"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         # Test consistency
         latent = {"samples": torch.randn(1, 4, 32, 32)}

@@ -16,8 +16,20 @@ import sys
 from pathlib import Path
 
 MAPPINGS = {
-    # Class renames
-    "ROCMOptimizedUNetLoader": "ROCmDiffusionLoader",
+    # Class renames: old → new canonical names
+    "ROCMOptimizedCheckpointLoader":    "ROCmCheckpointLoader",
+    "ROCMOptimizedUNetLoader":          "ROCmDiffusionLoader",
+    "ROCMOptimizedVAEDecode":           "ROCmVAEDecode",
+    "ROCMOptimizedVAEDecodeTiled":      "ROCmVAEDecodeTiled",
+    "ROCMVAEPerformanceMonitor":        "ROCmVAEPerformanceMonitor",
+    "ROCMOptimizedKSampler":            "ROCmKSampler",
+    "ROCMOptimizedKSamplerAdvanced":    "ROCmKSamplerAdvanced",
+    "ROCMSamplerCustomAdvanced":        "ROCmSamplerCustomAdvanced",
+    "ROCMSamplerPerformanceMonitor":    "ROCmSamplerPerformanceMonitor",
+    "ROCMSamplerCustomAdvancedBenchmark":"ROCmSamplerCustomAdvancedBenchmark",
+    "ROCMFluxBenchmark":                "ROCmFluxBenchmark",
+    "ROCMMemoryOptimizer":              "ROCmMemoryOptimizer",
+    "ROCMLoRALoader":                   "ROCmLoRALoader",
 }
 
 

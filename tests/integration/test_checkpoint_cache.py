@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import Mock, patch
 
 from rocm_nodes.core import checkpoint as checkpoint_module
-from rocm_nodes.core.checkpoint import ROCMOptimizedCheckpointLoader
+from rocm_nodes.core.checkpoint import ROCmCheckpointLoader
 
 
 def _clear_checkpoint_cache():
@@ -42,7 +42,7 @@ def test_two_runs_same_checkpoint_only_loads_once(
     mock_get_path.return_value = "/fake/checkpoints/ltx-2-19b-dev-fp8.safetensors"
     mock_load.return_value = mock_model_clip_vae
 
-    loader = ROCMOptimizedCheckpointLoader()
+    loader = ROCmCheckpointLoader()
 
     # First "API run"
     out1 = loader.load_checkpoint(
@@ -70,7 +70,7 @@ def test_force_reload_on_second_run_calls_load_again(
     mock_get_path.return_value = "/fake/checkpoints/ckpt.safetensors"
     mock_load.return_value = mock_model_clip_vae
 
-    loader = ROCMOptimizedCheckpointLoader()
+    loader = ROCmCheckpointLoader()
     loader.load_checkpoint("ckpt.safetensors", use_cache=True, force_reload=False)
     assert mock_load.call_count == 1
 

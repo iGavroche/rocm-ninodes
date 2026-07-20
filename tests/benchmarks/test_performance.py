@@ -11,14 +11,14 @@ import os
 # Add the custom nodes directory to path
 sys.path.insert(0, '/home/nino/ComfyUI/custom_nodes/rocm_ninodes')
 
-from nodes import ROCMOptimizedVAEDecodeInstrumented
+from nodes import ROCmVAEDecodeInstrumented
 
 class TestPerformanceBenchmarks:
     """Performance benchmark tests"""
     
     def test_vae_decode_performance(self, sample_vae):
         """Benchmark VAE decode performance"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         # Test different resolutions
         test_cases = [
@@ -60,7 +60,7 @@ class TestPerformanceBenchmarks:
     
     def test_tile_size_performance(self, sample_vae):
         """Benchmark different tile sizes"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         samples = {"samples": torch.randn(1, 4, 64, 64)}  # 512x512
         
@@ -95,7 +95,7 @@ class TestPerformanceBenchmarks:
     
     def test_precision_performance(self, sample_vae):
         """Benchmark different precision modes"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         samples = {"samples": torch.randn(1, 4, 64, 64)}  # 512x512
         
@@ -131,7 +131,7 @@ class TestPerformanceBenchmarks:
     
     def test_memory_usage(self, sample_vae):
         """Test memory usage patterns"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         # Test with different batch sizes
         batch_sizes = [1, 2, 4]
@@ -165,7 +165,7 @@ class TestPerformanceBenchmarks:
     
     def test_consistency_performance(self, sample_vae):
         """Test performance consistency across multiple runs"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         
         samples = {"samples": torch.randn(1, 4, 32, 32)}
         execution_times = []

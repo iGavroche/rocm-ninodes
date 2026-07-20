@@ -4,6 +4,7 @@ GPU architecture detection and model type classification.
 Shared utilities used by both VAE decode and sampler nodes.
 """
 
+import os
 import torch
 
 from ..constants import (
@@ -14,6 +15,7 @@ from ..constants import (
     CDNA_TILE_SIZE_RANGE, CDNA_BATCH_CAP, CDNA_IS_APU,
     DEFAULT_AMD_TILE_SIZE_RANGE, DEFAULT_AMD_BATCH_CAP, DEFAULT_AMD_IS_APU,
 )
+from .memory import detect_rocm_version
 
 
 def detect_architecture():
@@ -27,12 +29,18 @@ def detect_architecture():
             - tile_size_max: recommended upper tile bound
             - batch_cap: max batch for tiled operations
             - preferred_precision: "fp16" | "bf16" | "fp32"
+            - rocm_version: (major, minor, patch) tuple or None
+            - is_rocm_7_14_plus: bool
     """
+    rocm_ver = detect_rocm_version()
+
     if not torch.cuda.is_available():
         return {
             "arch_name": None, "family": "cpu", "is_apu": False,
             "tile_size_max": 2048, "batch_cap": 4,
             "preferred_precision": "fp32",
+            "rocm_version": rocm_ver,
+            "is_rocm_7_14_plus": rocm_ver is not None and rocm_ver >= (7, 14, 0),
         }
 
     try:
@@ -40,41 +48,51 @@ def detect_architecture():
     except Exception:
         arch_name = ""
 
+    base = {
+        "rocm_version": rocm_ver,
+        "is_rocm_7_14_plus": rocm_ver is not None and rocm_ver >= (7, 14, 0),
+    }
+
     if 'gfx1151' in arch_name or 'gfx1150' in arch_name:
-        return {
+        base.update({
             "arch_name": arch_name, "family": "rdna3_5", "is_apu": GFX1151_IS_APU,
             "tile_size_max": GFX1151_TILE_SIZE_RANGE[1],
             "batch_cap": GFX1151_BATCH_CAP,
             "preferred_precision": "fp16",
-        }
+        })
+        return base
     elif 'gfx110' in arch_name:
-        return {
+        base.update({
             "arch_name": arch_name, "family": "rdna3", "is_apu": GFX1100_IS_APU,
             "tile_size_max": GFX1100_TILE_SIZE_RANGE[1],
             "batch_cap": GFX1100_BATCH_CAP,
             "preferred_precision": "fp16",
-        }
+        })
+        return base
     elif 'gfx103' in arch_name:
-        return {
+        base.update({
             "arch_name": arch_name, "family": "rdna2", "is_apu": GFX1030_IS_APU,
             "tile_size_max": GFX1030_TILE_SIZE_RANGE[1],
             "batch_cap": GFX1030_BATCH_CAP,
             "preferred_precision": "fp16",
-        }
+        })
+        return base
     elif 'gfx90a' in arch_name or 'gfx942' in arch_name:
-        return {
+        base.update({
             "arch_name": arch_name, "family": "cdna", "is_apu": CDNA_IS_APU,
             "tile_size_max": CDNA_TILE_SIZE_RANGE[1],
             "batch_cap": CDNA_BATCH_CAP,
             "preferred_precision": "bf16",
-        }
+        })
+        return base
     else:
-        return {
+        base.update({
             "arch_name": arch_name, "family": "generic_amd", "is_apu": DEFAULT_AMD_IS_APU,
             "tile_size_max": DEFAULT_AMD_TILE_SIZE_RANGE[1],
             "batch_cap": DEFAULT_AMD_BATCH_CAP,
             "preferred_precision": "fp16",
-        }
+        })
+        return base
 
 
 def detect_model_sampling_type(model) -> dict:
@@ -182,6 +200,23 @@ def select_precision(precision_mode: str, is_quantized: bool, arch_info: dict) -
     return None
 
 
+def _check_blas_prefer_hipblaslt(arch_info: dict):
+    """Check and warn if TORCH_BLAS_PREFER_HIPBLASLT is not set on gfx1151.
+
+    ROCm docs recommend this env var for LLM performance on RDNA3/RDNA3.5
+    with PyTorch < 2.14. It becomes the default in PyTorch 2.14.
+    """
+    if arch_info.get("family") not in ("rdna3_5", "rdna3"):
+        return
+    val = os.environ.get("TORCH_BLAS_PREFER_HIPBLASLT", "")
+    if val != "1":
+        print(
+            f"  💡 TORCH_BLAS_PREFER_HIPBLASLT is not set. "
+            f"For optimal LLM performance on {arch_info['family']}, set: "
+            f"export TORCH_BLAS_PREFER_HIPBLASLT=1"
+        )
+
+
 def apply_rocm_backend_settings(arch_info: dict):
     """Apply ROCm-specific backend settings based on architecture."""
     if arch_info["family"] == "cpu":
@@ -191,11 +226,23 @@ def apply_rocm_backend_settings(arch_info: dict):
     if not is_amd:
         return
 
-    # allow_fp16_accumulation is intentionally NOT set here:
-    # It causes numerical drift / illegal memory access in bf16 flow-matching
-    # models (LTX Video, etc.) on RDNA 3.5 (gfx1151). See README.
-    if arch_info.get("family") not in ("rdna3_5",):
+    # allow_fp16_accumulation:
+    # - On ROCm < 7.14: disabled on rdna3_5 (gfx1151) — causes numerical drift
+    #   / illegal memory access in bf16 flow-matching models (LTX, etc.)
+    # - On ROCm 7.14+: re-enabled since AMD may have fixed the issue
+    is_rdna3_5 = arch_info.get("family") == "rdna3_5"
+    is_rocm_7_14_plus = arch_info.get("is_rocm_7_14_plus", False)
+
+    if not is_rdna3_5 or (is_rdna3_5 and is_rocm_7_14_plus):
         torch.backends.cuda.matmul.allow_fp16_accumulation = True
+        if is_rdna3_5 and is_rocm_7_14_plus:
+            print(
+                f"  ROCm 7.14+ detected — re-enabling fp16 accumulation "
+                f"on rdna3_5 (was disabled on older ROCm due to numerical drift)"
+            )
+
+    # Check TORCH_BLAS_PREFER_HIPBLASLT for LLM perf
+    _check_blas_prefer_hipblaslt(arch_info)
 
     has_hip = bool(getattr(torch.version, 'hip', None))
     if not has_hip:

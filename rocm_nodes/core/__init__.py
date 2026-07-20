@@ -11,41 +11,40 @@ This module contains all ComfyUI node classes organized by functionality:
 """
 
 from .vae import (
-    ROCMOptimizedVAEDecode,
-    ROCMOptimizedVAEDecodeTiled,
-    ROCMVAEPerformanceMonitor,
+    ROCmVAEDecode,
+    ROCmVAEDecodeTiled,
+    ROCmVAEPerformanceMonitor,
 )
 from .sampler import (
-    ROCMOptimizedKSampler,
-    ROCMOptimizedKSamplerAdvanced,
-    ROCMSamplerPerformanceMonitor,
-    ROCMSamplerCustomAdvanced,
-    ROCMSamplerCustomAdvancedBenchmark,
+    ROCmKSampler,
+    ROCmKSamplerAdvanced,
+    ROCmSamplerPerformanceMonitor,
+    ROCmSamplerCustomAdvanced,
+    ROCmSamplerCustomAdvancedBenchmark,
 )
-from .checkpoint import ROCMOptimizedCheckpointLoader
+from .checkpoint import ROCmCheckpointLoader
 from .unet_loader import ROCmDiffusionLoader
-from .lora import ROCMLoRALoader
-from .monitors import ROCMFluxBenchmark, ROCMMemoryOptimizer
+from .lora import ROCmLoRALoader
+from .monitors import ROCmFluxBenchmark, ROCmMemoryOptimizer
 from .textgen_ltx2 import ROCmTextGenerateLTX2Prompt
 
 __all__ = [
     # VAE nodes
-    'ROCMOptimizedVAEDecode',
-    'ROCMOptimizedVAEDecodeTiled',
-    'ROCMVAEPerformanceMonitor',
+    'ROCmVAEDecode',
+    'ROCmVAEDecodeTiled',
+    'ROCmVAEPerformanceMonitor',
     # Sampler nodes
-    'ROCMOptimizedKSampler',
-    'ROCMOptimizedKSamplerAdvanced',
-    'ROCMSamplerPerformanceMonitor',
-    'ROCMSamplerCustomAdvanced',
-    'ROCMSamplerCustomAdvancedBenchmark',
+    'ROCmKSampler',
+    'ROCmKSamplerAdvanced',
+    'ROCmSamplerPerformanceMonitor',
+    'ROCmSamplerCustomAdvanced',
+    'ROCmSamplerCustomAdvancedBenchmark',
     # Loader nodes
-    'ROCMOptimizedCheckpointLoader',
+    'ROCmCheckpointLoader',
     'ROCmDiffusionLoader',
-    'ROCMLoRALoader',
+    'ROCmLoRALoader',
     # Monitor nodes
-    'ROCMFluxBenchmark',
-    'ROCMMemoryOptimizer',
+    'ROCmFluxBenchmark',
+    'ROCmMemoryOptimizer',
     'ROCmTextGenerateLTX2Prompt',
 ]
-

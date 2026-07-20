@@ -2,9 +2,9 @@
 Sampler nodes for ROCM Ninodes.
 
 Contains all sampler-related node implementations:
-- ROCMOptimizedKSampler: Basic ROCm-optimized sampler
-- ROCMOptimizedKSamplerAdvanced: Advanced sampler with more control
-- ROCMSamplerPerformanceMonitor: Performance monitoring and recommendations
+- ROCmKSampler: Basic ROCm-optimized sampler
+- ROCmKSamplerAdvanced: Advanced sampler with more control
+- ROCmSamplerPerformanceMonitor: Performance monitoring and recommendations
 """
 
 import time
@@ -37,7 +37,7 @@ from ..utils.architecture import (
 )
 
 
-class ROCMOptimizedKSampler:
+class ROCmKSampler:
     """
     Stock KSampler behavior under ROCm category for compatibility.
     Auto-detects GPU architecture and model type for optimal settings.
@@ -203,7 +203,7 @@ class ROCMOptimizedKSampler:
         return (out,)
 
 
-class ROCMOptimizedKSamplerAdvanced:
+class ROCmKSamplerAdvanced:
     """
     Stock KSampler (Advanced) - exact copy from ComfyUI.
 
@@ -348,7 +348,7 @@ class ROCMOptimizedKSamplerAdvanced:
         return (out,)
 
 
-class ROCMSamplerPerformanceMonitor:
+class ROCmSamplerPerformanceMonitor:
     """Monitor sampler performance and provide optimization suggestions"""
 
     @classmethod
@@ -440,7 +440,7 @@ class ROCMSamplerPerformanceMonitor:
         )
 
 
-class ROCMSamplerCustomAdvanced(io.ComfyNode):
+class ROCmSamplerCustomAdvanced(io.ComfyNode):
     """
     Drop-in replacement for SamplerCustomAdvanced with ROCm optimizations.
 
@@ -459,7 +459,7 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="ROCMSamplerCustomAdvanced",
+            node_id="ROCmSamplerCustomAdvanced",
             display_name="ROCm SamplerCustomAdvanced",
             category="ROCm Ninodes/Sampling",
             description="Drop-in replacement for SamplerCustomAdvanced with ROCm memory management, backend tuning, and detailed progress tracking. Particularly beneficial for high-memory models like LTX Video (128ch latent).",
@@ -679,9 +679,9 @@ class ROCMSamplerCustomAdvanced(io.ComfyNode):
         return io.NodeOutput(out, out_denoised)
 
 
-class ROCMSamplerCustomAdvancedBenchmark:
+class ROCmSamplerCustomAdvancedBenchmark:
     """
-    Benchmark node that compares stock SamplerCustomAdvanced vs ROCMSamplerCustomAdvanced.
+    Benchmark node that compares stock SamplerCustomAdvanced vs ROCmSamplerCustomAdvanced.
 
     Runs both samplers with identical inputs and reports timing/memory differences.
     Connect this to the same sub-components as SamplerCustomAdvanced.
