@@ -2,7 +2,7 @@
 Checkpoint loader node for ROCM Ninodes.
 
 Contains checkpoint loading implementation:
-- ROCMOptimizedCheckpointLoader: ROCm-optimized checkpoint loader
+- ROCmCheckpointLoader: ROCm-optimized checkpoint loader
 
 Modern PyTorch (2.7+) with ROCm has improved memory allocators that don't require
 manual memory cleanup or expandable_segments configuration. This loader leverages
@@ -29,7 +29,7 @@ _checkpoint_cache: dict = {}
 _checkpoint_cache_key: str | None = None
 
 
-class ROCMOptimizedCheckpointLoader:
+class ROCmCheckpointLoader:
     """
     ROCm-optimized checkpoint loader for AMD GPUs (gfx1151)
     

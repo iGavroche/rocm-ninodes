@@ -2,8 +2,8 @@
 Monitor and utility nodes for ROCM Ninodes.
 
 Contains monitoring and utility node implementations:
-- ROCMFluxBenchmark: Comprehensive Flux workflow benchmark
-- ROCMMemoryOptimizer: Memory optimization helper
+- ROCmFluxBenchmark: Comprehensive Flux workflow benchmark
+- ROCmMemoryOptimizer: Memory optimization helper
 """
 
 import time
@@ -14,7 +14,7 @@ import torch
 import comfy.model_management as model_management
 
 
-class ROCMFluxBenchmark:
+class ROCmFluxBenchmark:
     """
     Comprehensive Flux workflow benchmark for AMD GPUs
     """
@@ -167,7 +167,7 @@ class ROCMFluxBenchmark:
         return (benchmark_text, performance_chart, recommendations_text, memory_analysis)
 
 
-class ROCMMemoryOptimizer:
+class ROCmMemoryOptimizer:
     """
     Memory optimization helper for AMD GPUs
     """

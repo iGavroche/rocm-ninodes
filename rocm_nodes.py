@@ -1,6 +1,11 @@
 """
 ROCM Optimized VAE Nodes for AMD GPUs
 Specifically optimized for gfx1151 architecture with ROCm 6.4+
+
+⚠ DEPRECATED: This monolithic file is kept for reference only.
+The refactored rocm_nodes/ package is now the canonical source.
+New features, fixes, and optimizations (ROCm 7.14 support, HIP OOM fixes,
+temporal tiling improvements) are only in rocm_nodes/.
 """
 
 import os

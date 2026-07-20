@@ -2,7 +2,7 @@
 LoRA loader node for ROCM Ninodes.
 
 Contains LoRA loading implementation:
-- ROCMLoRALoader: ROCm-optimized LoRA loader with memory management
+- ROCmLoRALoader: ROCm-optimized LoRA loader with memory management
 """
 
 from typing import Tuple, Optional
@@ -16,7 +16,7 @@ import comfy.sd
 from ..utils.memory import gentle_memory_cleanup
 
 
-class ROCMLoRALoader:
+class ROCmLoRALoader:
     """
     ROCM-optimized LoRA loader with aggressive memory management to prevent fragmentation.
     Specifically designed to handle LoRA loading operations that cause OOM errors.

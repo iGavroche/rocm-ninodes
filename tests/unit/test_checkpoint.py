@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import Mock, patch
 
 from rocm_nodes.core import checkpoint as checkpoint_module
-from rocm_nodes.core.checkpoint import ROCMOptimizedCheckpointLoader
+from rocm_nodes.core.checkpoint import ROCmCheckpointLoader
 
 
 def _clear_checkpoint_cache():
@@ -28,7 +28,7 @@ def reset_cache():
 @pytest.fixture
 def loader():
     """Create loader instance."""
-    return ROCMOptimizedCheckpointLoader()
+    return ROCmCheckpointLoader()
 
 
 @pytest.fixture

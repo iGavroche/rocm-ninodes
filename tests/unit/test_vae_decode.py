@@ -9,20 +9,20 @@ import os
 # Add the custom nodes directory to path
 sys.path.insert(0, '/home/nino/ComfyUI/custom_nodes/rocm-ninodes')
 
-from rocm_nodes.core.vae import ROCMOptimizedVAEDecode, _detect_vae_type
+from rocm_nodes.core.vae import ROCmVAEDecode, _detect_vae_type
 
 
-class ROCMOptimizedVAEDecodeInstrumented(ROCMOptimizedVAEDecode):
+class ROCmVAEDecodeInstrumented(ROCmVAEDecode):
     """Instrumented subclass for testing with deterministic behavior"""
     pass
 
 
-class TestROCMOptimizedVAEDecode:
-    """Test suite for ROCMOptimizedVAEDecode"""
+class TestROCmVAEDecode:
+    """Test suite for ROCmVAEDecode"""
 
     def test_basic_decode(self, sample_vae, sample_latent):
         """Test basic VAE decode functionality"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         result = node.decode(
             vae=sample_vae,
@@ -39,7 +39,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_different_tile_sizes(self, sample_vae, sample_latent):
         """Test VAE decode with different tile sizes"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         tile_sizes = [256, 512, 768, 1024]
         for tile_size in tile_sizes:
@@ -57,7 +57,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_different_resolutions(self, sample_vae):
         """Test VAE decode with different resolutions"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         resolutions = [(256, 256), (512, 512), (1024, 1024)]
         for w, h in resolutions:
@@ -80,7 +80,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_precision_modes(self, sample_vae, sample_latent):
         """Test VAE decode with different precision modes"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         precision_modes = ["auto", "fp32", "fp16"]
         for precision_mode in precision_modes:
@@ -99,7 +99,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_batch_processing(self, sample_vae):
         """Test VAE decode with batch processing"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         batch_latent = {
             "samples": torch.randn(2, 4, 32, 32)
@@ -121,7 +121,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_memory_optimization(self, sample_vae, sample_latent):
         """Test VAE decode with memory optimization enabled/disabled"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         for memory_opt in [True, False]:
             result = node.decode(
@@ -138,7 +138,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_adaptive_tiling(self, sample_vae, sample_latent):
         """Test VAE decode with adaptive tiling enabled/disabled"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         for adaptive_tiling in [True, False]:
             result = node.decode(
@@ -155,7 +155,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_error_handling(self, sample_vae):
         """Test VAE decode error handling"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         invalid_samples = {"samples": "invalid"}
 
@@ -170,7 +170,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_performance_consistency(self, sample_vae, sample_latent):
         """Test that VAE decode produces consistent results"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         results = []
         for _ in range(3):
@@ -188,7 +188,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_large_image(self, sample_vae):
         """Test VAE decode with large image"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         large_latent = {
             "samples": torch.randn(1, 4, 128, 128)
@@ -209,7 +209,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_video_decode(self, sample_vae, sample_video_latent):
         """Test VAE decode with video (5D) latent"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         result = node.decode(
             vae=sample_vae,
@@ -227,7 +227,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_compatibility_mode(self, sample_vae, sample_latent):
         """Test compatibility mode disables ROCm optimizations"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         result = node.decode(
             vae=sample_vae,
@@ -266,7 +266,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_ltx_video_decode(self, sample_ltx_vae, sample_ltx_latent):
         """Test LTX video decode processes full video at once"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         result = node.decode(
             vae=sample_ltx_vae,
@@ -284,7 +284,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_pixel_space_decode(self, sample_pixel_vae, sample_pixel_latent):
         """Test pixel-space VAE decode skips all optimization logic"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         result = node.decode(
             vae=sample_pixel_vae,
@@ -302,7 +302,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_wan_video_decode(self, sample_wan_vae, sample_wan_latent):
         """Test WAN video decode processes full video at once"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         result = node.decode(
             vae=sample_wan_vae,
@@ -319,7 +319,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_high_compression_tiled_decode(self, sample_ltx_vae):
         """Test that tiled decode handles high compression (32x) correctly"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         large_ltx_latent = {
             "samples": torch.randn(1, 128, 4, 16, 24)
@@ -341,7 +341,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_compatibility_with_quantized_ltx(self, sample_ltx_vae, sample_ltx_latent):
         """Test compatibility mode works with LTX VAE"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         result = node.decode(
             vae=sample_ltx_vae,
@@ -358,7 +358,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_temporal_tiling_ltx(self, sample_ltx_vae):
         """Test temporal tiling for LTX long video decode"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         long_ltx_latent = {
             "samples": torch.randn(1, 128, 48, 4, 6)
@@ -385,7 +385,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_temporal_tiling_with_last_frame_fix(self, sample_ltx_vae):
         """Test temporal tiling with last_frame_fix enabled"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         latent = {
             "samples": torch.randn(1, 128, 16, 4, 6)
@@ -412,7 +412,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_temporal_tiling_frame_count(self, sample_ltx_vae):
         """Test that temporal tiling with blending preserves all frames (no loss)"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
         temporal_comp = 8
 
         latent_frames = 48
@@ -442,7 +442,7 @@ class TestROCMOptimizedVAEDecode:
 
     def test_temporal_tiling_disabled_by_default(self, sample_ltx_vae, sample_ltx_latent):
         """Test that temporal tiling is disabled by default (uses direct decode)"""
-        node = ROCMOptimizedVAEDecodeInstrumented()
+        node = ROCmVAEDecodeInstrumented()
 
         result = node.decode(
             vae=sample_ltx_vae,

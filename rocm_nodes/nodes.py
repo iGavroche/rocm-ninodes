@@ -7,21 +7,21 @@ and NODE_DISPLAY_NAME_MAPPINGS required by ComfyUI.
 
 # Import all node classes from core modules
 from .core.vae import (
-    ROCMOptimizedVAEDecode,
-    ROCMOptimizedVAEDecodeTiled,
-    ROCMVAEPerformanceMonitor,
+    ROCmVAEDecode,
+    ROCmVAEDecodeTiled,
+    ROCmVAEPerformanceMonitor,
 )
 
 from .core.sampler import (
-    ROCMOptimizedKSampler,
-    ROCMOptimizedKSamplerAdvanced,
-    ROCMSamplerPerformanceMonitor,
-    ROCMSamplerCustomAdvanced,
-    ROCMSamplerCustomAdvancedBenchmark,
+    ROCmKSampler,
+    ROCmKSamplerAdvanced,
+    ROCmSamplerPerformanceMonitor,
+    ROCmSamplerCustomAdvanced,
+    ROCmSamplerCustomAdvancedBenchmark,
 )
 
 from .core.checkpoint import (
-    ROCMOptimizedCheckpointLoader,
+    ROCmCheckpointLoader,
 )
 
 from .core.unet_loader import (
@@ -33,52 +33,68 @@ from .core.gguf_loader import (
 )
 
 from .core.lora import (
-    ROCMLoRALoader,
+    ROCmLoRALoader,
 )
 
 from .core.monitors import (
-    ROCMFluxBenchmark,
-    ROCMMemoryOptimizer,
+    ROCmFluxBenchmark,
+    ROCmMemoryOptimizer,
 )
 from .core.textgen_ltx2 import ROCmTextGenerateLTX2Prompt
 
-# Define node class mappings for ComfyUI
+# Define node class mappings for ComfyUI.
+# Old keys (ROCMOptimized*) are kept as backward-compatible aliases so that
+# existing workflows saved with the old naming still load correctly.
 NODE_CLASS_MAPPINGS = {
-    "ROCMOptimizedCheckpointLoader": ROCMOptimizedCheckpointLoader,
+    # --- New canonical names (ROCm prefix) ---
+    "ROCmCheckpointLoader": ROCmCheckpointLoader,
     "ROCmDiffusionLoader": ROCmDiffusionLoader,
     "ROCmGGUFLoader": ROCmGGUFLoader,
-    "ROCMOptimizedVAEDecode": ROCMOptimizedVAEDecode,
-    "ROCMOptimizedVAEDecodeTiled": ROCMOptimizedVAEDecodeTiled,
-    "ROCMVAEPerformanceMonitor": ROCMVAEPerformanceMonitor,
-    "ROCMOptimizedKSampler": ROCMOptimizedKSampler,
-    "ROCMOptimizedKSamplerAdvanced": ROCMOptimizedKSamplerAdvanced,
-    "ROCMSamplerCustomAdvanced": ROCMSamplerCustomAdvanced,
-    "ROCMSamplerPerformanceMonitor": ROCMSamplerPerformanceMonitor,
-    "ROCMSamplerCustomAdvancedBenchmark": ROCMSamplerCustomAdvancedBenchmark,
-    "ROCMFluxBenchmark": ROCMFluxBenchmark,
-    "ROCMMemoryOptimizer": ROCMMemoryOptimizer,
-    "ROCMLoRALoader": ROCMLoRALoader,
+    "ROCmVAEDecode": ROCmVAEDecode,
+    "ROCmVAEDecodeTiled": ROCmVAEDecodeTiled,
+    "ROCmVAEPerformanceMonitor": ROCmVAEPerformanceMonitor,
+    "ROCmKSampler": ROCmKSampler,
+    "ROCmKSamplerAdvanced": ROCmKSamplerAdvanced,
+    "ROCmSamplerCustomAdvanced": ROCmSamplerCustomAdvanced,
+    "ROCmSamplerPerformanceMonitor": ROCmSamplerPerformanceMonitor,
+    "ROCmSamplerCustomAdvancedBenchmark": ROCmSamplerCustomAdvancedBenchmark,
+    "ROCmFluxBenchmark": ROCmFluxBenchmark,
+    "ROCmMemoryOptimizer": ROCmMemoryOptimizer,
+    "ROCmLoRALoader": ROCmLoRALoader,
     "ROCmTextGenerateLTX2Prompt": ROCmTextGenerateLTX2Prompt,
+
+    # --- Legacy aliases (backward compat) ---
+    "ROCMOptimizedCheckpointLoader": ROCmCheckpointLoader,
+    "ROCMOptimizedVAEDecode": ROCmVAEDecode,
+    "ROCMOptimizedVAEDecodeTiled": ROCmVAEDecodeTiled,
+    "ROCMVAEPerformanceMonitor": ROCmVAEPerformanceMonitor,
+    "ROCMOptimizedKSampler": ROCmKSampler,
+    "ROCMOptimizedKSamplerAdvanced": ROCmKSamplerAdvanced,
+    "ROCMSamplerCustomAdvanced": ROCmSamplerCustomAdvanced,
+    "ROCMSamplerPerformanceMonitor": ROCmSamplerPerformanceMonitor,
+    "ROCMSamplerCustomAdvancedBenchmark": ROCmSamplerCustomAdvancedBenchmark,
+    "ROCMFluxBenchmark": ROCmFluxBenchmark,
+    "ROCMMemoryOptimizer": ROCmMemoryOptimizer,
+    "ROCMLoRALoader": ROCmLoRALoader,
 }
 
 # Define display name mappings for ComfyUI
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ROCMOptimizedCheckpointLoader": "ROCm Checkpoint Loader",
+    "ROCmCheckpointLoader": "ROCm Checkpoint Loader",
     "ROCmDiffusionLoader": "ROCm Diffusion Loader",
     "ROCmGGUFLoader": "ROCm GGUF Loader",
-    "ROCMOptimizedVAEDecode": "ROCm VAE Decode",
-    "ROCMOptimizedVAEDecodeTiled": "ROCm VAE Decode Tiled", 
-    "ROCMVAEPerformanceMonitor": "ROCm VAE Performance Monitor",
-    "ROCMOptimizedKSampler": "ROCm KSampler",
-    "ROCMOptimizedKSamplerAdvanced": "ROCm KSampler Advanced",
-    "ROCMSamplerCustomAdvanced": "ROCm SamplerCustomAdvanced",
-    "ROCMSamplerPerformanceMonitor": "ROCm Sampler Performance Monitor",
-    "ROCMSamplerCustomAdvancedBenchmark": "ROCm SamplerCustomAdvanced Benchmark",
-    "ROCMFluxBenchmark": "ROCm Flux Benchmark",
-    "ROCMMemoryOptimizer": "ROCm Memory Optimizer",
-    "ROCMLoRALoader": "ROCm LoRA Loader",
+    "ROCmVAEDecode": "ROCm VAE Decode",
+    "ROCmVAEDecodeTiled": "ROCm VAE Decode Tiled",
+    "ROCmVAEPerformanceMonitor": "ROCm VAE Performance Monitor",
+    "ROCmKSampler": "ROCm KSampler",
+    "ROCmKSamplerAdvanced": "ROCm KSampler Advanced",
+    "ROCmSamplerCustomAdvanced": "ROCm SamplerCustomAdvanced",
+    "ROCmSamplerPerformanceMonitor": "ROCm Sampler Performance Monitor",
+    "ROCmSamplerCustomAdvancedBenchmark": "ROCm SamplerCustomAdvanced Benchmark",
+    "ROCmFluxBenchmark": "ROCm Flux Benchmark",
+    "ROCmMemoryOptimizer": "ROCm Memory Optimizer",
+    "ROCmLoRALoader": "ROCm LoRA Loader",
     "ROCmTextGenerateLTX2Prompt": "ROCm Text Generate LTX2 Prompt",
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
-

@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.3.0] - 2025-07-20
+
+### Added
+- **ROCm 7.14 support** (`rocm_nodes/utils/architecture.py`): Version detection (`detect_rocm_version`, `is_rocm_7_14_plus`) enables `allow_fp16_accumulation` on gfx1151 for ROCm 7.14+ (was blocked on older ROCm due to numerical drift). New `rocm_version` and `is_rocm_7_14_plus` keys in architecture info dict.
+
+- **HIP OOM mitigation for APU temporal tiling** (`rocm_nodes/core/vae.py:727`, `rocm_nodes/utils/memory.py`): Added `discard_between_chunks()` — synchronized memory discard (sync+garbage collect+empty cache) between temporal VAE tiles. Added `del chunk_latent` immediately after decode to free input tensor backing pages. Together these prevent the HIP caching allocator from fragmenting on gfx1151 unified memory.
+
+- **gfx1151-specific temporal chunk cap** (`rocm_nodes/constants.py`): `GFX1151_TEMPORAL_CHUNK_SIZE = 8` halves per-chunk memory pressure on APUs. Automatically caps user setting on gfx1151.
+
+- **`TORCH_BLAS_PREFER_HIPBLASLT` advisory** (`architecture.py`): Logs a startup hint when the env var is not set on RDNA3/RDNA3.5 (AMD-recommended for LLM performance with PyTorch < 2.14).
+
+- **TheRock build system + expandable segments diagnostics** (`utils/diagnostics.py`): Detects `/opt/rocm/core`, reports `expandable_segments` and `TORCH_BLAS_PREFER_HIPBLASLT` status.
+
+### Changed
+- **Naming consistency**: All node class names renamed from `ROCM*` prefix to `ROCm*` (e.g. `ROCMOptimizedVAEDecode` → `ROCmVAEDecode`). Old `NODE_CLASS_MAPPINGS` keys preserved as backward-compatible aliases — existing workflows continue to load. Updated `NODE_DISPLAY_NAME_MAPPINGS` to use consistent `ROCm` display prefix.
+
+- **Registry configs updated** (`pyproject.toml`, `comfyui_manager.json`, `package.json`): Node lists updated to canonical names. Version bumped to `2.3.0` in all 8 locations.
+
+- **Legacy deprecation**: `rocm_nodes.py` (2663-line monolithic file) deprecated with warning. The refactored `rocm_nodes/` package is the canonical source going forward.
+
+### Fixed
+- **No dynamic chunk sizing** (removed from `vae.py:720`): The OOM-mitigation strategy of dynamically reducing `c_end` mid-loop created undecoded latent frame gaps between tiles, causing visual ghosting/echo. Removed in favor of the safer approach: smaller default chunk size + aggressive `discard_between_chunks()`.
+
 ## [2.2.9] - 2025-06-28
 
 ### Fixed
