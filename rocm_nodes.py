@@ -685,7 +685,10 @@ class ROCMOptimizedVAEDecode:
             estimated_memory *= 8  # Decode expansion factor
         else:
             # For video or other formats, use a conservative estimate
-            estimated_memory = samples_shape[0] * samples_shape[1] * samples_shape[2] * samples_shape[3] * 4 * 8
+            estimated_memory = 1
+            for dim in samples_shape:
+                estimated_memory *= dim
+            estimated_memory *= 4 * 8
         
         # Check memory safety before loading models
         estimated_memory_gb = estimated_memory / (1024**3)
