@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1] - 2025-08-02
+
+### Fixed
+- **`'NestedTensor' object has no attribute 'reshape'` crash on LTXAV runs** (`rocm_nodes/core/sampler.py`): `ROCmSamplerCustomAdvanced` unconditionally re-unpacked the `x0` output whenever samples were nested. On multimodal runs (LTX audio-video) the sampler already hands the callback a `NestedTensor`, so the extra `unpack_latents()` called `.reshape()` on it and crashed after sampling completed. Now mirrors stock: unpack only when samples are nested but `x0` is not, then apply `process_latent_out`.
+
+- **Incorrect memory estimate in video VAE decode** (`rocm_nodes.py`): `ROCmOptimizedVAEDecode`'s low-VRAM estimate multiplied a fixed 4-dimensional shape, undercounting 5D video latents. Now multiplies every sample dimension before applying the decode expansion factor.
+
 ## [2.3.0] - 2025-07-20
 
 ### Added

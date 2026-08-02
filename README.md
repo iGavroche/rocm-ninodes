@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.2.9)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.1)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -29,11 +29,16 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.2.9-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.3.1-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.3.1
+
+- **Fixed `'NestedTensor' object has no attribute 'reshape'` crash on LTXAV runs** (`rocm_nodes/core/sampler.py`): `ROCmSamplerCustomAdvanced` unconditionally re-unpacked the `x0` output whenever the samples were nested. On multimodal runs (LTX audio-video) the sampler already hands the callback a `NestedTensor`, so the extra `unpack_latents()` called `.reshape()` on it and crashed after sampling. It now mirrors stock: only unpacks when the samples are nested but `x0` is not, then applies `process_latent_out` — so audio-video jobs denoise to the end without the AttributeError.
+- **Fixed incorrect memory estimate in video VAE decode** (`rocm_nodes.py`): `ROCmOptimizedVAEDecode`'s low-VRAM estimate multiplied a fixed 4-dimensional shape, so 5D video latents massively undercounted the output size (batch × channels × T × H × W all collapsed). The estimate now multiplies every sample dimension before applying the decode expansion factor.
 
 ## 🚀 What's new in v2.2.9
 
