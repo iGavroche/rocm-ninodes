@@ -66,6 +66,7 @@ NODE_CLASS_MAPPINGS = {
     # --- Legacy aliases (backward compat) ---
     "ROCMOptimizedCheckpointLoader": ROCmCheckpointLoader,
     "ROCMOptimizedVAEDecode": ROCmVAEDecode,
+    "ROCMOptimizedVAEDecodeV2Phase3": ROCmVAEDecode,
     "ROCMOptimizedVAEDecodeTiled": ROCmVAEDecodeTiled,
     "ROCMVAEPerformanceMonitor": ROCmVAEPerformanceMonitor,
     "ROCMOptimizedKSampler": ROCmKSampler,
@@ -86,6 +87,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCmVAEDecode": "ROCm VAE Decode",
     "ROCmVAEDecodeTiled": "ROCm VAE Decode Tiled",
     "ROCmVAEPerformanceMonitor": "ROCm VAE Performance Monitor",
+    "ROCMOptimizedVAEDecodeV2Phase3": "ROCm VAE Decode",
     "ROCmKSampler": "ROCm KSampler",
     "ROCmKSamplerAdvanced": "ROCm KSampler Advanced",
     "ROCmSamplerCustomAdvanced": "ROCm SamplerCustomAdvanced",

@@ -101,6 +101,28 @@ window.rocmNinoInfo = {
     
     safe_print("✅ Web directory created")
 
+def install_dependencies():
+    """Install Python dependencies required by this plugin (gguf, safetensors, etc.)."""
+    import subprocess
+    req_file = Path(__file__).parent / "requirements.txt"
+    if not req_file.exists():
+        return
+    try:
+        safe_print("📦 Installing dependencies (gguf, safetensors, ...)...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            safe_print("✅ Dependencies installed")
+        else:
+            safe_print("⚠️  Dependency install reported warnings:")
+            safe_print(result.stderr[-500:] if result.stderr else "unknown error")
+    except Exception as e:
+        safe_print(f"⚠️  Could not auto-install dependencies: {e}")
+        safe_print("   Run manually: pip install -r requirements.txt")
+
 def main():
     """Main installation function"""
     safe_print("RocM-Nino: ROCM Optimized Nodes for ComfyUI")
@@ -114,6 +136,9 @@ def main():
     if not check_dependencies():
         safe_print("\n❌ Installation failed due to missing dependencies")
         return False
+    
+    # Install Python package dependencies (gguf, safetensors, ...)
+    install_dependencies()
     
     # Create web directory
     create_web_directory()

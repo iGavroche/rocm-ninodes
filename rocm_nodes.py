@@ -341,6 +341,14 @@ class ROCMOptimizedVAEDecode:
         start_time = time.time()
         log_debug(f"ROCMOptimizedVAEDecode.decode started with samples shape: {samples['samples'].shape}")
         
+        # CRITICAL FIX: NestedTensor handling (MiniMax H3 / LTX-AV multimodal latents)
+        # Stock ComfyUI VAEDecode unbinds nested latents and decodes the first stream
+        # (the video). NestedTensors cannot be passed to the VAE directly (its internal
+        # `.to(z)` calls fail with "got (NestedTensor)").
+        if getattr(samples["samples"], "is_nested", False):
+            print("🧩 Nested latent detected - decoding video stream (unbind()[0])")
+            samples["samples"] = samples["samples"].unbind()[0]
+        
         # CRITICAL FIX: Detect quantized models to avoid breaking them
         is_quantized_model = False
         vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
@@ -1000,6 +1008,12 @@ class ROCMOptimizedVAEDecodeTiled:
         """
         start_time = time.time()
         
+        # NestedTensor handling (MiniMax H3 / LTX-AV multimodal latents)
+        samples_tensor = samples["samples"]
+        if getattr(samples_tensor, "is_nested", False):
+            print("🧩 Nested latent detected - decoding video stream (unbind()[0])")
+            samples_tensor = samples_tensor.unbind()[0]
+        
         # Adjust tile size for ROCm
         if rocm_optimizations:
             if tile_size < overlap * 4:
@@ -1019,7 +1033,7 @@ class ROCMOptimizedVAEDecodeTiled:
         # Use VAE's tiled decode with optimizations
         compression = vae.spacial_compression_decode()
         images = vae.decode_tiled(
-            samples["samples"], 
+            samples_tensor, 
             tile_x=tile_size // compression, 
             tile_y=tile_size // compression, 
             overlap=overlap // compression, 
@@ -2331,6 +2345,17 @@ class ROCMFluxBenchmark:
         device = comfy.model_management.get_torch_device()
         is_amd = hasattr(device, 'type') and device.type == 'cuda'
         
+        # Detect the model's latent channels (Flux = 16, SD1.5/SDXL = 4, etc.)
+        # so the benchmark latent matches what the model actually expects.
+        latent_channels = 4
+        try:
+            latent_format = getattr(model, 'latent_format', None)
+            if latent_format is not None:
+                latent_channels = getattr(latent_format, 'latent_channels', 4)
+        except Exception:
+            pass
+        print(f"Benchmarking with latent_channels={latent_channels}")
+        
         results = {
             'device': str(device),
             'is_amd': is_amd,
@@ -2359,8 +2384,8 @@ class ROCMFluxBenchmark:
                 torch.cuda.empty_cache()
                 gc.collect()
                 
-                # Create test latent
-                latent = torch.randn(1, 4, h//8, w//8, device=device)
+                # Create test latent (use the model's actual latent channels)
+                latent = torch.randn(1, latent_channels, h//8, w//8, device=device)
                 
                 # Test VAE decode
                 try:
@@ -2592,11 +2617,8 @@ class ROCMLoRALoader:
             print(f"Fragmentation: {fragmentation/1024**2:.1f}MB")
         
         try:
-            # Import ComfyUI's LoRA loading functions
-            from comfy.lora import load_lora
-            from comfy.model_patcher import ModelPatcher
-            
-            # Load LoRA with aggressive memory management
+            # Load the LoRA using ComfyUI's native pattern (matches nodes.py LoadLoRA)
+            import comfy.sd
             lora_path = folder_paths.get_full_path("loras", lora_name)
             if lora_path is None:
                 raise FileNotFoundError(f"LoRA file not found: {lora_name}")
@@ -2607,15 +2629,15 @@ class ROCMLoRALoader:
             if torch.cuda.is_available():
                 gentle_memory_cleanup()
             
-            # Load the LoRA
-            lora = load_lora(lora_path)
+            # Step 1: Load the LoRA file as a dictionary
+            lora = comfy.utils.load_torch_file(lora_path, safe_load=True)
             
             # Apply gentle memory cleanup after loading
             if torch.cuda.is_available():
                 gentle_memory_cleanup()
             
-            # Apply LoRA to model with memory management
-            model_lora, clip_lora = lora.apply_to_model(model, clip, strength_model, strength_clip)
+            # Step 2: Apply LoRA to model using ComfyUI's native function
+            model_lora, clip_lora = comfy.sd.load_lora_for_models(model, clip, lora, strength_model, strength_clip)
             
             # Post-loading gentle memory cleanup
             if torch.cuda.is_available():
@@ -2647,6 +2669,7 @@ class ROCMLoRALoader:
 NODE_CLASS_MAPPINGS = {
     "ROCMOptimizedCheckpointLoader": ROCMOptimizedCheckpointLoader,
     "ROCMOptimizedVAEDecode": ROCMOptimizedVAEDecode,
+    "ROCMOptimizedVAEDecodeV2Phase3": ROCMOptimizedVAEDecode,
     "ROCMOptimizedVAEDecodeTiled": ROCMOptimizedVAEDecodeTiled,
     "ROCMVAEPerformanceMonitor": ROCMVAEPerformanceMonitor,
     "ROCMOptimizedKSampler": ROCMOptimizedKSampler,
@@ -2660,6 +2683,7 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCMOptimizedCheckpointLoader": "ROCM Checkpoint Loader",
     "ROCMOptimizedVAEDecode": "ROCM VAE Decode",
+    "ROCMOptimizedVAEDecodeV2Phase3": "ROCM VAE Decode",
     "ROCMOptimizedVAEDecodeTiled": "ROCM VAE Decode Tiled", 
     "ROCMVAEPerformanceMonitor": "ROCM VAE Performance Monitor",
     "ROCMOptimizedKSampler": "ROCM KSampler",
