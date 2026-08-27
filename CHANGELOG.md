@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.3] - 2026-08-27
+
+### Fixed
+- **Brief fuzziness at temporal tile transitions in `ROCmVAEDecodeTiled` on LTX/WAN videos** (`rocm_nodes/core/vae.py`): the video path used ComfyUI's naive `decode_tiled` (`tiled_scale_multidim`), which resets the causal VAE state at every temporal tile boundary — producing a brief fuzzy moment at each transition (e.g. ~3s and near the end of an LTX 2.5 clip). It now uses the same causal-aware temporal tiling as `ROCmVAEDecode` (LTXVideo chunk boundary formula with the +1 causal-context frame, first-frame drop, and overlap blending against the cumulative result), so transitions are seamless. `_decode_video_temporal_tiled` was extracted to a shared module-level function used by `ROCmVAEDecode`, `ROCmVAEDecodeTiled`, and the legacy `ROCMOptimizedVAEDecodeTiled`.
+
+### Added
+- **`last_frame_fix` option on `ROCmVAEDecodeTiled`**: repeats the last latent frame before decode and trims the extra output frames, fixing end-of-video artifacts.
+
 ## [2.3.2] - 2026-08-27
 
 ### Fixed

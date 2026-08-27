@@ -665,125 +665,156 @@ class ROCmVAEDecode:
         Returns:
             BHWC tensor [total_frames, H, W, 3]
         """
-        B, C, T, H, W = samples_tensor.shape
-        temporal_comp = vae.temporal_compression_decode() or 8
+        return _decode_video_temporal_tiled(
+            vae, samples_tensor, temporal_chunk_size,
+            temporal_overlap, last_frame_fix, device, dtype,
+        )
 
-        if last_frame_fix:
-            last_frame = samples_tensor[:, :, -1:, :, :]
-            samples_tensor = torch.cat([samples_tensor, last_frame], dim=2)
-            T = T + 1
-            print(f"  last_frame_fix enabled: padded to {T} latent frames")
 
-        # ── Build temporal chunks ────────────────────────────────────────────
-        # Using the LTXVideo chunk boundary formula:
-        #   overlap_start accounts for one extra frame needed for causal context
-        #   (the +1 term in max(1, chunk_start - overlap - 1))
-        chunks = []
-        chunk_start = 0
-        while chunk_start < T:
-            if chunk_start == 0:
-                chunk_end = min(chunk_start + temporal_chunk_size, T)
-                overlap_start = 0
+def _decode_video_temporal_tiled(vae, samples_tensor, temporal_chunk_size,
+                                 temporal_overlap, last_frame_fix, device, dtype):
+    """Decode long videos by tiling the temporal dimension with overlap and blending.
+
+    Shared by ROCmVAEDecode and ROCmVAEDecodeTiled. Uses the LTXVideo chunk
+    boundary formula so causal video VAEs (LTX, WAN) keep proper temporal
+    context across tile boundaries:
+      - each chunk overlaps its predecessor by temporal_overlap latent frames
+      - the first output frame of each subsequent chunk is dropped (it lacks
+        backward context)
+      - the next temporal_overlap * temporal_comp frames are linearly blended
+        with the previous chunk's tail for seamless transitions
+
+    Args:
+        vae: VAE object
+        samples_tensor: 5D latent [B, C, T, H, W]
+        temporal_chunk_size: Latent frames per chunk
+        temporal_overlap: Overlap between chunks in latent frames
+        last_frame_fix: Repeat last latent frame to fix end artifacts
+        device: Target device
+        dtype: Compute dtype
+
+    Returns:
+        BHWC tensor [total_frames, H, W, 3]
+    """
+    B, C, T, H, W = samples_tensor.shape
+    temporal_comp = vae.temporal_compression_decode() or 8
+
+    if last_frame_fix:
+        last_frame = samples_tensor[:, :, -1:, :, :]
+        samples_tensor = torch.cat([samples_tensor, last_frame], dim=2)
+        T = T + 1
+        print(f"  last_frame_fix enabled: padded to {T} latent frames")
+
+    # ── Build temporal chunks ────────────────────────────────────────────
+    # Using the LTXVideo chunk boundary formula:
+    #   overlap_start accounts for one extra frame needed for causal context
+    #   (the +1 term in max(1, chunk_start - overlap - 1))
+    chunks = []
+    chunk_start = 0
+    while chunk_start < T:
+        if chunk_start == 0:
+            chunk_end = min(chunk_start + temporal_chunk_size, T)
+            overlap_start = 0
+        else:
+            overlap_start = max(1, chunk_start - temporal_overlap - 1)
+            extra = chunk_start - overlap_start
+            chunk_end = min(chunk_start + temporal_chunk_size - extra, T)
+
+        if chunk_end <= overlap_start:
+            break
+        chunks.append((overlap_start, chunk_end))
+        chunk_start = chunk_end
+
+    num_chunks = len(chunks)
+    print(f"  Temporal tiling: {num_chunks} chunks, {T} latent frames")
+
+    # ── Try to import progress bar ───────────────────────────────────────
+    pbar = None
+    if hasattr(comfy.utils, 'ProgressBar'):
+        try:
+            pbar = comfy.utils.ProgressBar(num_chunks)
+        except Exception:
+            pass
+
+    # ── Decode each chunk with overlap + blend ──────────────────────────
+    # NOTE: the previous implementation kept a list `result_parts` and blended
+    # against `result_parts[-1]`. That element is the already-truncated tail
+    # of the previous chunk (24 or 32 pixel frames depending on the previous
+    # blend size), not the cumulative previous result. This made `blend_frames`
+    # alternate 32/24 every other chunk, which (a) left visible seams every two
+    # chunks in the back half of long videos and (b) appended 8 extra frames per
+    # 2 chunks, yielding 1393 frames for a 50 s LTX job instead of the
+    # expected 1201. The fix is to blend against the cumulative `result`
+    # tensor; `torch.cat` returns a fresh tensor so the ZLUDA in-place
+    # access violation that motivated the list approach is still avoided.
+    result = None
+    first_chunk_processed = False
+
+    for chunk_idx, (c_start, c_end) in enumerate(chunks):
+        model_management.throw_exception_if_processing_interrupted()
+        chunk_frames = c_end - c_start
+        chunk_latent = samples_tensor[:, :, c_start:c_end, :, :].to(device).to(dtype)
+
+        with torch.no_grad():
+            decoded = vae.decode(chunk_latent)
+        if isinstance(decoded, tuple):
+            decoded = decoded[0]
+
+        # Free input latent immediately after decode — before cleanup
+        del chunk_latent
+
+        # vae.decode() returns [B, out_T, H, W, C] with B=1
+        decoded = decoded.squeeze(0)  # [out_T, H, W, C]
+
+        if not first_chunk_processed:
+            result = decoded
+            first_chunk_processed = True
+            out_T = decoded.shape[0]
+            print(f"  Chunk 0: latent [{c_start}:{c_end}] ({chunk_frames}) → {out_T} output frames")
+        else:
+            out_T = decoded.shape[0]
+
+            # Drop the first output frame — it has the most risk of temporal
+            # artifacts since the first latent frame lacks backward context.
+            decoded = decoded[1:]  # [out_T - 1, H, W, C]
+
+            # Blend the overlap region with the CUMULATIVE previous tail.
+            blend_frames = min(temporal_overlap * temporal_comp, decoded.shape[0], result.shape[0])
+            if blend_frames > 0:
+                prev_tail = result[-blend_frames:]
+                curr_head = decoded[:blend_frames]
+                w = torch.linspace(0, 1, blend_frames, device=decoded.device, dtype=decoded.dtype)
+                w = w.view(-1, 1, 1, 1)
+                blended = prev_tail * (1.0 - w) + curr_head * w
+                # Replace the tail of the cumulative result with the blended
+                # region, then append the clean tail of the new chunk. The
+                # outer torch.cat returns a fresh tensor, so no in-place
+                # slice writeback is needed.
+                result = torch.cat(
+                    [result[:-blend_frames], blended, decoded[blend_frames:]],
+                    dim=0,
+                )
             else:
-                overlap_start = max(1, chunk_start - temporal_overlap - 1)
-                extra = chunk_start - overlap_start
-                chunk_end = min(chunk_start + temporal_chunk_size - extra, T)
+                result = torch.cat([result, decoded], dim=0)
 
-            if chunk_end <= overlap_start:
-                break
-            chunks.append((overlap_start, chunk_end))
-            chunk_start = chunk_end
+            print(f"  Chunk {chunk_idx}: latent [{c_start}:{c_end}] ({chunk_frames}) → "
+                  f"{out_T} output, dropped 1, blended {blend_frames}")
 
-        num_chunks = len(chunks)
-        print(f"  Temporal tiling: {num_chunks} chunks, {T} latent frames")
+        if pbar is not None:
+            pbar.update_absolute(chunk_idx + 1)
 
-        # ── Try to import progress bar ───────────────────────────────────────
-        pbar = None
-        if hasattr(comfy.utils, 'ProgressBar'):
-            try:
-                pbar = comfy.utils.ProgressBar(num_chunks)
-            except Exception:
-                pass
+        # Aggressive cleanup: sync + GC + empty cache
+        # This is more effective than simple empty_cache() for the HIP
+        # caching allocator on APUs (gfx1151), where fragmentation
+        # between reserved blocks causes OOM even with free system memory.
+        discard_between_chunks()
 
-        # ── Decode each chunk with overlap + blend ──────────────────────────
-        # NOTE: the previous implementation kept a list `result_parts` and blended
-        # against `result_parts[-1]`. That element is the already-truncated tail
-        # of the previous chunk (24 or 32 pixel frames depending on the previous
-        # blend size), not the cumulative previous result. This made `blend_frames`
-        # alternate 32/24 every other chunk, which (a) left visible seams every two
-        # chunks in the back half of long videos and (b) appended 8 extra frames per
-        # 2 chunks, yielding 1393 frames for a 50 s LTX job instead of the
-        # expected 1201. The fix is to blend against the cumulative `result`
-        # tensor; `torch.cat` returns a fresh tensor so the ZLUDA in-place
-        # access violation that motivated the list approach is still avoided.
-        result = None
-        first_chunk_processed = False
+    if last_frame_fix and result.shape[0] > temporal_comp:
+        result = result[:-temporal_comp]
+        print(f"  last_frame_fix: trimmed {temporal_comp} frames from end")
 
-        for chunk_idx, (c_start, c_end) in enumerate(chunks):
-            model_management.throw_exception_if_processing_interrupted()
-            chunk_frames = c_end - c_start
-            chunk_latent = samples_tensor[:, :, c_start:c_end, :, :].to(device).to(dtype)
-
-            with torch.no_grad():
-                decoded = vae.decode(chunk_latent)
-            if isinstance(decoded, tuple):
-                decoded = decoded[0]
-
-            # Free input latent immediately after decode — before cleanup
-            del chunk_latent
-
-            # vae.decode() returns [B, out_T, H, W, C] with B=1
-            decoded = decoded.squeeze(0)  # [out_T, H, W, C]
-
-            if not first_chunk_processed:
-                result = decoded
-                first_chunk_processed = True
-                out_T = decoded.shape[0]
-                print(f"  Chunk 0: latent [{c_start}:{c_end}] ({chunk_frames}) → {out_T} output frames")
-            else:
-                out_T = decoded.shape[0]
-
-                # Drop the first output frame — it has the most risk of temporal
-                # artifacts since the first latent frame lacks backward context.
-                decoded = decoded[1:]  # [out_T - 1, H, W, C]
-
-                # Blend the overlap region with the CUMULATIVE previous tail.
-                blend_frames = min(temporal_overlap * temporal_comp, decoded.shape[0], result.shape[0])
-                if blend_frames > 0:
-                    prev_tail = result[-blend_frames:]
-                    curr_head = decoded[:blend_frames]
-                    w = torch.linspace(0, 1, blend_frames, device=decoded.device, dtype=decoded.dtype)
-                    w = w.view(-1, 1, 1, 1)
-                    blended = prev_tail * (1.0 - w) + curr_head * w
-                    # Replace the tail of the cumulative result with the blended
-                    # region, then append the clean tail of the new chunk. The
-                    # outer torch.cat returns a fresh tensor, so no in-place
-                    # slice writeback is needed.
-                    result = torch.cat(
-                        [result[:-blend_frames], blended, decoded[blend_frames:]],
-                        dim=0,
-                    )
-                else:
-                    result = torch.cat([result, decoded], dim=0)
-
-                print(f"  Chunk {chunk_idx}: latent [{c_start}:{c_end}] ({chunk_frames}) → "
-                      f"{out_T} output, dropped 1, blended {blend_frames}")
-
-            if pbar is not None:
-                pbar.update_absolute(chunk_idx + 1)
-
-            # Aggressive cleanup: sync + GC + empty cache
-            # This is more effective than simple empty_cache() for the HIP
-            # caching allocator on APUs (gfx1151), where fragmentation
-            # between reserved blocks causes OOM even with free system memory.
-            discard_between_chunks()
-
-        if last_frame_fix and result.shape[0] > temporal_comp:
-            result = result[:-temporal_comp]
-            print(f"  last_frame_fix: trimmed {temporal_comp} frames from end")
-
-        print(f"  Temporal tiling complete: {result.shape[0]} total output frames")
-        return result
+    print(f"  Temporal tiling complete: {result.shape[0]} total output frames")
+    return result
 
 
 class ROCmVAEDecodeTiled:
@@ -812,18 +843,24 @@ class ROCmVAEDecodeTiled:
                     "min": 8,
                     "max": 4096,
                     "step": 4,
-                    "tooltip": "For video VAEs: frames to decode at once"
+                    "tooltip": "For video VAEs: frames to decode at once (in OUTPUT frames)"
                 }),
                 "temporal_overlap": ("INT", {
                     "default": 8,
                     "min": 4,
                     "max": 4096,
                     "step": 4,
-                    "tooltip": "For video VAEs: frame overlap"
+                    "tooltip": "For video VAEs: frame overlap (in OUTPUT frames). Larger values smooth causal-VAE tile transitions."
                 }),
                 "rocm_optimizations": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "Enable ROCm-specific optimizations"
+                })
+            },
+            "optional": {
+                "last_frame_fix": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "Repeat the last latent frame before decode, then discard the extra output frames. Fixes end-of-video artifacts."
                 })
             }
         }
@@ -835,8 +872,14 @@ class ROCmVAEDecodeTiled:
     DESCRIPTION = "Advanced tiled VAE decode optimized for ROCm"
 
     def decode(self, vae, samples, tile_size=768, overlap=96, temporal_size=64,
-               temporal_overlap=8, rocm_optimizations=True):
-        """Advanced tiled decode with ROCm optimizations"""
+               temporal_overlap=8, rocm_optimizations=True, last_frame_fix=False):
+        """Advanced tiled decode with ROCm optimizations.
+
+        For video (5D) latents this uses the same causal-aware temporal tiling as
+        ROCmVAEDecode (LTXVideo chunk boundary formula + overlap blending) instead
+        of ComfyUI's naive tiled_scale_multidim, which resets the causal VAE state
+        at every tile boundary and causes brief fuzziness at tile transitions.
+        """
         start_time = time.time()
 
         samples_tensor = samples["samples"]
@@ -851,22 +894,32 @@ class ROCmVAEDecodeTiled:
                 temporal_overlap = temporal_size // 2
 
         temporal_compression = vae.temporal_compression_decode()
-        if temporal_compression is not None:
-            temporal_size = max(2, temporal_size // temporal_compression)
-            temporal_overlap = max(1, min(temporal_size // 2, temporal_overlap // temporal_compression))
-        else:
-            temporal_size = None
-            temporal_overlap = None
 
-        compression = vae.spacial_compression_decode()
-        images = vae.decode_tiled(
-            samples_tensor,
-            tile_x=tile_size // compression,
-            tile_y=tile_size // compression,
-            overlap=overlap // compression,
-            tile_t=temporal_size,
-            overlap_t=temporal_overlap
-        )
+        # ── VIDEO PATH (5D): causal-aware temporal tiling ────────────────────
+        if len(samples_tensor.shape) == 5 and temporal_compression is not None:
+            # UI units are OUTPUT frames; convert to latent frames.
+            latent_chunk = max(2, temporal_size // temporal_compression)
+            latent_overlap = max(1, min(latent_chunk // 2, temporal_overlap // temporal_compression))
+
+            device = vae.device if hasattr(vae, 'device') else samples_tensor.device
+            dtype = samples_tensor.dtype
+
+            print(f"🎬 Video temporal tiling: chunk={latent_chunk} latent frames, "
+                  f"overlap={latent_overlap} latent frames, last_frame_fix={last_frame_fix}")
+
+            images = _decode_video_temporal_tiled(
+                vae, samples_tensor, latent_chunk, latent_overlap,
+                last_frame_fix, device, dtype,
+            )
+        else:
+            # ── IMAGE PATH (4D): spatial tiled decode ────────────────────────
+            compression = vae.spacial_compression_decode()
+            images = vae.decode_tiled(
+                samples_tensor,
+                tile_x=tile_size // compression,
+                tile_y=tile_size // compression,
+                overlap=overlap // compression,
+            )
 
         if len(images.shape) == 5:
             images = images.reshape(-1, images.shape[-3], images.shape[-2], images.shape[-1])

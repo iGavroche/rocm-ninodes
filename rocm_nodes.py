@@ -1023,23 +1023,26 @@ class ROCMOptimizedVAEDecodeTiled:
         
         # Handle temporal compression
         temporal_compression = vae.temporal_compression_decode()
-        if temporal_compression is not None:
-            temporal_size = max(2, temporal_size // temporal_compression)
-            temporal_overlap = max(1, min(temporal_size // 2, temporal_overlap // temporal_compression))
-        else:
-            temporal_size = None
-            temporal_overlap = None
         
-        # Use VAE's tiled decode with optimizations
-        compression = vae.spacial_compression_decode()
-        images = vae.decode_tiled(
-            samples_tensor, 
-            tile_x=tile_size // compression, 
-            tile_y=tile_size // compression, 
-            overlap=overlap // compression, 
-            tile_t=temporal_size, 
-            overlap_t=temporal_overlap
-        )
+        # VIDEO PATH (5D): causal-aware temporal tiling (shared with ROCmVAEDecodeTiled)
+        if len(samples_tensor.shape) == 5 and temporal_compression is not None:
+            from rocm_nodes.core.vae import _decode_video_temporal_tiled
+            latent_chunk = max(2, temporal_size // temporal_compression)
+            latent_overlap = max(1, min(latent_chunk // 2, temporal_overlap // temporal_compression))
+            device = vae.device if hasattr(vae, 'device') else samples_tensor.device
+            images = _decode_video_temporal_tiled(
+                vae, samples_tensor, latent_chunk, latent_overlap,
+                False, device, samples_tensor.dtype,
+            )
+        else:
+            # IMAGE PATH (4D): spatial tiled decode
+            compression = vae.spacial_compression_decode()
+            images = vae.decode_tiled(
+                samples_tensor, 
+                tile_x=tile_size // compression, 
+                tile_y=tile_size // compression, 
+                overlap=overlap // compression
+            )
         
         # Reshape if needed
         if len(images.shape) == 5:
