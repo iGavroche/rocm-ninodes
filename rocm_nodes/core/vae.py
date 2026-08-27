@@ -228,6 +228,14 @@ class ROCmVAEDecode:
 
         samples_tensor = samples["samples"]
 
+        # ── NestedTensor handling (MiniMax H3 / LTX-AV multimodal latents) ──
+        # Stock ComfyUI VAEDecode unbinds nested latents and decodes the first
+        # stream (the video). NestedTensors cannot be passed to the VAE directly
+        # (its internal `.to(z)` calls fail with "got (NestedTensor)").
+        if getattr(samples_tensor, "is_nested", False):
+            print(f"🧩 Nested latent detected — decoding video stream (unbind()[0])")
+            samples_tensor = samples_tensor.unbind()[0]
+
         # ── Architecture detection ──────────────────────────────────────────
         arch_info = detect_architecture()
         is_amd = arch_info["family"] != "cpu"
@@ -831,6 +839,11 @@ class ROCmVAEDecodeTiled:
         """Advanced tiled decode with ROCm optimizations"""
         start_time = time.time()
 
+        samples_tensor = samples["samples"]
+        if getattr(samples_tensor, "is_nested", False):
+            print(f"🧩 Nested latent detected — decoding video stream (unbind()[0])")
+            samples_tensor = samples_tensor.unbind()[0]
+
         if rocm_optimizations:
             if tile_size < overlap * 4:
                 overlap = tile_size // 4
@@ -847,7 +860,7 @@ class ROCmVAEDecodeTiled:
 
         compression = vae.spacial_compression_decode()
         images = vae.decode_tiled(
-            samples["samples"],
+            samples_tensor,
             tile_x=tile_size // compression,
             tile_y=tile_size // compression,
             overlap=overlap // compression,

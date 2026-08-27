@@ -36,9 +36,30 @@ except ImportError:
 try:
     import sys
     import importlib.util
-    # Try to import from ComfyUI-GGUF custom node
-    gguf_path = "/home/nino/ComfyUI/custom_nodes/ComfyUI-GGUF"
-    if os.path.exists(gguf_path):
+    # Locate the ComfyUI-GGUF custom node cross-platform (no hardcoded Linux path).
+    # Prefer the actual custom_nodes directory so Windows/macOS installs work too.
+    candidate_paths = []
+    try:
+        base_path = getattr(folder_paths, "base_path", None)
+        if base_path:
+            candidate_paths.append(os.path.join(base_path, "custom_nodes", "ComfyUI-GGUF"))
+    except Exception:
+        pass
+    # Fall back to scanning sibling custom_nodes directories next to this package.
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        custom_nodes_root = os.path.dirname(os.path.dirname(here))
+        candidate_paths.append(os.path.join(custom_nodes_root, "ComfyUI-GGUF"))
+    except Exception:
+        pass
+
+    gguf_path = None
+    for candidate in candidate_paths:
+        if os.path.isdir(candidate):
+            gguf_path = candidate
+            break
+
+    if gguf_path is not None:
         # Import ops.py first (contains GGMLTensor and GGMLOps)
         spec = importlib.util.spec_from_file_location("gguf_ops", os.path.join(gguf_path, "ops.py"))
         if spec and spec.loader:
@@ -98,7 +119,10 @@ except Exception as e:
 # Dequantization utilities (based on City96's ComfyUI-GGUF)
 # ============================================================================
 
-TORCH_COMPATIBLE_QTYPES = (None, gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16)
+if GGUF_AVAILABLE:
+    TORCH_COMPATIBLE_QTYPES = (None, gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16)
+else:
+    TORCH_COMPATIBLE_QTYPES = (None,)
 
 def is_torch_compatible(tensor):
     """Check if tensor is compatible with PyTorch operations (F32/F16)."""
@@ -190,6 +214,123 @@ def dequantize_blocks_Q4_0(blocks, block_size, type_size, dtype=None):
     qs = (qs & 0x0F).reshape((n_blocks, -1)).to(torch.int8) - 8
     return (d * qs)
 
+# K Quants (Q2_K/Q3_K/Q4_K/Q5_K/Q6_K) - used by Qwen, Llama, and other
+# modern GGUF models. Without these, quantized tensors fall back to the slow
+# CPU-side gguf.quants.dequantize() on every forward pass, which makes
+# inference ~5x slower on ROCm (see issue #4).
+QK_K = 256
+K_SCALE_SIZE = 12
+
+def get_scale_min(scales):
+    n_blocks = scales.shape[0]
+    scales = scales.view(torch.uint8)
+    scales = scales.reshape((n_blocks, 3, 4))
+
+    d, m, m_d = torch.split(scales, scales.shape[-2] // 3, dim=-2)
+
+    sc = torch.cat([d & 0x3F, (m_d & 0x0F) | ((d >> 2) & 0x30)], dim=-1)
+    min = torch.cat([m & 0x3F, (m_d >> 4) | ((m >> 2) & 0x30)], dim=-1)
+
+    return (sc.reshape((n_blocks, 8)), min.reshape((n_blocks, 8)))
+
+def dequantize_blocks_Q6_K(blocks, block_size, type_size, dtype=None):
+    n_blocks = blocks.shape[0]
+
+    ql, qh, scales, d = split_block_dims(blocks, QK_K // 2, QK_K // 4, QK_K // 16)
+
+    scales = scales.view(torch.int8).to(dtype)
+    d = d.view(torch.float16).to(dtype)
+    d = (d * scales).reshape((n_blocks, QK_K // 16, 1))
+
+    ql = ql.reshape((n_blocks, -1, 1, 64)) >> torch.tensor([0, 4], device=d.device, dtype=torch.uint8).reshape((1, 1, 2, 1))
+    ql = (ql & 0x0F).reshape((n_blocks, -1, 32))
+    qh = qh.reshape((n_blocks, -1, 1, 32)) >> torch.tensor([0, 2, 4, 6], device=d.device, dtype=torch.uint8).reshape((1, 1, 4, 1))
+    qh = (qh & 0x03).reshape((n_blocks, -1, 32))
+    q = (ql | (qh << 4)).to(torch.int8) - 32
+    q = q.reshape((n_blocks, QK_K // 16, -1))
+
+    return (d * q).reshape((n_blocks, QK_K))
+
+def dequantize_blocks_Q5_K(blocks, block_size, type_size, dtype=None):
+    n_blocks = blocks.shape[0]
+
+    d, dmin, scales, qh, qs = split_block_dims(blocks, 2, 2, K_SCALE_SIZE, QK_K // 8)
+
+    d = d.view(torch.float16).to(dtype)
+    dmin = dmin.view(torch.float16).to(dtype)
+
+    sc, m = get_scale_min(scales)
+
+    d = (d * sc).reshape((n_blocks, -1, 1))
+    dm = (dmin * m).reshape((n_blocks, -1, 1))
+
+    ql = qs.reshape((n_blocks, -1, 1, 32)) >> torch.tensor([0, 4], device=d.device, dtype=torch.uint8).reshape((1, 1, 2, 1))
+    qh = qh.reshape((n_blocks, -1, 1, 32)) >> torch.tensor([i for i in range(8)], device=d.device, dtype=torch.uint8).reshape((1, 1, 8, 1))
+    ql = (ql & 0x0F).reshape((n_blocks, -1, 32))
+    qh = (qh & 0x01).reshape((n_blocks, -1, 32))
+    q = (ql | (qh << 4))
+
+    return (d * q - dm).reshape((n_blocks, QK_K))
+
+def dequantize_blocks_Q4_K(blocks, block_size, type_size, dtype=None):
+    n_blocks = blocks.shape[0]
+
+    d, dmin, scales, qs = split_block_dims(blocks, 2, 2, K_SCALE_SIZE)
+    d = d.view(torch.float16).to(dtype)
+    dmin = dmin.view(torch.float16).to(dtype)
+
+    sc, m = get_scale_min(scales)
+
+    d = (d * sc).reshape((n_blocks, -1, 1))
+    dm = (dmin * m).reshape((n_blocks, -1, 1))
+
+    qs = qs.reshape((n_blocks, -1, 1, 32)) >> torch.tensor([0, 4], device=d.device, dtype=torch.uint8).reshape((1, 1, 2, 1))
+    qs = (qs & 0x0F).reshape((n_blocks, -1, 32))
+
+    return (d * qs - dm).reshape((n_blocks, QK_K))
+
+def dequantize_blocks_Q3_K(blocks, block_size, type_size, dtype=None):
+    n_blocks = blocks.shape[0]
+
+    hmask, qs, scales, d = split_block_dims(blocks, QK_K // 8, QK_K // 4, 12)
+    d = d.view(torch.float16).to(dtype)
+
+    lscales, hscales = scales[:, :8], scales[:, 8:]
+    lscales = lscales.reshape((n_blocks, 1, 8)) >> torch.tensor([0, 4], device=d.device, dtype=torch.uint8).reshape((1, 2, 1))
+    lscales = lscales.reshape((n_blocks, 16))
+    hscales = hscales.reshape((n_blocks, 1, 4)) >> torch.tensor([0, 2, 4, 6], device=d.device, dtype=torch.uint8).reshape((1, 4, 1))
+    hscales = hscales.reshape((n_blocks, 16))
+    scales = (lscales & 0x0F) | ((hscales & 0x03) << 4)
+    scales = (scales.to(torch.int8) - 32)
+
+    dl = (d * scales).reshape((n_blocks, 16, 1))
+
+    ql = qs.reshape((n_blocks, -1, 1, 32)) >> torch.tensor([0, 2, 4, 6], device=d.device, dtype=torch.uint8).reshape((1, 1, 4, 1))
+    qh = hmask.reshape(n_blocks, -1, 1, 32) >> torch.tensor([i for i in range(8)], device=d.device, dtype=torch.uint8).reshape((1, 1, 8, 1))
+    ql = ql.reshape((n_blocks, 16, QK_K // 16)) & 3
+    qh = (qh.reshape((n_blocks, 16, QK_K // 16)) & 1) ^ 1
+    q = (ql.to(torch.int8) - (qh << 2).to(torch.int8))
+
+    return (dl * q).reshape((n_blocks, QK_K))
+
+def dequantize_blocks_Q2_K(blocks, block_size, type_size, dtype=None):
+    n_blocks = blocks.shape[0]
+
+    scales, qs, d, dmin = split_block_dims(blocks, QK_K // 16, QK_K // 4, 2)
+    d = d.view(torch.float16).to(dtype)
+    dmin = dmin.view(torch.float16).to(dtype)
+
+    dl = (d * (scales & 0xF)).reshape((n_blocks, QK_K // 16, 1))
+    ml = (dmin * (scales >> 4)).reshape((n_blocks, QK_K // 16, 1))
+
+    shift = torch.tensor([0, 2, 4, 6], device=d.device, dtype=torch.uint8).reshape((1, 1, 4, 1))
+
+    qs = (qs.reshape((n_blocks, -1, 1, 32)) >> shift) & 3
+    qs = qs.reshape((n_blocks, QK_K // 16, 16))
+    qs = dl * qs - ml
+
+    return qs.reshape((n_blocks, -1))
+
 # Dequantization function mapping
 dequantize_functions = {}
 if GGUF_AVAILABLE:
@@ -200,7 +341,14 @@ if GGUF_AVAILABLE:
         gguf.GGMLQuantizationType.Q5_0: dequantize_blocks_Q5_0,
         gguf.GGMLQuantizationType.Q4_1: dequantize_blocks_Q4_1,
         gguf.GGMLQuantizationType.Q4_0: dequantize_blocks_Q4_0,
+        gguf.GGMLQuantizationType.Q6_K: dequantize_blocks_Q6_K,
+        gguf.GGMLQuantizationType.Q5_K: dequantize_blocks_Q5_K,
+        gguf.GGMLQuantizationType.Q4_K: dequantize_blocks_Q4_K,
+        gguf.GGMLQuantizationType.Q3_K: dequantize_blocks_Q3_K,
+        gguf.GGMLQuantizationType.Q2_K: dequantize_blocks_Q2_K,
     }
+else:
+    dequantize_functions = {}
 
 def dequantize(data, qtype, oshape, dtype=None):
     """
@@ -217,6 +365,9 @@ def dequantize(data, qtype, oshape, dtype=None):
     
     if qtype not in dequantize_functions:
         raise ValueError(f"Unsupported quantization type: {qtype}")
+    
+    if not GGUF_AVAILABLE:
+        raise ImportError("GGUF library not installed. Please install it with: pip install gguf")
     
     block_size, type_size = gguf.GGML_QUANT_SIZES[qtype]
     dequantize_blocks = dequantize_functions[qtype]
@@ -267,6 +418,8 @@ def dequantize_tensor(tensor, dtype=None, dequant_dtype=None):
         return dequantized.to(dtype, non_blocking=non_blocking)
     else:
         # Fallback to gguf library (slower)
+        if not GGUF_AVAILABLE:
+            raise ImportError("GGUF library not installed. Please install it with: pip install gguf")
         try:
             new = gguf.quants.dequantize(tensor.cpu().numpy(), qtype)
             return torch.from_numpy(new).to(device, dtype=dtype, non_blocking=non_blocking)
@@ -946,7 +1099,7 @@ class ROCmGGUFLoader:
                             arch = torch.cuda.get_device_properties(0).gcnArchName
                             if 'gfx1151' in arch:
                                 is_gfx1151 = True
-                                print("[CONFIG] gfx1151 architecture detected - using fp32 precision")
+                                print("[CONFIG] gfx1151 architecture detected")
                         except:
                             pass
             except Exception:

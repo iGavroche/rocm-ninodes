@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.3.2] - 2026-08-27
+
+### Fixed
+- **`to() received an invalid combination of arguments - got (NestedTensor)` crash in VAE decode** (`rocm_nodes/core/vae.py`, `rocm_nodes.py`): `ROCmVAEDecode`, `ROCmVAEDecodeTiled`, and the legacy `ROCMOptimizedVAEDecode`/`ROCMOptimizedVAEDecodeTiled` now unbind nested latents (`unbind()[0]`, the video stream) before decoding, matching stock ComfyUI `VAEDecode`. NestedTensors (MiniMax H3 / LTX-AV multimodal latents) cannot be passed to the VAE directly because its internal `.to(z)` calls fail.
+
+- **`requires-comfyui = ">=1.0.0"` unsatisfiable** (`pyproject.toml`, `comfyui_manager.json`): ComfyUI versions are 0.x (e.g. 0.33.0), so `>=1.0.0` could never be satisfied and blocked installs via the new Manager. Lowered to `>=0.0.1`.
+
+- **Missing `ROCMOptimizedVAEDecodeV2Phase3` node**: workflows saved with this legacy name failed to load. Added as an alias mapping to `ROCmVAEDecode` in `rocm_nodes/nodes.py`, `rocm_nodes.py`, and `comfyui_manager.json`.
+
+- **Flux Benchmark crash** (`rocm_nodes.py`): `ROCmFluxBenchmark` hardcoded a 4-channel latent, which fails on Flux (`weight of size [512, 16, 3, 3], expected input[1, 4, 64, 64]`). Now reads the model's actual `latent_channels` (16 for Flux).
+
+- **GGUF loader install/import failures** (`rocm_nodes/core/gguf_loader.py`, `install.py`, `requirements.txt`): removed the hardcoded Linux-only `ComfyUI-GGUF` path (cross-platform detection via `folder_paths.base_path`), guarded all module-level `gguf` usage so the node imports cleanly without the package, and made `install.py` auto-install `gguf`/`safetensors`.
+
+- **~5x slower modern GGUF inference (Qwen Image etc.)** (`rocm_nodes/core/gguf_loader.py`): added GPU K-quant dequantization (Q2_K/Q3_K/Q4_K/Q5_K/Q6_K). These previously fell back to the slow CPU-side `gguf.quants.dequantize()` on every forward pass; now they dequantize on-device. Also removed the misleading "using fp32 precision" log line.
+
+- **Legacy LoRA loader crash** (`rocm_nodes.py`): `ROCMLoRALoader` passed a file path string to `comfy.lora.load_lora`, causing `'str' object has no attribute 'keys'`. Now uses `load_torch_file` + `comfy.sd.load_lora_for_models` (matches stock `LoadLoRA`).
+
 ## [2.3.1] - 2025-08-02
 
 ### Fixed

@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.1)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.2)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -29,11 +29,21 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.3.1-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.3.2-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.3.2
+
+- **Fixed `to() received an invalid combination of arguments - got (NestedTensor)` crash in VAE decode** (`rocm_nodes/core/vae.py`): `ROCmVAEDecode` / `ROCmVAEDecodeTiled` and the legacy `ROCMOptimizedVAEDecode` now unbind nested latents (`unbind()[0]`, the video stream) before decoding — matching stock ComfyUI `VAEDecode`. NestedTensors (MiniMax H3 / LTX-AV multimodal latents) can't be passed to the VAE directly because its internal `.to(z)` calls fail.
+- **Fixed `requires-comfyui = ">=1.0.0"` unsatisfiable** (`pyproject.toml`, `comfyui_manager.json`): ComfyUI versions are 0.x (e.g. 0.33.0), so `>=1.0.0` could never be satisfied and blocked installs via the new Manager. Lowered to `>=0.0.1`.
+- **Added missing `ROCMOptimizedVAEDecodeV2Phase3` node alias**: workflows saved with this legacy name now load (maps to `ROCmVAEDecode`).
+- **Fixed Flux Benchmark crash** (`rocm_nodes.py`): `ROCmFluxBenchmark` now reads the model's actual `latent_channels` (16 for Flux) instead of hardcoding 4, so `Given groups=1, weight of size [512, 16, 3, 3], expected input[1, 4, 64, 64]` no longer occurs.
+- **Fixed GGUF loader install/import failures** (`rocm_nodes/core/gguf_loader.py`, `install.py`, `requirements.txt`): removed the hardcoded Linux-only `ComfyUI-GGUF` path (cross-platform detection via `folder_paths.base_path`), guarded all module-level `gguf` usage so the node imports cleanly even without the package, and made `install.py` auto-install `gguf`/`safetensors`.
+- **~5x faster Qwen Image / modern GGUF inference** (`rocm_nodes/core/gguf_loader.py`): added GPU K-quant dequantization (Q2_K/Q3_K/Q4_K/Q5_K/Q6_K). Previously these fell back to the slow CPU-side `gguf.quants.dequantize()` on every forward pass; now they dequantize on-device like City96's node. Also removed the misleading "using fp32 precision" log line.
+- **Fixed legacy LoRA loader crash** (`rocm_nodes.py`): `ROCMLoRALoader` passed a file path string to `comfy.lora.load_lora`, causing `'str' object has no attribute 'keys'`. Now uses `load_torch_file` + `comfy.sd.load_lora_for_models` (matches stock `LoadLoRA`).
 
 ## 🚀 What's new in v2.3.1
 
@@ -294,7 +304,16 @@ Our optimization approach focuses on three key areas:
 - Reports timing, peak memory, speedup %, model type, and GPU name
 - Outputs both LATENT (from ROCm run) and a BENCHMARK_REPORT string
 
-### ROCMVAEPerformanceMonitor
+### ROCmGGUFLoader
+- **Loads GGUF diffusion models** (Flux, SD1.5, SDXL, SD3, WAN, LTX, Qwen Image, etc.) directly — no safetensors conversion needed
+- **Lazy dequantization**: tensors stay quantized until used in a forward pass (memory-efficient)
+- **K-quant support**: Q2_K, Q3_K, Q4_K, Q5_K, Q6_K plus Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/BF16 — no slow CPU fallback
+- **City96 integration**: automatically uses ComfyUI-GGUF's ops when that node is installed
+- **Where to find it**: `ROCm Ninodes/Loaders` → **ROCm GGUF Loader** (not the Diffusion Loader, which is for safetensors/ckpt)
+- **Model folders scanned**: `diffusion_models`, `unet`, `unet_gguf`, `checkpoints`
+- **Requires**: `pip install gguf` (auto-installed by `install.py` / ComfyUI Manager)
+
+### ROCmVAEPerformanceMonitor
 - **Device analysis**: Shows your GPU information and current settings
 - **Performance tips**: Provides specific recommendations for your hardware
 - **Optimal settings**: Suggests best parameters for your setup
