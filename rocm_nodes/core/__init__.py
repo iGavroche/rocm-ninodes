@@ -27,6 +27,7 @@ from .unet_loader import ROCmDiffusionLoader
 from .lora import ROCmLoRALoader
 from .monitors import ROCmFluxBenchmark, ROCmMemoryOptimizer
 from .textgen_ltx2 import ROCmTextGenerateLTX2Prompt
+from .h3_easycache import ROCmH3EasyCache
 
 __all__ = [
     # VAE nodes
@@ -47,4 +48,5 @@ __all__ = [
     'ROCmFluxBenchmark',
     'ROCmMemoryOptimizer',
     'ROCmTextGenerateLTX2Prompt',
+    'ROCmH3EasyCache',
 ]

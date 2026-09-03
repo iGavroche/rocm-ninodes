@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.4] - 2026-09-03
+
+### Added
+- **New `ROCmH3EasyCache` node** (`rocm_nodes/core/h3_easycache.py`, `rocm_nodes/nodes.py`, `rocm_nodes/core/__init__.py`): step-caching for 4-step MiniMax H3 workflows — V3 `io.ComfyNode` wrapping ComfyUI's core `EasyCache` with H3-tuned defaults (reuse_threshold 0.2, start 15%, end 95%, subsample_factor 8). Skips transformer calls when denoising delta is below threshold for ~25% speedup on fast H3 + Spectrum pipelines. Placed between loader/LoRA and sampler. Registered in `pyproject.toml`, `package.json`, `comfyui_manager.json` with category **ROCm Ninodes/Optimization**.
+
 ## [2.3.3] - 2026-08-27
 
 ### Fixed
