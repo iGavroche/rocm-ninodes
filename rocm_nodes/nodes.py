@@ -41,6 +41,7 @@ from .core.monitors import (
     ROCmMemoryOptimizer,
 )
 from .core.textgen_ltx2 import ROCmTextGenerateLTX2Prompt
+from .core.h3_easycache import ROCmH3EasyCache
 
 # Define node class mappings for ComfyUI.
 # Old keys (ROCMOptimized*) are kept as backward-compatible aliases so that
@@ -62,6 +63,7 @@ NODE_CLASS_MAPPINGS = {
     "ROCmMemoryOptimizer": ROCmMemoryOptimizer,
     "ROCmLoRALoader": ROCmLoRALoader,
     "ROCmTextGenerateLTX2Prompt": ROCmTextGenerateLTX2Prompt,
+    "ROCmH3EasyCache": ROCmH3EasyCache,
 
     # --- Legacy aliases (backward compat) ---
     "ROCMOptimizedCheckpointLoader": ROCmCheckpointLoader,
@@ -97,6 +99,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCmMemoryOptimizer": "ROCm Memory Optimizer",
     "ROCmLoRALoader": "ROCm LoRA Loader",
     "ROCmTextGenerateLTX2Prompt": "ROCm Text Generate LTX2 Prompt",
+    "ROCmH3EasyCache": "ROCm H3 EasyCache",
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
