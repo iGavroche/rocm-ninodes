@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.4)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.5)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -29,11 +29,16 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.3.4-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.3.5-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.3.5
+
+- **Fixed `ROCmH3EasyCache` invisible on older ComfyUI** (`rocm_nodes/nodes.py`, `rocm_nodes/core/__init__.py`): the H3 import was unconditional, so on any ComfyUI without `comfy_extras.nodes_easycache` the whole extension failed to load (zero ROCm nodes). H3 is now optional — older installs get the other 15 nodes plus a console hint to update ComfyUI; current installs get H3 as before.
+- **Fixed registry package contents** (`pyproject.toml`): `[tool.comfy] includes` listed a nonexistent `nodes.py` instead of `__init__.py` + `rocm_nodes/`, so registry installs could ship without the node code. Now includes the real runtime files.
 
 ## 🚀 What's new in v2.3.4
 

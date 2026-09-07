@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.3.5] - 2026-09-07
+
+### Fixed
+- **`ROCmH3EasyCache` invisible / whole extension failing to load on older ComfyUI** (`rocm_nodes/nodes.py`, `rocm_nodes/core/__init__.py`): the `from .core.h3_easycache import ROCmH3EasyCache` was unconditional, so on any ComfyUI without `comfy_extras.nodes_easycache` the import raised and `rocm_nodes/__init__.py` fell back to empty `NODE_CLASS_MAPPINGS` — zero ROCm nodes loaded. The import is now guarded: H3 registers only when EasyCache exists, other 15 nodes always load, and a console hint tells outdated installs to update ComfyUI.
+- **Registry package missing node code** (`pyproject.toml`): `[tool.comfy] includes` listed `nodes.py` (nonexistent at root) instead of `__init__.py` + `rocm_nodes/`. Registry installs could arrive without the implementation. Now includes `__init__.py`, `rocm_nodes/`, `web/`, `comfyui_manager.json`, `requirements.txt`.
+
 ## [2.3.4] - 2026-09-03
 
 ### Added
