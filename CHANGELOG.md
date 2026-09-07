@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.6] - 2026-09-07
+
+### Changed
+- **Registry republish, no functional changes**: version bump to resolve a version-conflict on `comfy node publish`. Identical code to v2.3.5.
+
 ## [2.3.5] - 2026-09-07
 
 ### Fixed
