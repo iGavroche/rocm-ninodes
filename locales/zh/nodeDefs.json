@@ -1,0 +1,42 @@
+{
+  "VedaSparseAttention": {
+    "display_name": "Veda 稀疏注意力 (MiniMax H3)",
+    "description": "只计算学习型打分器认为重要的注意力 tile，为 MiniMax-H3（T2VA / FL2VA / R2VA）加速。这是一个 attention override：接在 MODEL 线上，模型和所有 LoRA 加载之后、sampler / guider 之前。",
+    "inputs": {
+      "model": {
+        "name": "model",
+        "tooltip": "要加速的 MiniMax-H3 模型（接在 LoRA 加载之后）。"
+      },
+      "predictor": {
+        "name": "predictor",
+        "tooltip": "models/veda 里的 Veda 打分器。打开 Veda 模板后，ComfyUI 的缺失模型对话框会下载它；也可以手动放进该目录。"
+      },
+      "generated_sparsity": {
+        "name": "generated_sparsity",
+        "tooltip": "生成视频注意力的稀疏度。\"90%\" 跳过每个 query tile 可见的 90% key tile（训练值；调低更接近全注意力，也更慢）。填整数如 \"24\" 则固定保留那么多个 128-token 的 key tile。"
+      },
+      "reference_sparsity": {
+        "name": "reference_sparsity",
+        "tooltip": "参考部分同上：首尾帧、引导帧、参考图和参考视频。\"0%\" 表示与参考之间保持全注意力。"
+      },
+      "full_attention_layers": {
+        "name": "full_attention_layers",
+        "tooltip": "保持全注意力的 DiT block，从 0 开始，例如 \"0, 1, 47-49\"。留空 = 全部稀疏。"
+      },
+      "full_attention_steps": {
+        "name": "full_attention_steps",
+        "tooltip": "保持全注意力的采样步，从 0 开始，例如 \"0\" 表示第一步。留空 = 全部稀疏。"
+      },
+      "verbose": {
+        "name": "verbose",
+        "tooltip": "每次运行后在节点上额外显示耗时和诊断信息，并在日志里记录每个决定。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "model",
+        "tooltip": "已应用 Veda 稀疏注意力的模型。"
+      }
+    }
+  }
+}
