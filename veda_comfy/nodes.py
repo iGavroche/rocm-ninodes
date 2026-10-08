@@ -134,7 +134,7 @@ class VedaSparseAttention(io.ComfyNode):
         return io.Schema(
             node_id='VedaSparseAttention',
             display_name='Veda Sparse Attention (MiniMax H3)',
-            category='model/patch/minimax',
+            category='ROCm Ninodes/Optimization',
             search_aliases=['veda', 'sparse attention', 'minimax h3 speed',
                             'accelerate', 'faster video'],
             description=(
