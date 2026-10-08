@@ -1,6 +1,6 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.6)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.7)
 
-**ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
+**ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, **Veda sparse attention for MiniMax H3**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
 ## ⬆️ Upgrade to v2 (Required for existing users)
 
@@ -29,11 +29,17 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.3.6-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.3.7-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+
+## 🚀 What's new in v2.3.7
+
+- **New `VedaSparseAttention` node** (`veda_comfy/`): learned block-sparse attention for MiniMax H3, ported from Veda-on-ComfyUI. Triton INT8 kernel on gfx1151 (ROCm 10.1); predictor-driven tile selection skips ~85-95% of attention. Measured on Strix Halo: 1.47x at 768x768/8 steps, 1.40x at 4-step turbo. Node shows live status (backend, sparsity, time) on itself; falls back to full attention on any kernel error. Place it on the MODEL wire last before the sampler. Predictor: `models/veda/minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors` (see https://github.com/veda-sparse/Veda-on-ComfyUI).
+- **ROCm/gfx1151 enablement in the Veda backend layer**: `hardware.py` reports the real gfx family + unified memory on HIP; `backends/__init__.py` admits ROCm devices to the Triton INT8 backend (self-test still gates every device).
 
 ## 🚀 What's new in v2.3.6
 

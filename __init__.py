@@ -9,7 +9,7 @@ It imports from the rocm_nodes package structure.
 import sys
 import os
 
-__version__ = "2.3.6"
+__version__ = "2.3.7"
 __author__ = "iGavroche"
 __email__ = "nino2k@proton.me"
 __description__ = "ROCm-optimized ComfyUI nodes for AMD GPU performance"
@@ -35,5 +35,16 @@ except ImportError as e:
     NODE_CLASS_MAPPINGS = {}
     NODE_DISPLAY_NAME_MAPPINGS = {}
     print("[ROCm Ninodes] WARNING: No nodes available - check installation")
+
+# Veda sparse attention (MiniMax-H3). The v3 extension entrypoint only
+# fires when this module has no NODE_CLASS_MAPPINGS, so register the node
+# class directly instead and call its folder hook here.
+try:
+    from veda_comfy.nodes import VedaSparseAttention, register_model_folder
+    register_model_folder()
+    NODE_CLASS_MAPPINGS['VedaSparseAttention'] = VedaSparseAttention
+    NODE_DISPLAY_NAME_MAPPINGS['VedaSparseAttention'] = 'Veda Sparse Attention (MiniMax H3)'
+except ImportError as e:
+    print(f"[ROCm Ninodes] Veda sparse attention unavailable: {e}")
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', '__version__']
