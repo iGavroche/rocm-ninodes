@@ -292,6 +292,22 @@ Our optimization approach focuses on three key areas:
 
 **Performance Improvement: 8.1% faster overall, 5.6% average improvement**
 
+#### **⚡ MiniMax H3 Video Generation (VedaSparseAttention)**
+
+**Test Configuration:**
+- **Model**: MiniMax H3 TURBO (int8) + PDMD 4-step LoRA
+- **Output**: 480x864 portrait, 11.5 s video (244 frames), 4 sampling steps
+- **Hardware**: GMTek Evo-X2 Strix Halo (gfx1151, 128GB Unified RAM), ROCm 7.16
+
+**With VedaSparseAttention (90% sparsity):**
+- **Sampler**: 366.5s | **VAE decode**: 95.0s | **Total prompt: 472.6s** ⚡
+- Attention computed: 26.8% of full (73.2% skipped)
+
+**Without (standard dense attention):**
+- **Sampler**: 691.6s | **VAE decode**: 96.1s | **Total prompt: 1016s** 🐌
+
+**Performance Improvement: 1.89x faster sampling, 2.15x faster overall** (the Veda run also included the one-time Triton kernel compile, so steady-state is better still)
+
 ### 🎯 **Try It Now!**
 - **[Flux Image Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow.json)** - 78% performance improvement!
 - **[WAN 2.2 Video Generation](https://raw.githubusercontent.com/iGavroche/rocm-ninodes/main/example_workflow_wan_video.json)** - 15% performance improvement!
@@ -340,6 +356,27 @@ Our optimization approach focuses on three key areas:
 - A/B benchmark: runs stock then ROCm-optimized on identical inputs
 - Reports timing, peak memory, speedup %, model type, and GPU name
 - Outputs both LATENT (from ROCm run) and a BENCHMARK_REPORT string
+
+### VedaSparseAttention
+**Speeds up MiniMax H3 video generation by skipping the attention that doesn't matter.**
+
+*In plain terms:* when the model denoises a video, every spot in every frame "looks at" every other spot to stay consistent — that's the attention step, and on a long video it is the single most expensive thing the GPU does. Most of that looking is wasted: a patch of sky doesn't need to study the back of a car three seconds later. This node adds a tiny trained assistant (the *predictor* file) that glances at the video before each step and decides which pairs of regions actually matter. The model then computes only those. The finished video looks the same as if it had checked everything; it just stops paying for the staring-at-nothing.
+
+- **How it works**: a learned predictor scores every block of the video and keeps the tiles worth attending to (block-sparse selection), then a Triton INT8 attention kernel — tuned per GPU architecture, fastest on gfx1151 — computes only the kept blocks.
+
+- **Where to put it**: on the MODEL wire, after the model and any LoRA loaders, **last before the sampler/guider**. It is an attention override.
+
+- **Works with**: MiniMax H3 (T2VA / FL2VA / R2VA), including quantized checkpoints and the PDMD 4-step LoRA.
+
+- **Predictor file**: `models/veda/minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors` — opening a Veda template lets ComfyUI's missing-model dialog fetch it, or place it by hand.
+
+- **Inputs**: `generated_sparsity` / `reference_sparsity` (default `90%`: skip 90% of key tiles; lower is closer to full attention), `full_attention_layers` / `full_attention_steps` (e.g. keep the first step dense), `verbose` for per-run diagnostics on the node.
+
+- **Self-reporting**: the node shows live status on itself — backend, tile plan, and how much attention it actually computed (e.g. "26.8% of full attention, 73.2% skipped").
+
+- **Safe by design**: any kernel error falls back silently to full attention; the workflow cannot break because of this node.
+
+- **First run after each ComfyUI restart** includes a one-time Triton kernel compile; steady-state runs are faster.
 
 ### ROCmGGUFLoader
 - **Loads GGUF diffusion models** (Flux, SD1.5, SDXL, SD3, WAN, LTX, Qwen Image, etc.) directly — no safetensors conversion needed
