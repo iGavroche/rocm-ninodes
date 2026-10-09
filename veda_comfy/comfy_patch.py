@@ -489,7 +489,7 @@ class VedaPatch:
             return replaced(x, rope_freqs=rope_freqs,
                             transformer_options=transformer_options)
 
-        setattr(forward, _COMPOSES, True)
+        forward._uses_optimized_attention = True
         return forward
 
     def take_over_forwards(self, model_patcher, diffusion) -> None:
