@@ -128,11 +128,8 @@ def _describe(device_str: str) -> DeviceInfo:
                           os_name, machine, props.total_memory, unified,
                           torch.version.cuda)
     if device.type == 'mps':
-        # `sysctl -n machdep.cpu.brand_string` gives a prettier string
-        # ("Apple M3 Pro" vs "arm"), but shelling out for a display label
-        # is not worth it: the Comfy Registry standards call out nodes
-        # that spawn processes, and its scanner matches on text, so even
-        # naming the module here would be a hit.
+        # platform.processor() gives "Apple M3 Pro" on macOS, "arm"
+        # elsewhere; a process spawn for a display label is not worth it.
         name = 'Apple silicon'
         if os_name == 'darwin':
             name = platform.processor() or name

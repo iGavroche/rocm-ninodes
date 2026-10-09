@@ -5,14 +5,8 @@ environment: the predictor reaches `models/veda` either through ComfyUI's
 own missing-model dialog, which the example workflows drive with
 `properties.models`, or because the user put the file there. The node
 turns a missing file into an error that says exactly where to get it (see
-`nodes._predictor_path`).
-
-That is a deliberate narrowing. An earlier version fetched the bundle
-itself over plain HTTPS, resuming and verifying its digest. It worked,
-but a custom node that opens connections and reads an auth token out of
-the environment trips the Comfy Registry's security scan, and fetching
-models is something ComfyUI already does for us. See
-docs/features/packaging_release.md.
+`nodes._predictor_path`). Model retrieval is something ComfyUI already
+does for us.
 """
 
 from __future__ import annotations

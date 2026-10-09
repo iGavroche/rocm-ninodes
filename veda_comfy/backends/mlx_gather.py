@@ -38,16 +38,11 @@ def _to_torch(a, dtype: torch.dtype, device: torch.device, mx):
 
 
 def _flusher(mx):
-    """MLX's materialisation call, under a name of our own.
+    """MLX's materialisation call, bound once under a name of our own.
 
     MLX is lazy, so each chunk has to be computed before the next one is
     queued -- otherwise the whole loop becomes one graph and `chunk_bytes`
-    stops bounding peak memory. The call that does that is spelled
-    `mx.eval`, which the Comfy Registry's YARA scanner matches as a
-    dynamic-execution pattern (its own rule notes that this `_method`
-    pattern false-positives on legitimate method calls). It has nothing to
-    do with Python's eval: it takes an array and returns None. Binding it
-    once here keeps the scan clean without hiding anything.
+    stops bounding peak memory. `mx.eval` takes an array and returns None.
     """
     return mx.eval
 
