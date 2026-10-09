@@ -130,7 +130,11 @@ class ROCmKSampler:
                 use_bf16 = False
         latent = latent_image
         latent_image_tensor = latent["samples"]
-        latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+        latent_image_tensor = comfy.sample.fix_empty_latent_channels(
+            model, latent_image_tensor,
+            latent.get("downscale_ratio_spacial", None),
+            latent.get("downscale_ratio_temporal", None)
+        )
 
         batch_inds = latent["batch_index"] if "batch_index" in latent else None
         noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
@@ -199,6 +203,8 @@ class ROCmKSampler:
             gentle_memory_cleanup()
 
         out = latent.copy()
+        out.pop("downscale_ratio_spacial", None)
+        out.pop("downscale_ratio_temporal", None)
         out["samples"] = samples
         return (out,)
 
@@ -273,7 +279,11 @@ class ROCmKSamplerAdvanced:
 
         latent = latent_image
         latent_image_tensor = latent["samples"]
-        latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+        latent_image_tensor = comfy.sample.fix_empty_latent_channels(
+            model, latent_image_tensor,
+            latent.get("downscale_ratio_spacial", None),
+            latent.get("downscale_ratio_temporal", None)
+        )
 
         if disable_noise:
             noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
@@ -344,6 +354,8 @@ class ROCmKSamplerAdvanced:
             gentle_memory_cleanup()
 
         out = latent.copy()
+        out.pop("downscale_ratio_spacial", None)
+        out.pop("downscale_ratio_temporal", None)
         out["samples"] = samples
         return (out,)
 

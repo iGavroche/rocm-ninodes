@@ -11,7 +11,7 @@ import sys
 def _install_comfy_sample_mocks(monkeypatch, captured):
     import comfy
 
-    def fix_empty_latent_channels(model, x):
+    def fix_empty_latent_channels(model, x, downscale_ratio_spacial=None, downscale_ratio_temporal=None):
         return x
 
     def prepare_noise(latent, seed, batch_inds=None):
