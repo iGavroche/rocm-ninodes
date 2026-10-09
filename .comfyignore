@@ -1,0 +1,29 @@
+# The registry zip ships every git-tracked file; `includes` in pyproject.toml
+# only force-includes over these patterns. Ship the node payload and docs,
+# nothing else: the registry scanner reads every file in the zip, and the dev
+# tooling below (process-killer scripts, aiohttp test harnesses, HF URLs in
+# workflow notes) trips it.
+tests/
+tools/
+scripts/
+docs/
+test_data/
+.cursor/
+.cursorrules
+comfyui_workflows/
+*.sh
+install.py
+create_node_files.py
+rocm_nodes.py
+pytest.ini
+uv.lock
+example_workflow.json
+example_workflow_wan_video.json
+flux_dev_optimized.json
+NEXT_STEPS.md
+REFACTORING_SUMMARY.md
+ARCHITECTURE.md
+RULES.md
+Benchmarks.md
+CHANGELOG.md
+INSTALL.md
