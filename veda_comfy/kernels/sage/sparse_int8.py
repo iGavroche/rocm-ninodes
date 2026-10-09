@@ -44,7 +44,9 @@ TILE = 128
 # Upstream's key block. One Veda tile is two of these.
 KEY_BLOCK = 64
 # Measured by tools/tune_int8.py on an RTX 5070; upstream's 8 warps for
-# head_dim 128 is 12% slower here.
+# head_dim 128 is 12% slower there. gfx1151 (Strix Halo) is the opposite:
+# 8 warps with 2 stages is 2.0x faster than 4/3 on the real portrait grid
+# (17.6 vs 35.3 ms at 56 heads), so the launch options are per-arch.
 WARPS, STAGES = 4, 3
 LOG2E = 1.4426950408889634
 # Set by tools/tune_int8.py to sweep launch options; None in production,
@@ -279,6 +281,14 @@ def _tma_available(capability: tuple[int, int]) -> bool:
             and hasattr(tl, 'make_tensor_descriptor'))
 
 
+
+@functools.cache
+def _launch_config(capability: tuple[int, int]) -> tuple[int, int]:
+    """(warps, stages) for the attention kernel, measured per architecture."""
+    if capability == (11, 5):  # gfx1151
+        return 8, 2
+    return WARPS, STAGES
+
 @functools.cache
 def _install_allocator() -> None:
     """Device-side descriptors need a scratch buffer from the caller."""
@@ -327,7 +337,8 @@ def attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
     slots, heads, dim = q.shape
     scale = (dim ** -0.5) if softmax_scale is None else softmax_scale
     use_tma = _tma_available(torch.cuda.get_device_capability(q.device))
-    key_block, warps, stages = KEY_BLOCK, WARPS, STAGES
+    key_block = KEY_BLOCK
+    warps, stages = _launch_config(torch.cuda.get_device_capability(q.device))
     if OVERRIDE is not None:  # tools/tune_int8.py sweeps these
         use_tma, key_block = OVERRIDE['tma'], OVERRIDE['key_block']
         warps, stages = OVERRIDE['num_warps'], OVERRIDE['num_stages']

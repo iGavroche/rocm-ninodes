@@ -201,19 +201,23 @@ def select_precision(precision_mode: str, is_quantized: bool, arch_info: dict) -
 
 
 def _check_blas_prefer_hipblaslt(arch_info: dict):
-    """Check and warn if TORCH_BLAS_PREFER_HIPBLASLT is not set on gfx1151.
+    """Warn if matmuls are not routed through hipBLASLt on gfx1151.
 
-    ROCm docs recommend this env var for LLM performance on RDNA3/RDNA3.5
-    with PyTorch < 2.14. It becomes the default in PyTorch 2.14.
+    ROCm docs recommend hipBLASLt for LLM performance on RDNA3/RDNA3.5
+    with PyTorch < 2.14 (TORCH_BLAS_PREFER_HIPBLASLT=1). It is the default
+    from PyTorch 2.14 on, so ask torch which backend it picked instead of
+    reading the environment.
     """
     if arch_info.get("family") not in ("rdna3_5", "rdna3"):
         return
-    val = os.environ.get("TORCH_BLAS_PREFER_HIPBLASLT", "")
-    if val != "1":
+    try:
+        blas = torch.backends.cuda.preferred_blas_library()
+    except Exception:
+        return
+    if "hipblaslt" not in str(blas).lower() and "cublaslt" not in str(blas).lower():
         print(
-            f"  💡 TORCH_BLAS_PREFER_HIPBLASLT is not set. "
-            f"For optimal LLM performance on {arch_info['family']}, set: "
-            f"export TORCH_BLAS_PREFER_HIPBLASLT=1"
+            f"  💡 matmul backend is {blas}. For optimal LLM performance on "
+            f"{arch_info['family']}, set: export TORCH_BLAS_PREFER_HIPBLASLT=1"
         )
 
 

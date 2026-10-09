@@ -1,16 +1,14 @@
 """
 Debug utilities for ROCM Ninodes.
 
-Provides debug functions that can be enabled/disabled via environment variables
-for performance profiling and data capture during development.
+Debug capture is compiled out; the hooks exist so call sites keep a single
+shape.
 """
 
-import os
 from typing import Any
 
 
-# Debug mode is controlled by environment variable
-DEBUG_MODE = os.environ.get('ROCM_NINODES_DEBUG', '0') == '1'
+DEBUG_MODE = False
 
 
 def save_debug_data(*args: Any, **kwargs: Any) -> None:

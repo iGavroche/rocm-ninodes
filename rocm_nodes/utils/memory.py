@@ -41,56 +41,24 @@ def detect_rocm_version() -> Optional[Tuple[int, int, int]]:
         return None
 
 
-def is_rocm_7_14_plus() -> bool:
-    """Check if running on ROCm 7.14 or newer."""
-    ver = detect_rocm_version()
-    return ver is not None and ver >= (7, 14, 0)
-
-
 def probe_expandable_segments() -> Optional[bool]:
-    """Probe whether expandable_segments works with the current ROCm/PyTorch.
-
-    We attempt to set expandable_segments in the allocator config and
-    check for errors. Returns True/False if probe succeeded, None if
-    not on ROCm or probe inconclusive.
-    """
+    """Whether the caching allocator runs with expandable_segments."""
     if not torch.cuda.is_available():
         return None
-    if not is_rocm_7_14_plus():
-        return None
-
-    current = os.environ.get('PYTORCH_HIP_ALLOC_CONF', '')
-    current_cuda = os.environ.get('PYTORCH_CUDA_ALLOC_CONF', '')
-    if 'expandable_segments' in current or 'expandable_segments' in current_cuda:
-        return True
-
-    # Don't force-enable — user can opt in via env var if stable on their system.
-    return False
+    return torch.cuda.get_allocator_backend() == 'expandable_segments'
 
 
 def setup_rocm_memory_config():
-    """Probe and log ROCm memory allocator configuration at startup.
-
-    Does NOT force any setting — only reports what is available.
-    expandable_segments is left as an opt-in via environment variable
-    since reports on ROCm 7.14 are mixed.
-    """
+    """Probe and log ROCm memory allocator configuration at startup."""
     if not torch.cuda.is_available():
         return
 
     rocm_ver = detect_rocm_version()
-    hip_alloc = os.environ.get('PYTORCH_HIP_ALLOC_CONF', 'not set')
-    cuda_alloc = os.environ.get('PYTORCH_CUDA_ALLOC_CONF', 'not set')
-
-    if rocm_ver is not None:
-        has_expandable = probe_expandable_segments()
-        if has_expandable is False and rocm_ver >= (7, 14, 0):
-            print(
-                f"  ROCm {rocm_ver[0]}.{rocm_ver[1]}.{rocm_ver[2]} — "
-                f"PYTORCH_HIP_ALLOC_CONF={hip_alloc} | "
-                f"PYTORCH_CUDA_ALLOC_CONF={cuda_alloc} | "
-                f"expandable_segments=not set (opt-in via env var)"
-            )
+    if rocm_ver is not None and rocm_ver >= (7, 14, 0):
+        print(
+            f"  ROCm {rocm_ver[0]}.{rocm_ver[1]}.{rocm_ver[2]} — "
+            f"allocator backend={torch.cuda.get_allocator_backend()}"
+        )
 
 
 def discard_between_chunks():
@@ -252,7 +220,6 @@ __all__ = [
     'check_memory_safety',
     'is_apu_architecture',
     'detect_rocm_version',
-    'is_rocm_7_14_plus',
     'probe_expandable_segments',
     'setup_rocm_memory_config',
     'discard_between_chunks',
