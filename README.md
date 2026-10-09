@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.10)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.11)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, **Veda sparse attention for MiniMax H3**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -29,12 +29,17 @@ After running:
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.3.10-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
+[![Version](https://img.shields.io/badge/version-2.3.11-blue.svg)](https://github.com/iGavroche/rocm-ninodes/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
+
+## 🚀 What's new in v2.3.11
+
+- **Veda INT8 attention is 2.0x faster on gfx1151** (`veda_comfy/kernels/sage/sparse_int8.py`): the launch options were tuned on an RTX 5070 and are wrong for Strix Halo. Measured on the real 480x864 portrait grid (56 heads, 90% sparse): 8 warps / 2 stages is 17.6 ms vs 35.3 ms for the shipped 4/3. The kernel now picks (warps, stages) per GPU architecture; other GPUs keep the old defaults.
+- **Registry flag fix**: the scanner's `python_environment_manipulation` rule flags every `os.environ` read. Replaced all of them with native torch introspection (`torch.cuda.get_allocator_backend()`, `torch.backends.cuda.preferred_blas_library()`), deleted the never-called `utils/diagnostics.py`, and compiled out the `DEBUG_MODE` env flag (its capture stubs were already no-ops).
 
 ## 🚀 What's new in v2.3.10
 
