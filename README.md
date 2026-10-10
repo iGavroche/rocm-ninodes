@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.12)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.13)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, **Veda sparse attention for MiniMax H3**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -35,6 +35,11 @@ After running:
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
+
+## 🚀 What's new in v2.3.13
+
+- **H3 VAE decode: `h3_tile_size` on ROCm VAE Decode** (`rocm_nodes/core/vae.py`): the MiniMax H3 video VAE decoder is a 36-layer ViT that tiles spatially at 256 px by default — on the production 480x864 grid that is 180 tiny 1792-token forwards per pass, launch/skinny-GEMM bound. 512 px tiles cut decode 73.7 s → 47.1 s (1.56x) on the 11 s clip at ~0.6 dB sharpness cost vs the 256 default (measured roundtrip PSNR vs original pixels). Default stays 256; set 512 for speed.
+- **Measured, for the record**: fp16 vs int8-convrot H3 VAE decode is identical on gfx1151 (81 vs 82 s — the int8 file only quantizes the encoder); temporal chunk >5 is slower (quadratic attention beats the 40% overlap recompute) and changes the frame plan; taeh3 (Kijai 2D TAE) decodes 30x faster but is preview-grade (17.8 dB vs the full VAE on a real latent) and its bare-key file is not loadable by stock ComfyUI (Comfy-Org/ComfyUI#15592).
 
 ## 🚀 What's new in v2.3.12
 
