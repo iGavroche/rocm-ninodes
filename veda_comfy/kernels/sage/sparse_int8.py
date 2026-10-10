@@ -129,7 +129,7 @@ def quantize(x: torch.Tensor, block: int,
                         device=x.device)
     _quantize_kernel[(slots // block, heads)](
         x, out, scale, x.stride(0), x.stride(1), scale.stride(0),
-        pre_scale=pre_scale, D=dim, BLK=block, num_warps=4)
+        pre_scale=pre_scale, D=dim, BLK=block, num_warps=2)
     return out, scale
 
 
