@@ -206,13 +206,6 @@ class ROCmVAEDecode:
                 "last_frame_fix": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "Repeat last latent frame before decode, then discard extra output frames. Fixes end artifacts."
-                }),
-                "h3_tile_size": ("INT", {
-                    "default": 256,
-                    "min": 128,
-                    "max": 1024,
-                    "step": 64,
-                    "tooltip": "MiniMax H3 video VAE only: spatial tile size in pixels for the ViT decoder. 256 = model default (sharpest). 512 is ~1.5x faster decode at a small sharpness cost."
                 })
             }
         }
@@ -226,7 +219,7 @@ class ROCmVAEDecode:
     def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True,
                precision_mode="auto", batch_optimization=True, compatibility_mode=False,
                enable_temporal_tiling="auto", temporal_chunk_size=16,
-               temporal_overlap=2, last_frame_fix=False, h3_tile_size=256):
+               temporal_overlap=2, last_frame_fix=False):
         """
         Optimized VAE decode for ROCm/AMD GPUs with video support and quantized model compatibility
         """
@@ -307,11 +300,6 @@ class ROCmVAEDecode:
         # ═══════════════════════════════════════════════════════════════════
         # VIDEO PATH (5D tensor: B, C, T, H, W)
         # ═══════════════════════════════════════════════════════════════════
-        # H3 video VAE: its ViT decoder tiles spatially inside decode_temporal;
-        # the model default is 256 px. Bigger tiles = fewer, fatter forwards.
-        if getattr(vae.first_stage_model, "comfy_has_chunked_io", False) and \
-                hasattr(vae.first_stage_model, "tokens_chunk_size"):
-            vae.first_stage_model.tile_size = h3_tile_size
         is_video = len(samples_tensor.shape) == 5
         if is_video:
             B, C, T, H, W = samples_tensor.shape
