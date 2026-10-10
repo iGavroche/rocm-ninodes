@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.11)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.12)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, **Veda sparse attention for MiniMax H3**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -35,6 +35,11 @@ After running:
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
+
+## 🚀 What's new in v2.3.12
+
+- **INT8 quantize pass is 23% faster on gfx1151** (`veda_comfy/kernels/sage/sparse_int8.py`): the [BLK, D] quantize tile is register-starved at 4 warps on this chip; 2 warps is bit-identical and ~3.5% on the whole attention call. The transposed variant keeps 4 warps (its strided stores want the parallelism).
+- **Predictor download link** in the VedaSparseAttention docs: [Hugging Face](https://huggingface.co/Veda-Sparse/Minimax-H3-T2VA-Veda-8NFE-600Step-Preview).
 
 ## 🚀 What's new in v2.3.11
 
@@ -368,7 +373,7 @@ Our optimization approach focuses on three key areas:
 
 - **Works with**: MiniMax H3 (T2VA / FL2VA / R2VA), including quantized checkpoints and the PDMD 4-step LoRA.
 
-- **Predictor file**: `models/veda/minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors` — opening a Veda template lets ComfyUI's missing-model dialog fetch it, or place it by hand.
+- **Predictor file**: `models/veda/minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors` ([download](https://huggingface.co/Veda-Sparse/Minimax-H3-T2VA-Veda-8NFE-600Step-Preview)) — opening a Veda template lets ComfyUI's missing-model dialog fetch it, or place it by hand. Upstream project: https://github.com/veda-sparse/Veda-on-ComfyUI · https://veda-sparse.github.io/
 
 - **Inputs**: `generated_sparsity` / `reference_sparsity` (default `90%`: skip 90% of key tiles; lower is closer to full attention), `full_attention_layers` / `full_attention_steps` (e.g. keep the first step dense), `verbose` for per-run diagnostics on the node.
 
