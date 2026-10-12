@@ -203,7 +203,9 @@ def block_mask(index: torch.Tensor, keep: torch.Tensor,
     return mask
 
 
-def tile_index_list(mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def tile_index_list(mask: torch.Tensor,
+                    width: int | None = None
+                    ) -> tuple[torch.Tensor, torch.Tensor]:
     """A block mask as the per-row list of kept key tiles.
 
     Kernels that walk only the kept tiles want the tile ids, not a dense
@@ -213,13 +215,21 @@ def tile_index_list(mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
 
     Args:
         mask: [H', n_tiles, n_tiles] bool from block_mask().
+        width: Static upper bound of the kept tiles per row (e.g.
+            `layout.n_kv_tiles` when the mask is already ANDed with
+            `layout.kv_ok`). Avoids reading `count.max()` back to the host,
+            which synchronizes the device once per attention call. Extra
+            entries past a row's count are never read by the kernels.
 
     Returns:
         (index [H', n_tiles, max_kept] int32, ascending tile ids;
          count [H', n_tiles] int32).
     """
     count = mask.sum(-1, dtype=torch.int32)
-    widest = int(count.max().item()) if count.numel() else 0
+    if width is not None and 0 <= width <= mask.shape[-1]:
+        widest = width
+    else:
+        widest = int(count.max().item()) if count.numel() else 0
     # A stable descending sort of the mask puts the kept tiles first and
     # leaves them in ascending tile order, which is what the kernels walk.
     order = torch.argsort(mask.to(torch.int8), dim=-1, descending=True,

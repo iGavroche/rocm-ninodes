@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.15] - 2026-10-11
+
+### Added
+- **New `ROCmSeedVoiceConversion` node** (`rocm_nodes/core/seedvc.py`, vendored model code in `rocm_nodes/seedvc/`): Seed-VC zero-shot voice conversion — speech (whisper-small + wavenet, 22.05 kHz) and singing (F0-conditioned 44.1 kHz model with RMVPE pitch). fp16 BigVGAN vocoder is the main gfx1151 optimization: the vocoder is ~91% of upstream fp32 runtime, and half precision makes it 6.2x faster in isolation (20.5 s -> 3.3 s on a 1033-frame vocoder call), 1.94x end to end (19.2 s -> 9.9 s on a 12 s singing clip, 30 steps). The model set is cached across executions; estimator rope/KV caches are sized to 2048 frames instead of the upstream 8192. Requires the Seed-VC checkpoints under `models/TTS/Seed-VC` (see docs/nodes/ROCmSeedVoiceConversion.md). Vendored code drops the einops, munch and audiotools dependencies of upstream Seed-VC.
+- Per-node reference docs for every registered node under `docs/nodes/` (index in `docs/nodes/INDEX.md`).
+
+### Changed
+- **`VedaSparseAttention`: no host sync per attention call** (`veda_comfy/core/tiling.py`, `veda_comfy/core/selection.py`, `veda_comfy/backends/triton_int8.py`): `TileLayout` now carries `n_kv_tiles`, the host-side count of key tiles with real rows, and `tile_index_list()` takes it as a static `width` — removing the `count.max().item()` device read that synchronized once per attention call.
+- Dependencies for the audio node: `librosa`, `scipy` added to `requirements.txt`; `transformers`, `PyYAML` listed in the registry metadata (both already ComfyUI core deps).
+
 ## [2.3.6] - 2026-09-07
 
 ### Changed

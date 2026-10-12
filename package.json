@@ -1,6 +1,6 @@
 {
   "name": "rocm-ninodes",
-  "version": "2.3.14",
+  "version": "2.3.15",
   "description": "ROCM-optimized ComfyUI nodes for AMD GPU performance",
   "author": "Nino",
   "email": "nino2k@proton.me",
@@ -25,7 +25,7 @@
     "display_name": "RocM Ninodes",
     "description": "ROCM-optimized nodes for AMD GPU performance",
     "author": "Nino",
-"version": "2.3.14",
+"version": "2.3.15",
     "category": "Optimization",
     "tags": ["rocm", "amd", "gpu", "optimization", "vae", "sampling"],
     "nodes": [
@@ -45,11 +45,16 @@
       "ROCmLoRALoader",
       "ROCmTextGenerateLTX2Prompt",
       "ROCmH3EasyCache",
+      "ROCmSeedVoiceConversion",
       "VedaSparseAttention"
     ],
     "requirements": [
       "numpy>=1.20.0",
-      "Pillow>=8.0.0"
+      "Pillow>=8.0.0",
+      "librosa>=0.10.0",
+      "scipy>=1.10.0",
+      "transformers>=4.40.0",
+      "PyYAML>=6.0"
     ],
     "install_script": "install.py"
   }

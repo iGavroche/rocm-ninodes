@@ -11,5 +11,10 @@ psutil>=5.8.0
 gguf>=0.7.0
 safetensors>=0.4.0
 
+# Seed-VC voice conversion (ROCmSeedVoiceConversion)
+# torch/torchaudio/transformers/PyYAML come from ComfyUI core
+librosa>=0.10.0
+scipy>=1.10.0
+
 # Optional dependencies for enhanced performance
 # triton>=2.0.0  # For AMD attention optimizations

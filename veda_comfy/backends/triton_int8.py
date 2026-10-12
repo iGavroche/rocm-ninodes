@@ -49,7 +49,8 @@ class TritonInt8Backend(base.Backend):
         self.display = f'Triton INT8 ({label})'
 
     def attend(self, q, k, v, block_mask, layout):
-        index, count = selection.tile_index_list(block_mask & layout.kv_ok)
+        index, count = selection.tile_index_list(
+            block_mask & layout.kv_ok, width=layout.n_kv_tiles)
         with torch.no_grad():
             return _kernel().attend(q, k, v, index, count,
                                     layout.valid_count)

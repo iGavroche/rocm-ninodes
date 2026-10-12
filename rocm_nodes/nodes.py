@@ -50,6 +50,14 @@ except ImportError as e:
     print(f"[ROCm Ninodes] ROCmH3EasyCache unavailable (needs recent ComfyUI): {e}")
     ROCmH3EasyCache = None
     _HAS_H3_EASYCACHE = False
+try:
+    from .core.seedvc import ROCmSeedVoiceConversion
+    _HAS_SEEDVC = True
+except ImportError as e:
+    # Vendored Seed-VC deps missing — skip only this node.
+    print(f"[ROCm Ninodes] ROCmSeedVoiceConversion unavailable: {e}")
+    ROCmSeedVoiceConversion = None
+    _HAS_SEEDVC = False
 
 # Define node class mappings for ComfyUI.
 # Old keys (ROCMOptimized*) are kept as backward-compatible aliases so that
@@ -72,6 +80,7 @@ NODE_CLASS_MAPPINGS = {
     "ROCmLoRALoader": ROCmLoRALoader,
     "ROCmTextGenerateLTX2Prompt": ROCmTextGenerateLTX2Prompt,
     **({"ROCmH3EasyCache": ROCmH3EasyCache} if _HAS_H3_EASYCACHE else {}),
+    **({"ROCmSeedVoiceConversion": ROCmSeedVoiceConversion} if _HAS_SEEDVC else {}),
 
     # --- Legacy aliases (backward compat) ---
     "ROCMOptimizedCheckpointLoader": ROCmCheckpointLoader,
@@ -108,6 +117,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ROCmLoRALoader": "ROCm LoRA Loader",
     "ROCmTextGenerateLTX2Prompt": "ROCm Text Generate LTX2 Prompt",
     **({"ROCmH3EasyCache": "ROCm H3 EasyCache"} if _HAS_H3_EASYCACHE else {}),
+    **({"ROCmSeedVoiceConversion": "ROCm Seed Voice Conversion"} if _HAS_SEEDVC else {}),
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']

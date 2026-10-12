@@ -140,6 +140,10 @@ class TileLayout:
         kv_ok: [n_tiles] bool, the tile has at least one real row.
         full_tile: [n_tiles] bool, valid_count == 128.
         slot_valid: [N] int32, 1 where the slot holds a real row.
+        n_kv_tiles: Number of tiles with at least one real row, counted on
+            the host at build time. Upper bound of the kept key tiles of any
+            query row, so kernels can size their index list without reading
+            a device value back on every call.
     """
 
     perm: torch.Tensor
@@ -158,6 +162,7 @@ class TileLayout:
     kv_ok: torch.Tensor
     full_tile: torch.Tensor
     slot_valid: torch.Tensor
+    n_kv_tiles: int = -1
 
     @property
     def n_tiles(self) -> int:
@@ -221,6 +226,7 @@ def build_tile_layout(spans: Sequence[TiledSpan], seq_len: int,
         kv_ok=(valid_count > 0).to(device),
         full_tile=(valid_count == TILE_SIZE).to(device),
         slot_valid=(perm >= 0).to(torch.int32).to(device),
+        n_kv_tiles=int((valid_count > 0).sum()),
     )
 
 

@@ -1,6 +1,6 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.14)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.15)
 
-**ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, **Veda sparse attention for MiniMax H3**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
+**ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, **Veda sparse attention for MiniMax H3**, **Seed-VC voice conversion**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
 ## ⬆️ Upgrade to v2 (Required for existing users)
 
@@ -34,6 +34,12 @@ After running:
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.3.15
+
+- **New `ROCmSeedVoiceConversion` node**: Seed-VC zero-shot voice conversion for speech (22.05 kHz) and singing (44.1 kHz, F0-conditioned). The BigVGAN vocoder runs in fp16 by default — it is ~91% of the upstream fp32 runtime on gfx1151 and half precision makes it 6.2x faster in isolation (1.94x end to end: 19.2 s → 9.9 s on a 12 s singing clip at 30 steps). Models go in `models/TTS/Seed-VC`; see [docs/nodes/ROCmSeedVoiceConversion.md](docs/nodes/ROCmSeedVoiceConversion.md).
+- **`VedaSparseAttention`: no host sync per attention call** — the key-tile index list is now sized from a host-side count (`TileLayout.n_kv_tiles`) instead of reading `count.max()` back from the device on every call.
+- **Per-node reference docs** for every registered node: [docs/nodes/INDEX.md](docs/nodes/INDEX.md).
 
 
 ## 🚀 What's new in v2.3.14
@@ -396,6 +402,12 @@ Our optimization approach focuses on three key areas:
 - **Where to find it**: `ROCm Ninodes/Loaders` → **ROCm GGUF Loader** (not the Diffusion Loader, which is for safetensors/ckpt)
 - **Model folders scanned**: `diffusion_models`, `unet`, `unet_gguf`, `checkpoints`
 - **Requires**: `pip install gguf` (auto-installed by `install.py` / ComfyUI Manager)
+
+### ROCmSeedVoiceConversion
+- **Zero-shot voice conversion** (Seed-VC): re-voices a recording in a reference voice, keeping words and rhythm — speech (22.05 kHz) or singing with melody preservation (44.1 kHz, `f0_condition`)
+- **fp16 BigVGAN vocoder by default**: ~6x faster vocoding on gfx1151, ~2x end to end; `precision=fp32` available for max fidelity
+- **Models**: Seed-VC checkpoints + whisper-small + BigVGAN folders under `models/TTS/` — see [docs/nodes/ROCmSeedVoiceConversion.md](docs/nodes/ROCmSeedVoiceConversion.md)
+- **Where to find it**: `🎛 ROCm/audio` → **ROCm Seed Voice Conversion**
 
 ### ROCmVAEPerformanceMonitor
 - **Device analysis**: Shows your GPU information and current settings
