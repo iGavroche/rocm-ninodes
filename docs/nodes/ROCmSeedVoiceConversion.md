@@ -29,6 +29,8 @@ Download once into `models/` (shared with other Seed-VC packs):
 
 The BigVGAN folders must be present on disk; a missing path is treated as an HF repo id and fails. Fetch with `hf download nvidia/bigvgan_v2_22khz_80band_256x --local-dir models/TTS/bigvgan_v2_22khz_80band_256x` (same for the 44 kHz folder).
 
+With `separate_source=True` the node also needs the `audio-separator` package and the mel-band roformer karaoke checkpoint (~1.7 GB) in `models/TTS/Seed-VC/separator/`; audio-separator downloads it there on first use.
+
 ## Inputs
 
 | Name | Type | Default | Range / options | Notes |
@@ -43,12 +45,14 @@ The BigVGAN folders must be present on disk; a missing path is treated as an HF 
 | `pitch_shift` | INT | `0` | -24 … 24 | Extra semitone shift on voiced frames. F0 model only. |
 | `precision` | combo | `fp16` | `fp16`, `fp32` | fp16 runs BigVGAN at half precision — ~6x faster vocoding, ~2x faster end to end on gfx1151. Falls back to fp32 on non-CUDA devices. |
 | `unload_model` | BOOLEAN | `False` | — | Frees the model set after the run; reloading costs ~30 s. |
+| `separate_source` | BOOLEAN | `False` | — | Split the source into vocal + instrumental first (mel-band roformer karaoke). Converts the vocal; the instrumental appears on `accompaniment`. Adds ~13 s per 30 s of audio. |
 
 ## Outputs
 
 | Name | Type | Notes |
 |---|---|---|
 | `audio` | AUDIO | `[1, 1, N]` float waveform at 22.05 kHz (speech) or 44.1 kHz (singing). |
+| `accompaniment` | AUDIO | Instrumental of the source, stereo 44.1 kHz. Only when `separate_source=True`, otherwise `None`. Merge with `audio` using the core AudioMerge node. |
 
 ## gfx1151 notes
 

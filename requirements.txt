@@ -16,5 +16,8 @@ safetensors>=0.4.0
 librosa>=0.10.0
 scipy>=1.10.0
 
+# Only for ROCmSeedVoiceConversion with separate_source=True
+# audio-separator>=0.44.0
+
 # Optional dependencies for enhanced performance
 # triton>=2.0.0  # For AMD attention optimizations

@@ -11,6 +11,7 @@ Optimized for gfx1151 (Strix Halo):
 - KV/rope caches sized to the actual sequence length instead of 8192
 """
 
+import logging
 import os
 from typing import Optional
 
@@ -30,6 +31,59 @@ from ..seedvc.modules.rmvpe import RMVPE
 from ..utils.memory import gentle_memory_cleanup
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seedvc", "configs")
+
+KARAOKE_MODEL = "mel_band_roformer_karaoke_becruily.ckpt"
+
+_separator = None
+
+
+def _get_separator():
+    """Mel-band roformer karaoke separator, cached across executions."""
+    global _separator
+    if _separator is None:
+        try:
+            from audio_separator.separator import Separator
+        except ImportError as e:
+            raise RuntimeError(
+                "separate_source needs the audio-separator package: pip install audio-separator"
+            ) from e
+        model_dir = os.path.join(folder_paths.models_dir, "TTS", "Seed-VC", "separator")
+        os.makedirs(model_dir, exist_ok=True)
+        sep = Separator(model_file_dir=model_dir, log_level=logging.ERROR)
+        sep.load_model(KARAOKE_MODEL)
+        _separator = sep
+    return _separator
+
+
+def separate_mix(wave: torch.Tensor, sr: int):
+    """Split a mix into (mono vocal, instrumental) float32 waves."""
+    import tempfile
+    import scipy.io.wavfile as wavio
+
+    sep = _get_separator()
+    with tempfile.TemporaryDirectory() as tmp:
+        pcm = (wave.clamp(-1, 1) * 32767).to(torch.int16).cpu().numpy()
+        if pcm.ndim == 2:
+            pcm = pcm.T  # [channels, samples] -> [samples, channels]
+        wavio.write(os.path.join(tmp, "source.wav"), sr, pcm)
+        sep.output_dir = tmp
+        if sep.model_instance:
+            sep.model_instance.output_dir = tmp
+        out_files = sep.separate(os.path.join(tmp, "source.wav"))
+
+        def read_stem(tag):
+            name = next(f for f in out_files if tag in f)
+            rate, data = wavio.read(name if os.path.isabs(name) else os.path.join(tmp, name))
+            t = torch.from_numpy(data.astype(np.float32) / 32768.0)
+            if t.ndim == 2:
+                t = t.T  # -> [channels, samples]
+            return t, rate
+
+        vocal, _ = read_stem("(Vocals)")
+        instrumental, inst_sr = read_stem("(Instrumental)")
+
+    vocal = vocal.mean(dim=0) if vocal.ndim > 1 else vocal
+    return vocal, instrumental, inst_sr
 
 
 def _resolve_model_root() -> str:
@@ -262,6 +316,7 @@ class SeedVCWrapper:
                 previous_chunk = vc_wave[0, -overlap_wave_len:]
             elif is_last_chunk:
                 generated.append(self._crossfade(previous_chunk.cpu().numpy(), wave_np, overlap_wave_len))
+                break
             else:
                 generated.append(self._crossfade(previous_chunk.cpu().numpy(), wave_np[:-overlap_wave_len],
                                                 overlap_wave_len))
@@ -305,17 +360,19 @@ class ROCmSeedVoiceConversion:
                                                  "tooltip": "fp16 runs the BigVGAN vocoder at half precision; ~6x faster on gfx1151."}),
                 "unload_model": ("BOOLEAN", {"default": False,
                                              "tooltip": "Free the loaded models after this run. Keep off: reloading costs ~30 s."}),
+                "separate_source": ("BOOLEAN", {"default": False,
+                                                 "tooltip": "Split the source into vocal + instrumental first; converts the vocal and outputs the instrumental on the accompaniment socket. Needs audio-separator."}),
             },
         }
 
     CATEGORY = "🎛 ROCm/audio"
-    RETURN_TYPES = ("AUDIO",)
-    RETURN_NAMES = ("audio",)
+    RETURN_TYPES = ("AUDIO", "AUDIO")
+    RETURN_NAMES = ("audio", "accompaniment")
     FUNCTION = "convert"
     DESCRIPTION = "Zero-shot voice conversion (Seed-VC) for speech or singing."
 
     def convert(self, source_audio, reference_audio, steps, speed, inference_cfg_rate,
-                f0_condition, auto_f0_adjust, pitch_shift, precision, unload_model):
+                f0_condition, auto_f0_adjust, pitch_shift, precision, unload_model, separate_source):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         half_vocoder = precision == "fp16" and device.type == "cuda"
 
@@ -331,6 +388,12 @@ class ROCmSeedVoiceConversion:
             source_wave, source_sr = unpack(source_audio)
             ref_wave, ref_sr = unpack(reference_audio)
 
+            accompaniment = None
+            if separate_source:
+                vocal, instrumental, inst_sr = separate_mix(source_wave, source_sr)
+                source_wave = vocal
+                accompaniment = {"waveform": instrumental.unsqueeze(0), "sample_rate": inst_sr}
+
             gentle_memory_cleanup()
             wave, sr = wrapper.convert(
                 source_wave, source_sr, ref_wave, ref_sr,
@@ -344,4 +407,4 @@ class ROCmSeedVoiceConversion:
                 gentle_memory_cleanup()
 
         waveform = torch.from_numpy(np.ascontiguousarray(wave)).unsqueeze(0).unsqueeze(0)
-        return ({"waveform": waveform, "sample_rate": sr},)
+        return ({"waveform": waveform, "sample_rate": sr}, accompaniment)
