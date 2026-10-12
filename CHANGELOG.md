@@ -4,9 +4,12 @@
 
 ### Added
 - **`ROCmSeedVoiceConversion`: `separate_source` input + `accompaniment` output** (`rocm_nodes/core/seedvc.py`): with `separate_source=True` the node splits the source into vocal + instrumental (mel-band roformer karaoke via `audio-separator`), converts the vocal, and emits the instrumental on the new `accompaniment` socket — full-song covers without a separate separation node. The separator model is cached across runs and lives in `models/TTS/Seed-VC/separator/` (auto-downloaded on first use); `audio-separator` is only required when the option is on. ~13 s per 30 s of source audio.
+- **`ROCmSeedVoiceConversion` progress bar**: conversion now reports progress to ComfyUI per chunk (the diffuser's per-step tqdm bars are gone from the console).
 
 ### Fixed
 - **`ROCmSeedVoiceConversion` infinite loop on multi-chunk audio**: after the final chunk the loop never terminated — `processed_frames` advanced by `chunk_frames - overlap`, leaving a 16-frame tail that was re-diffused forever with zero forward progress (a 35 s speech job ran for hours). The loop now breaks after crossfading the last chunk, matching upstream. Same job: 25 s, 7 chunks, output length exact.
+- **`ROCmSeedVoiceConversion`: `accompaniment` is no longer `None`** when `separate_source=False` — it emits a silent mono track at the output rate, so wiring it into PreviewAudio/SaveAudio/AudioMerge no longer crashes with "input audio is None".
+- **Quiet Seed-VC checkpoint loading**: the startup `Warning: Skipped loading some keys due to shape mismatch` print listed keys that are expected to be absent (`estimator.input_pos`, the opposite stage's f0/wavenet layers). Only genuine shape clashes on built modules are reported now.
 
 ## [2.3.15] - 2026-10-11
 

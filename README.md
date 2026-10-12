@@ -39,6 +39,7 @@ After running:
 
 - **`ROCmSeedVoiceConversion` full-song covers**: new `separate_source` option splits the source into vocal + instrumental (mel-band roformer karaoke), converts the vocal, and outputs the instrumental on a new `accompaniment` socket — merge it back with the core AudioMerge node. Needs the `audio-separator` package; the karaoke model auto-downloads to `models/TTS/Seed-VC/separator/` on first use (~1.7 GB, ~13 s per 30 s of audio).
 - **Fixed: Seed-VC hang on multi-chunk audio** — sources longer than one ~30 s chunk never finished (the chunk loop re-diffused the final 16-frame tail forever). A 35 s speech job now completes in ~25 s.
+- **Seed-VC quality of life**: conversion progress now shows in the ComfyUI progress bar, `accompaniment` is a silent track instead of `None` when separation is off (no more "input audio is None" crashes), and the benign "Skipped loading some keys" startup warnings are gone.
 
 ## 🚀 What's new in v2.3.15
 

@@ -52,7 +52,7 @@ With `separate_source=True` the node also needs the `audio-separator` package an
 | Name | Type | Notes |
 |---|---|---|
 | `audio` | AUDIO | `[1, 1, N]` float waveform at 22.05 kHz (speech) or 44.1 kHz (singing). |
-| `accompaniment` | AUDIO | Instrumental of the source, stereo 44.1 kHz. Only when `separate_source=True`, otherwise `None`. Merge with `audio` using the core AudioMerge node. |
+| `accompaniment` | AUDIO | Instrumental of the source, stereo 44.1 kHz, when `separate_source=True`; otherwise a silent mono track at the output rate so downstream nodes (PreviewAudio, AudioMerge) always work. Merge with `audio` using the core AudioMerge node. |
 
 ## gfx1151 notes
 
@@ -60,7 +60,7 @@ With `separate_source=True` the node also needs the `audio-separator` package an
 - The DiT estimator runs under fp16 autocast (upstream behavior); the vocoder dtype follows `precision`.
 - The full model set (~3.2 GB of checkpoints) is cached in a module-level `_wrappers` dict keyed by `(device, half_vocoder)` and reused across executions; `unload_model=True` clears it.
 - `setup_caches(max_batch_size=2, max_seq_length=2048)` shrinks the estimator's rope/KV caches from the upstream 8192-frame reservation.
-- Startup warning `Skipped loading some keys due to shape mismatch` is benign: `estimator.input_pos` is a fixed-length positional buffer and the f0 checkpoint carries wavenet-final-layer weights the mlp-final config does not build.
+- Checkpoint keys that the built model does not contain (`estimator.input_pos`, the opposite stage's f0/wavenet layers) are skipped silently; a shape clash on a module the model does build still prints a warning.
 - Vendored code drops the `einops`, `munch`, and `audiotools` dependencies of upstream Seed-VC.
 
 ## Typical wiring

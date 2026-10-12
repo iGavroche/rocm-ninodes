@@ -455,7 +455,15 @@ def load_checkpoint(
                 for k, v in params[key].items()
                 if k in model_state_dict and v.shape == model_state_dict[k].shape
             }
-            skipped_keys = set(params[key].keys()) - set(filtered_state_dict.keys())
+            # Keys absent from the model (f0 embedder / wavenet final layer of
+            # the other stage) and the input_pos index buffer are expected
+            # skips; only a shape clash on a module the model actually builds
+            # is worth reporting.
+            skipped_keys = {
+                k
+                for k in set(params[key].keys()) - set(filtered_state_dict.keys())
+                if k in model_state_dict and k != "estimator.input_pos"
+            }
             if skipped_keys:
                 print(
                     f"Warning: Skipped loading some keys due to shape mismatch: {skipped_keys}"

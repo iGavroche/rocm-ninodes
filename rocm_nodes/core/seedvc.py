@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torchaudio
 import yaml
+import comfy.utils
 import folder_paths
 from transformers import AutoFeatureExtractor, WhisperModel
 
@@ -229,8 +230,11 @@ class SeedVCWrapper:
     @torch.no_grad()
     def convert(self, source_wave, source_sr, ref_wave, ref_sr,
                 diffusion_steps=30, length_adjust=1.0, inference_cfg_rate=0.7,
-                f0_condition=False, auto_f0_adjust=True, pitch_shift=0):
-        """Convert source timbre to the reference voice. Returns (float32 numpy, sr)."""
+                f0_condition=False, auto_f0_adjust=True, pitch_shift=0, progress_cb=None):
+        """Convert source timbre to the reference voice. Returns (float32 numpy, sr).
+
+        progress_cb(done_frames, total_frames) is called once per chunk window.
+        """
         inference_module = self.model_f0 if f0_condition else self.model
         mel_fn = self.to_mel_f0 if f0_condition else self.to_mel
         bigvgan_fn = self.bigvgan_44k_model if f0_condition else self.bigvgan_model
@@ -291,7 +295,8 @@ class SeedVCWrapper:
         generated = []
         previous_chunk = None
 
-        while processed_frames < cond.size(1):
+        total_frames = cond.size(1)
+        while processed_frames < total_frames:
             chunk_cond = cond[:, processed_frames:processed_frames + max_source_window]
             is_last_chunk = processed_frames + max_source_window >= cond.size(1)
             cat_condition = torch.cat([prompt_condition, chunk_cond], dim=1)
@@ -323,7 +328,11 @@ class SeedVCWrapper:
                 previous_chunk = vc_wave[0, -overlap_wave_len:]
 
             processed_frames += vc_target.size(2) - self.overlap_frame_len
+            if progress_cb:
+                progress_cb(processed_frames, total_frames)
 
+        if progress_cb:
+            progress_cb(total_frames, total_frames)
         return np.concatenate(generated), sr
 
 
@@ -394,12 +403,18 @@ class ROCmSeedVoiceConversion:
                 source_wave = vocal
                 accompaniment = {"waveform": instrumental.unsqueeze(0), "sample_rate": inst_sr}
 
+            pbar = comfy.utils.ProgressBar(1000)
+
+            def progress(done, total):
+                pbar.update_absolute(int(1000 * done / total))
+
             gentle_memory_cleanup()
             wave, sr = wrapper.convert(
                 source_wave, source_sr, ref_wave, ref_sr,
                 diffusion_steps=steps, length_adjust=speed,
                 inference_cfg_rate=inference_cfg_rate, f0_condition=f0_condition,
                 auto_f0_adjust=auto_f0_adjust, pitch_shift=pitch_shift,
+                progress_cb=progress,
             )
         finally:
             if unload_model:
@@ -407,4 +422,6 @@ class ROCmSeedVoiceConversion:
                 gentle_memory_cleanup()
 
         waveform = torch.from_numpy(np.ascontiguousarray(wave)).unsqueeze(0).unsqueeze(0)
+        if accompaniment is None:
+            accompaniment = {"waveform": torch.zeros_like(waveform), "sample_rate": sr}
         return ({"waveform": waveform, "sample_rate": sr}, accompaniment)
