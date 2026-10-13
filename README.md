@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.16)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.17)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, **Veda sparse attention for MiniMax H3**, **Seed-VC voice conversion**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -34,6 +34,14 @@ After running:
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.3.18
+
+- **Seed-VC singing: upgraded checkpoint `..._ft_ema_v2.pth`** — the node now loads the `_v2` singing checkpoint upstream's own inference defaults to (download once, see the node docs). Same-seed A/B on a 35 s clip: similarity to the reference 0.884 → 0.902, micro-pitch correlation to the source 0.757 → 0.910.
+- **Seed-VC singing: `vibrato_transfer` input (default 1.0)** — the converted vocal now inherits the source's vibrato and note glides via a time-warp of the f0 residual, so notes glide instead of stepping (micro-pitch correlation to the source: 0.84 → ~0.9). Duration and note centers are untouched; set to 0 for the raw model output.
+- **Fixed: Seed-VC singing covers were 8.1% too short and ~1.5 semitones sharp** with `separate_source=True` — the separator's 44.1 kHz stems were tagged with the source file's rate (e.g. 48 kHz), so the vocal got resampled and sped up. Output now matches the source duration exactly.
+- **Seed-VC singing: `prompt_length` input (default 10 s)** — the in-context prompt uses only the first `prompt_length` seconds of the reference while timbre and pitch matching keep the full reference: a 35 s job goes from 7 chunks to 2 (~30% faster, one seam instead of six) at equal or better speaker similarity.
+- **Seed-VC singing: smoother note transitions** — RMVPE dropouts of ≤10 frames inside sustained notes are bridged on the pitch curve, so notes continue instead of re-attacking (unvoiced frames inside notes: 22 → 15 on a 35 s clip); chunk crossfade raised to 64 mel frames.
 
 ## 🚀 What's new in v2.3.16
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.3.18] - 2026-10-13
+
+### Changed
+- **`ROCmSeedVoiceConversion`: singing checkpoint upgraded to `DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema_v2.pth`** (the checkpoint upstream's own inference defaults to; download it once, see docs). Paired same-seed A/B on a 35 s singing clip: CAM++ similarity to the reference 0.884 → 0.902, micro-pitch correlation to the source 0.757 → 0.910. The old `..._ft_ema.pth` is no longer loaded.
+
+### Added
+- **`ROCmSeedVoiceConversion`: new `vibrato_transfer` input (default 1.0)**: the diffusion reproduces note centers (global f0 corr ~0.995) but its vibrato and note glides are the model's own, only ~0.84 correlated with the source's — the "steppy, not glidey" complaint. The converted vocal is now time-warped by the source-vs-output f0-residual ratio (±6% clamp, duration and note centers preserved), raising micro-pitch correlation to the source to ~0.88–0.93. Costs one extra RMVPE pass (~1 s per 35 s); set to 0 for the raw model output.
+
+### Fixed
+- **`ROCmSeedVoiceConversion`: singing output 8.1% short and ~1.5 semitones sharp with `separate_source=True`**: audio-separator writes stems at 44.1 kHz regardless of the input rate, but the node kept the source file's rate for the vocal stem (e.g. 48 kHz), so the resample to the model rate shortened a 35 s source to 32.15 s and raised its pitch. `separate_mix` now returns each stem's own rate and the conversion uses it: a 35 s source gives 34.99 s of converted vocal against a 35.00 s accompaniment.
+
+### Changed
+- **`ROCmSeedVoiceConversion`: note-to-note continuity in singing mode**: RMVPE drops unvoiced frames inside sustained notes (34 gaps in a 35 s test clip), and each dropout told the model to re-attack the next note. Dropouts of ≤10 frames (~100 ms) are now linearly bridged on both the source and prompt f0 curves before conditioning: unvoiced-inside-note frames in the output drop from 22 to 15, f0 correlation to the source stays at 0.995. Real note boundaries (median voiced run 77 frames) are untouched.
+- **`ROCmSeedVoiceConversion`: new `prompt_length` input (default 10 s)**: only the first `prompt_length` seconds of the reference are used as the in-context whisper/mel prompt; the CAM++ timbre embedding and the `auto_f0_adjust` pitch-level match still use the full reference. A 35 s singing job drops from 7 chunks to 2 (33 s wall vs 47 s, 6 seams → 1) with equal or better speaker similarity (CAMPPlus sim 0.904 vs 0.886).
+- **`ROCmSeedVoiceConversion`: chunk crossfade raised from 16 to 64 mel frames** (~745 ms): smoother chunk joins (sim 0.902 vs 0.886 at 7 chunks); with the shorter default prompt there are only 1-2 seams, so the extra diffusion cost is negligible.
+
 ## [2.3.16] - 2026-10-12
 
 ### Added

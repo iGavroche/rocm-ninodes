@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import torchaudio
 import yaml
+from scipy.ndimage import median_filter, map_coordinates
 import comfy.utils
 import folder_paths
 from transformers import AutoFeatureExtractor, WhisperModel
@@ -57,7 +58,7 @@ def _get_separator():
 
 
 def separate_mix(wave: torch.Tensor, sr: int):
-    """Split a mix into (mono vocal, instrumental) float32 waves."""
+    """Split a mix into (vocal, vocal_sr, instrumental, instrumental_sr) float32 waves."""
     import tempfile
     import scipy.io.wavfile as wavio
 
@@ -80,11 +81,11 @@ def separate_mix(wave: torch.Tensor, sr: int):
                 t = t.T  # -> [channels, samples]
             return t, rate
 
-        vocal, _ = read_stem("(Vocals)")
+        vocal, vocal_sr = read_stem("(Vocals)")
         instrumental, inst_sr = read_stem("(Instrumental)")
 
     vocal = vocal.mean(dim=0) if vocal.ndim > 1 else vocal
-    return vocal, instrumental, inst_sr
+    return vocal, vocal_sr, instrumental, inst_sr
 
 
 def _resolve_model_root() -> str:
@@ -117,11 +118,72 @@ def _load_stage(config_path: str, checkpoint_path: str, device: torch.device):
     to_mel = lambda x: mel_spectrogram(x, **mel_args)
     return model, to_mel
 
+F0_GAP_BRIDGE_FRAMES = 10
+
+
+def _bridge_f0_gaps(f0: torch.Tensor, max_gap: int) -> torch.Tensor:
+    """Linear-interpolate short unvoiced dropouts so sustained notes stay continuous."""
+    flat = f0.reshape(-1)
+    voiced = flat > 1
+    if voiced.sum() < 2:
+        return f0
+    idx = np.arange(flat.numel())
+    v = voiced.cpu().numpy()
+    filled = torch.from_numpy(np.interp(idx, idx[v], flat.cpu().numpy()[v])).to(flat.device)
+    out = flat.clone()
+    change = torch.diff(voiced.int())
+    starts = (change == -1).nonzero(as_tuple=True)[0].tolist()
+    ends = (change == 1).nonzero(as_tuple=True)[0].tolist()
+    for s in starts:
+        after = [e for e in ends if e > s]
+        e = after[0] if after else flat.numel() - 1
+        if 0 < e - s <= max_gap:
+            out[s + 1:e + 1] = filled[s + 1:e + 1]
+    return out.reshape(f0.shape)
+
+
+MICRO_PITCH_SKELETON_FRAMES = 31
+
+
+def _f0_residual(f0: torch.Tensor) -> Optional[np.ndarray]:
+    """Log-pitch deviation from the smoothed note skeleton; 0 on unvoiced frames."""
+    flat = f0.reshape(-1).float().cpu().numpy()
+    voiced = flat > 1
+    if voiced.sum() < 2:
+        return None
+    filled = np.interp(np.arange(flat.size), np.flatnonzero(voiced), flat[voiced])
+    skeleton = median_filter(np.log(filled), size=MICRO_PITCH_SKELETON_FRAMES, mode="nearest")
+    resid = np.log(np.maximum(flat, 1.0)) - skeleton
+    resid[~voiced] = 0.0
+    return resid
+
+
+def _micro_pitch_ratio(src_f0: torch.Tensor, out_f0: torch.Tensor, strength: float) -> Optional[np.ndarray]:
+    """Per-frame pitch multiplier transferring the source's vibrato/portamento onto the output."""
+    rs = _f0_residual(src_f0)
+    ro = _f0_residual(out_f0)
+    if rs is None or ro is None:
+        return None
+    n = min(rs.size, ro.size)
+    delta = torch.from_numpy(rs[:n] - ro[:n])
+    delta = torch.nn.functional.avg_pool1d(delta[None, None], 5, 1, 2)[0, 0]
+    return (torch.exp(strength * delta).clamp(0.943, 1.060)).numpy()
+
+
+def _apply_micro_pitch(wave: np.ndarray, ratio: np.ndarray, frame_len: int) -> np.ndarray:
+    """Time-warp resampling y(t) = x(phi(t)) with phi' = ratio; duration preserved."""
+    pos = np.interp(np.arange(wave.size), np.arange(ratio.size) * frame_len + frame_len / 2, ratio)
+    pos /= pos.mean()
+    phase = np.cumsum(pos) - 1
+    phase *= (wave.size - 1) / phase[-1]
+    return map_coordinates(wave, [phase], order=3, mode="nearest").astype(np.float32)
+
+
 
 class SeedVCWrapper:
     """All Seed-VC submodels for one conversion pipeline."""
 
-    overlap_frame_len = 16
+    overlap_frame_len = 64
 
     def __init__(self, device: Optional[torch.device] = None, half_vocoder: bool = True):
         if device is None:
@@ -144,7 +206,7 @@ class SeedVCWrapper:
         # Singing model: 44.1 kHz, F0 conditioned.
         self.model_f0, self.to_mel_f0 = _load_stage(
             os.path.join(CONFIG_DIR, "config_dit_mel_seed_uvit_whisper_base_f0_44k.yml"),
-            os.path.join(model_path, "DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema.pth"),
+            os.path.join(model_path, "DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema_v2.pth"),
             self.device,
         )
 
@@ -230,7 +292,8 @@ class SeedVCWrapper:
     @torch.no_grad()
     def convert(self, source_wave, source_sr, ref_wave, ref_sr,
                 diffusion_steps=30, length_adjust=1.0, inference_cfg_rate=0.7,
-                f0_condition=False, auto_f0_adjust=True, pitch_shift=0, progress_cb=None):
+                f0_condition=False, auto_f0_adjust=True, pitch_shift=0, prompt_length=10.0,
+                vibrato_transfer=1.0, progress_cb=None):
         """Convert source timbre to the reference voice. Returns (float32 numpy, sr).
 
         progress_cb(done_frames, total_frames) is called once per chunk window.
@@ -251,16 +314,19 @@ class SeedVCWrapper:
 
         source_audio = to_model_sr(source_wave, source_sr)
         ref_audio = to_model_sr(ref_wave[:ref_sr * 25], ref_sr)
+        # Only the in-context prompt is truncated; timbre and the pitch-level
+        # match still see the whole reference.
+        prompt_audio = ref_audio[:, :int(sr * prompt_length)]
 
         ref_waves_16k = torchaudio.functional.resample(ref_audio, sr, 16000)
+        prompt_waves_16k = torchaudio.functional.resample(prompt_audio, sr, 16000)
         converted_waves_16k = torchaudio.functional.resample(source_audio, sr, 16000)
 
         S_alt = self._whisper_features(converted_waves_16k)
-        S_ori = self._whisper_features(ref_waves_16k)
+        S_ori = self._whisper_features(prompt_waves_16k)
 
         mel = mel_fn(source_audio)
-        mel2 = mel_fn(ref_audio)
-
+        mel2 = mel_fn(prompt_audio)
         target_lengths = torch.LongTensor([int(mel.size(2) * length_adjust)]).to(mel.device)
         target2_lengths = torch.LongTensor([mel2.size(2)]).to(mel2.device)
 
@@ -270,17 +336,20 @@ class SeedVCWrapper:
         style2 = self.campplus_model(feat2.unsqueeze(0))
 
         if f0_condition:
-            F0_ori = torch.from_numpy(self.rmvpe.infer_from_audio(ref_waves_16k[0], thred=0.03)).to(self.device)[None]
+            F0_ref = torch.from_numpy(self.rmvpe.infer_from_audio(ref_waves_16k[0], thred=0.03)).to(self.device)[None]
+            F0_ori = F0_ref[:, :prompt_waves_16k.size(-1) // 160 + 1]
             F0_alt = torch.from_numpy(self.rmvpe.infer_from_audio(converted_waves_16k[0], thred=0.03)).to(self.device)[None]
 
             voiced_mask = F0_alt > 1
             shifted_f0_alt = F0_alt.clone()
             if auto_f0_adjust:
-                log_ori = torch.log(F0_ori[F0_ori > 1] + 1e-5)
+                log_ori = torch.log(F0_ref[F0_ref > 1] + 1e-5)
                 log_alt = torch.log(F0_alt[voiced_mask] + 1e-5)
                 shifted_f0_alt[voiced_mask] = torch.exp(log_alt - log_alt.median() + log_ori.median())
             if pitch_shift != 0:
                 shifted_f0_alt[voiced_mask] *= 2 ** (pitch_shift / 12)
+            shifted_f0_alt = _bridge_f0_gaps(shifted_f0_alt, F0_GAP_BRIDGE_FRAMES)
+            F0_ori = _bridge_f0_gaps(F0_ori, F0_GAP_BRIDGE_FRAMES)
         else:
             F0_ori = shifted_f0_alt = None
 
@@ -333,7 +402,15 @@ class SeedVCWrapper:
 
         if progress_cb:
             progress_cb(total_frames, total_frames)
-        return np.concatenate(generated), sr
+        wave = np.concatenate(generated)
+        if f0_condition and vibrato_transfer > 0:
+            out16k = torchaudio.functional.resample(
+                torch.from_numpy(wave).unsqueeze(0).to(self.device), sr, 16000)
+            out_f0 = torch.from_numpy(self.rmvpe.infer_from_audio(out16k[0], thred=0.03))[None]
+            ratio = _micro_pitch_ratio(F0_alt, out_f0, vibrato_transfer)
+            if ratio is not None:
+                wave = _apply_micro_pitch(wave, ratio, sr // 100)
+        return wave, sr
 
 
 _wrappers = {}
@@ -359,12 +436,16 @@ class ROCmSeedVoiceConversion:
                                     "tooltip": "Length adjust factor on the output duration."}),
                 "inference_cfg_rate": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.05,
                                                  "tooltip": "Classifier-free guidance rate. 0 disables it and halves sampling cost."}),
+                "prompt_length": ("FLOAT", {"default": 10.0, "min": 3.0, "max": 25.0, "step": 0.5,
+                                            "tooltip": "Seconds of reference used as the in-context prompt. Shorter = fewer chunk seams and faster; timbre and pitch matching still use the full reference."}),
                 "f0_condition": ("BOOLEAN", {"default": False,
                                              "tooltip": "Required for singing voice conversion; uses the 44.1 kHz F0 model."}),
                 "auto_f0_adjust": ("BOOLEAN", {"default": True,
                                                "tooltip": "Match the source pitch level to the reference. F0 model only."}),
                 "pitch_shift": ("INT", {"default": 0, "min": -24, "max": 24, "step": 1,
                                         "tooltip": "Extra semitone shift on the source pitch. F0 model only."}),
+                "vibrato_transfer": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                                               "tooltip": "Copy the source's vibrato and note glides onto the converted vocal. 0 keeps the raw model output; lower for a more literal pitch. F0 model only."}),
                 "precision": (["fp16", "fp32"], {"default": "fp16",
                                                  "tooltip": "fp16 runs the BigVGAN vocoder at half precision; ~6x faster on gfx1151."}),
                 "unload_model": ("BOOLEAN", {"default": False,
@@ -381,7 +462,8 @@ class ROCmSeedVoiceConversion:
     DESCRIPTION = "Zero-shot voice conversion (Seed-VC) for speech or singing."
 
     def convert(self, source_audio, reference_audio, steps, speed, inference_cfg_rate,
-                f0_condition, auto_f0_adjust, pitch_shift, precision, unload_model, separate_source):
+                f0_condition, auto_f0_adjust, pitch_shift, precision, unload_model, separate_source,
+                prompt_length=10.0, vibrato_transfer=1.0):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         half_vocoder = precision == "fp16" and device.type == "cuda"
 
@@ -399,8 +481,8 @@ class ROCmSeedVoiceConversion:
 
             accompaniment = None
             if separate_source:
-                vocal, instrumental, inst_sr = separate_mix(source_wave, source_sr)
-                source_wave = vocal
+                vocal, vocal_sr, instrumental, inst_sr = separate_mix(source_wave, source_sr)
+                source_wave, source_sr = vocal, vocal_sr
                 accompaniment = {"waveform": instrumental.unsqueeze(0), "sample_rate": inst_sr}
 
             pbar = comfy.utils.ProgressBar(1000)
@@ -414,6 +496,7 @@ class ROCmSeedVoiceConversion:
                 diffusion_steps=steps, length_adjust=speed,
                 inference_cfg_rate=inference_cfg_rate, f0_condition=f0_condition,
                 auto_f0_adjust=auto_f0_adjust, pitch_shift=pitch_shift,
+                prompt_length=prompt_length, vibrato_transfer=vibrato_transfer,
                 progress_cb=progress,
             )
         finally:
