@@ -162,8 +162,9 @@ def _f0_residual(f0: torch.Tensor) -> Optional[np.ndarray]:
 def _micro_pitch_ratio(src_f0: torch.Tensor, out_f0: torch.Tensor, strength: float) -> Optional[np.ndarray]:
     """Per-frame pitch multiplier transferring the source's vibrato/portamento onto the output.
 
-    The transfer fades out inside fast note runs: natural voices step between
-    close notes instead of carrying wobble through them.
+    The transfer fades out inside fast note runs and ramps in after each note
+    onset: natural voices step between close notes instead of carrying wobble
+    through them, and vibrato develops after the attack, not during it.
     """
     rs = _f0_residual(src_f0)
     ro = _f0_residual(out_f0)
@@ -171,9 +172,9 @@ def _micro_pitch_ratio(src_f0: torch.Tensor, out_f0: torch.Tensor, strength: flo
         return None
     n = min(rs.size, ro.size)
     delta = torch.from_numpy(rs[:n] - ro[:n])
-    _, _, fast_w = _note_onset_density(src_f0)
+    _, _, fast_w, attack_w = _note_onset_density(src_f0)
     if fast_w is not None:
-        delta = delta * torch.from_numpy(fast_w[:n])
+        delta = delta * torch.from_numpy(fast_w[:n] * attack_w[:n])
     delta = torch.nn.functional.avg_pool1d(delta[None, None], 5, 1, 2)[0, 0]
     return (torch.exp(strength * delta).clamp(0.943, 1.060)).numpy()
 
@@ -188,20 +189,22 @@ def _apply_micro_pitch(wave: np.ndarray, ratio: np.ndarray, frame_len: int) -> n
 
 
 FAST_RUN_FADE_HZ = (2.5, 5.0)
+ATTACK_RAMP_FRAMES = 10
 
 
 def _note_onset_density(f0: torch.Tensor):
-    """(semitone contour, stepped contour, 0..1 slow-ness weight) or (None,)*3.
+    """(semitone contour, stepped contour, 0..1 slow-ness weight, 0..1 attack ramp) or (None,)*4.
 
     Note onsets are prominence peaks of the semitone contour after a median
     filter removes vibrato, so they mark note changes rather than wobble.
     The weight is 1 where notes are sustained and 0 where they arrive faster
-    than FAST_RUN_FADE_HZ.
+    than FAST_RUN_FADE_HZ. The attack ramp is 0 at each onset, reaching 1
+    ATTACK_RAMP_FRAMES later.
     """
     flat = f0.reshape(-1).float().cpu().numpy()
     v = flat > 1
     if v.sum() < 100:
-        return None, None, None
+        return None, None, None, None
     st = 12 * np.log2(np.maximum(flat, 1.0))
     st = np.where(v, st, np.interp(np.arange(st.size), np.flatnonzero(v), st[v]))
     sm = median_filter(st, size=15, mode="nearest")
@@ -212,7 +215,9 @@ def _note_onset_density(f0: torch.Tensor):
     dens = uniform_filter1d(ev.astype(float), size=100) * 100.0
     lo, hi = FAST_RUN_FADE_HZ
     weight = uniform_filter1d(np.clip((hi - dens) / (hi - lo), 0.0, 1.0), size=51)
-    return st, sm, weight
+    last = np.maximum.accumulate(np.where(ev, np.arange(ev.size), -1))
+    attack = np.clip((np.arange(ev.size) - last) / float(ATTACK_RAMP_FRAMES), 0.0, 1.0)
+    return st, sm, weight, attack
 
 
 def _quantize_fast_runs(f0: torch.Tensor) -> torch.Tensor:
@@ -223,7 +228,7 @@ def _quantize_fast_runs(f0: torch.Tensor) -> torch.Tensor:
     note-onset rate is high the contour is replaced by its median-filtered
     (stepped) version.
     """
-    st, sm, slow_w = _note_onset_density(f0)
+    st, sm, slow_w, _ = _note_onset_density(f0)
     if st is None:
         return f0
     flat = f0.reshape(-1).float().cpu().numpy()

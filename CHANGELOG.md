@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.20] - 2026-10-13
+
+### Changed
+- **`ROCmSeedVoiceConversion`: vibrato transfer now ramps in after each note attack**: the `vibrato_transfer` warp was transferring the source's note-transition transient as fast pitch jitter right at the note hit — where the ear is most sensitive — producing a shakiness on attacks. The warp now fades in over 100 ms after each detected note onset, so attacks start clean and vibrato develops like a natural voice. Paired same-seed A/B: attack-region wobble speed 31.4 → 28.5 zero-crossings/s (identical to the no-warp baseline; source 26.8), sustained-note vibrato transfer preserved (resid corr 0.909 vs 0.852 without warp), note centers untouched (global f0 corr 0.9955).
+
 ## [2.3.19] - 2026-10-13
 
 ### Changed
