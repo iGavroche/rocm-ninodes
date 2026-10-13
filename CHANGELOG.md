@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.19] - 2026-10-13
+
+### Changed
+- **`ROCmSeedVoiceConversion`: fast note runs step instead of gliding**: the model sings whatever pitch contour it is given, so a glissando-heavy source came out as fast glides — the "notes hit too fast" feel. Where the source's note-onset rate is high (>2.5/s, fading to off at 5/s), the conditioning f0 is now replaced by its stepped (median-filtered) version, and the `vibrato_transfer` warp fades out in the same regions so it cannot re-add the glide. Paired same-seed A/B: inter-onset-interval CV in fast runs 0.47 → 0.32 (source: 0.42), note centers untouched (global f0 corr 0.9957 both), sustained-note vibrato transfer unchanged (resid corr 0.911 → 0.921).
+
 ## [2.3.18] - 2026-10-13
 
 ### Changed

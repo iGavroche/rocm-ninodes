@@ -35,6 +35,10 @@ After running:
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
+## 🚀 What's new in v2.3.19
+
+- **Seed-VC singing: fast note runs step instead of gliding** — where the source runs through notes (>2.5 notes/s), the pitch conditioning is now stepped and the vibrato transfer fades out, so fast runs land as clean note steps like a natural voice instead of glissando-ing through them. Note centers and sustained-note vibrato are untouched (inter-onset regularity in fast runs: 0.47 → 0.32 CV, better than the source's own 0.42).
+
 ## 🚀 What's new in v2.3.18
 
 - **Seed-VC singing: upgraded checkpoint `..._ft_ema_v2.pth`** — the node now loads the `_v2` singing checkpoint upstream's own inference defaults to (download once, see the node docs). Same-seed A/B on a 35 s clip: similarity to the reference 0.884 → 0.902, micro-pitch correlation to the source 0.757 → 0.910.

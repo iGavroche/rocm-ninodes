@@ -19,7 +19,8 @@ import numpy as np
 import torch
 import torchaudio
 import yaml
-from scipy.ndimage import median_filter, map_coordinates
+from scipy.ndimage import median_filter, map_coordinates, uniform_filter1d
+from scipy.signal import find_peaks
 import comfy.utils
 import folder_paths
 from transformers import AutoFeatureExtractor, WhisperModel
@@ -159,13 +160,20 @@ def _f0_residual(f0: torch.Tensor) -> Optional[np.ndarray]:
 
 
 def _micro_pitch_ratio(src_f0: torch.Tensor, out_f0: torch.Tensor, strength: float) -> Optional[np.ndarray]:
-    """Per-frame pitch multiplier transferring the source's vibrato/portamento onto the output."""
+    """Per-frame pitch multiplier transferring the source's vibrato/portamento onto the output.
+
+    The transfer fades out inside fast note runs: natural voices step between
+    close notes instead of carrying wobble through them.
+    """
     rs = _f0_residual(src_f0)
     ro = _f0_residual(out_f0)
     if rs is None or ro is None:
         return None
     n = min(rs.size, ro.size)
     delta = torch.from_numpy(rs[:n] - ro[:n])
+    _, _, fast_w = _note_onset_density(src_f0)
+    if fast_w is not None:
+        delta = delta * torch.from_numpy(fast_w[:n])
     delta = torch.nn.functional.avg_pool1d(delta[None, None], 5, 1, 2)[0, 0]
     return (torch.exp(strength * delta).clamp(0.943, 1.060)).numpy()
 
@@ -177,6 +185,51 @@ def _apply_micro_pitch(wave: np.ndarray, ratio: np.ndarray, frame_len: int) -> n
     phase = np.cumsum(pos) - 1
     phase *= (wave.size - 1) / phase[-1]
     return map_coordinates(wave, [phase], order=3, mode="nearest").astype(np.float32)
+
+
+FAST_RUN_FADE_HZ = (2.5, 5.0)
+
+
+def _note_onset_density(f0: torch.Tensor):
+    """(semitone contour, stepped contour, 0..1 slow-ness weight) or (None,)*3.
+
+    Note onsets are prominence peaks of the semitone contour after a median
+    filter removes vibrato, so they mark note changes rather than wobble.
+    The weight is 1 where notes are sustained and 0 where they arrive faster
+    than FAST_RUN_FADE_HZ.
+    """
+    flat = f0.reshape(-1).float().cpu().numpy()
+    v = flat > 1
+    if v.sum() < 100:
+        return None, None, None
+    st = 12 * np.log2(np.maximum(flat, 1.0))
+    st = np.where(v, st, np.interp(np.arange(st.size), np.flatnonzero(v), st[v]))
+    sm = median_filter(st, size=15, mode="nearest")
+    ev = np.zeros(st.size, bool)
+    for sig in (sm, -sm):
+        pk, _ = find_peaks(sig, prominence=1.0, distance=8)
+        ev[pk] = True
+    dens = uniform_filter1d(ev.astype(float), size=100) * 100.0
+    lo, hi = FAST_RUN_FADE_HZ
+    weight = uniform_filter1d(np.clip((hi - dens) / (hi - lo), 0.0, 1.0), size=51)
+    return st, sm, weight
+
+
+def _quantize_fast_runs(f0: torch.Tensor) -> torch.Tensor:
+    """Step-ify the pitch contour inside fast note runs, before conditioning.
+
+    The model sings whatever contour it is given, so a glissando source comes
+    out as a glissando; natural voices step between close notes. Where the
+    note-onset rate is high the contour is replaced by its median-filtered
+    (stepped) version.
+    """
+    st, sm, slow_w = _note_onset_density(f0)
+    if st is None:
+        return f0
+    flat = f0.reshape(-1).float().cpu().numpy()
+    stepped = slow_w * st + (1.0 - slow_w) * sm
+    out = np.where(flat > 1, np.power(2.0, stepped / 12.0), flat)
+    return torch.from_numpy(out).reshape(f0.shape).to(device=f0.device, dtype=f0.dtype)
 
 
 
@@ -349,6 +402,7 @@ class SeedVCWrapper:
             if pitch_shift != 0:
                 shifted_f0_alt[voiced_mask] *= 2 ** (pitch_shift / 12)
             shifted_f0_alt = _bridge_f0_gaps(shifted_f0_alt, F0_GAP_BRIDGE_FRAMES)
+            shifted_f0_alt = _quantize_fast_runs(shifted_f0_alt)
             F0_ori = _bridge_f0_gaps(F0_ori, F0_GAP_BRIDGE_FRAMES)
         else:
             F0_ori = shifted_f0_alt = None

@@ -66,6 +66,7 @@ With `separate_source=True` the node also needs the `audio-separator` package an
 - Chunking: each diffusion window is `30 s − prompt_length`, crossfaded over 64 mel frames (~745 ms). A 35 s singing job with the default 10 s prompt is 2 chunks; a longer prompt means more chunks and more seams.
 - RMVPE dropouts inside sustained notes (≤10 frames, ~100 ms) are linearly bridged on both the source and prompt f0 curves before conditioning, so notes continue instead of re-attacking.
 - `vibrato_transfer` post-process: the diffusion reproduces note centers (global f0 corr ~0.995) but its micro-pitch wobble is only ~0.84 correlated with the source's; the warp raises that to ~0.88–0.93 with no duration or note-center change. Costs one extra RMVPE pass (~1 s per 35 s).
+- Fast note runs (>2.5 note onsets/s, fading out by 5/s) are stepped in the conditioning f0 (median-filtered contour) and the `vibrato_transfer` warp fades there: the model sings exactly the contour it is given, so a glissando source would otherwise come out as fast glides. Inter-onset CV in fast runs 0.47 → 0.32; note centers unchanged.
 - Checkpoint keys that the built model does not contain (`estimator.input_pos`, the opposite stage's f0/wavenet layers) are skipped silently; a shape clash on a module the model does build still prints a warning.
 - Vendored code drops the `einops`, `munch`, and `audiotools` dependencies of upstream Seed-VC.
 
