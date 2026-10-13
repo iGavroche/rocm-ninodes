@@ -427,6 +427,75 @@ def dequantize_tensor(tensor, dtype=None, dequant_dtype=None):
             raise ValueError(f"Could not dequantize tensor (type {qtype}): {e}")
 
 
+class ROCmGGMLTensor(torch.Tensor):
+    """
+    ROCm-optimized GGMLTensor - based on City96's implementation.
+    Stores quantized weights and exposes correct shape for model detection.
+
+    __torch_function__ is disabled so torch always treats these as plain
+    tensors: some torch versions (e.g. 2.13 on ROCm) raise
+    "no implementation found for 'torch.nn.functional.rms_norm'" when a
+    subclass instance reaches an F.* op unwrapped (issue #8). Quantized
+    weights are dequantized before use, so raw dispatch is always safe.
+    """
+    __torch_function__ = torch._C._disabled_torch_function_impl
+
+    def __init__(self, *args, tensor_type, tensor_shape, patches=[], **kwargs):
+        super().__init__()
+        self.tensor_type = tensor_type
+        self.tensor_shape = tensor_shape
+        self.patches = patches
+
+    def __new__(cls, *args, tensor_type, tensor_shape, patches=[], **kwargs):
+        return super().__new__(cls, *args, **kwargs)
+
+    def to(self, *args, **kwargs):
+        new = super().to(*args, **kwargs)
+        new.tensor_type = getattr(self, "tensor_type", None)
+        new.tensor_shape = getattr(self, "tensor_shape", new.data.shape)
+        new.patches = getattr(self, "patches", []).copy()
+        return new
+
+    def clone(self, *args, **kwargs):
+        return self
+
+    def detach(self, *args, **kwargs):
+        return self
+
+    def copy_(self, *args, **kwargs):
+        # fixes .weight.copy_ in comfy/clip_model/CLIPTextModel
+        try:
+            return super().copy_(*args, **kwargs)
+        except Exception as e:
+            print(f"[WARNING] ignoring 'copy_' on tensor: {e}")
+
+    def new_empty(self, size, *args, **kwargs):
+        # Intel Arc fix, ref#50 (also helps with ROCm)
+        new_tensor = super().new_empty(size, *args, **kwargs)
+        return ROCmGGMLTensor(
+                new_tensor,
+                tensor_type = getattr(self, "tensor_type", None),
+                tensor_shape = size,
+                patches = getattr(self, "patches", []).copy()
+        )
+
+    @property
+    def shape(self):
+        # CRITICAL: Return tensor_shape for model detection, not actual data shape
+        if not hasattr(self, "tensor_shape"):
+            self.tensor_shape = self.size()
+        return self.tensor_shape
+
+    def numel(self):
+        # Return numel based on tensor_shape (for VRAM estimation)
+        if hasattr(self, "tensor_shape"):
+            result = 1
+            for dim in self.tensor_shape:
+                result *= dim
+            return result
+        return super().numel()
+
+
 class ROCmGGUFLoader:
     """
     ROCm-optimized GGUF model loader for AMD GPUs (gfx1151)
@@ -574,8 +643,9 @@ class ROCmGGUFLoader:
                 if tensor is None:
                     return None
                 
-                # Check if it's a ROCmGGMLTensor (by checking for tensor_type attribute)
-                is_ggml_tensor = hasattr(tensor, "tensor_type")
+                # Check if it's a ROCmGGMLTensor (attribute checks fail once torch strips
+                # custom attrs when wrapping weights in nn.Parameter)
+                is_ggml_tensor = isinstance(tensor, ROCmGGMLTensor)
                 
                 # Consolidate and load patches to GPU in async (for LoRA support)
                 # ROCm optimization: Use non-blocking transfers
@@ -596,7 +666,7 @@ class ROCmGGUFLoader:
                     weight = dequantize_tensor(tensor, dtype, self.dequant_dtype)
                     # CRITICAL: Always convert ROCmGGMLTensor to regular tensor
                     # Even F32/F16 wrapped in ROCmGGMLTensor must be converted
-                    if hasattr(weight, "tensor_type"):
+                    if isinstance(weight, ROCmGGMLTensor):
                         weight = torch.Tensor(weight)
                 else:
                     # Regular tensor - just convert dtype
@@ -683,8 +753,8 @@ class ROCmGGUFLoader:
                 our custom tensor subclass in operations.
                 """
                 # Check if weights are ROCmGGMLTensor (even if not quantized)
-                weight_is_ggml = hasattr(self.weight, "tensor_type") if self.weight is not None else False
-                bias_is_ggml = hasattr(self.bias, "tensor_type") if self.bias is not None else False
+                weight_is_ggml = isinstance(self.weight, ROCmGGMLTensor)
+                bias_is_ggml = isinstance(self.bias, ROCmGGMLTensor)
                 
                 if self.is_ggml_quantized() or weight_is_ggml or bias_is_ggml:
                     # Always use our dequantization path for ROCmGGMLTensor objects
@@ -695,7 +765,7 @@ class ROCmGGUFLoader:
                 
                 # Prevent propagating custom tensor class
                 # Check if output is our custom tensor type
-                if hasattr(out, "tensor_type"):
+                if isinstance(out, ROCmGGMLTensor):
                     out = torch.Tensor(out)
                 return out
         
@@ -958,71 +1028,6 @@ class ROCmGGUFLoader:
         Based on City96's GGMLTensor implementation - exactly replicates their approach.
         This allows ComfyUI to detect the correct architecture even for quantized tensors.
         """
-        # Create GGMLTensor class exactly like City96's (ROCm-optimized version)
-        class ROCmGGMLTensor(torch.Tensor):
-            """
-            ROCm-optimized GGMLTensor - based on City96's implementation.
-            Stores quantized weights and exposes correct shape for model detection.
-            """
-            def __init__(self, *args, tensor_type, tensor_shape, patches=[], **kwargs):
-                super().__init__()
-                self.tensor_type = tensor_type
-                self.tensor_shape = tensor_shape
-                self.patches = patches
-
-            def __new__(cls, *args, tensor_type, tensor_shape, patches=[], **kwargs):
-                return super().__new__(cls, *args, **kwargs)
-
-            def to(self, *args, **kwargs):
-                new = super().to(*args, **kwargs)
-                new.tensor_type = getattr(self, "tensor_type", None)
-                new.tensor_shape = getattr(self, "tensor_shape", new.data.shape)
-                new.patches = getattr(self, "patches", []).copy()
-                return new
-
-            def clone(self, *args, **kwargs):
-                return self
-
-            def detach(self, *args, **kwargs):
-                return self
-
-            def copy_(self, *args, **kwargs):
-                # fixes .weight.copy_ in comfy/clip_model/CLIPTextModel
-                try:
-                    return super().copy_(*args, **kwargs)
-                except Exception as e:
-                    print(f"[WARNING] ignoring 'copy_' on tensor: {e}")
-
-            def new_empty(self, size, *args, **kwargs):
-                # Intel Arc fix, ref#50 (also helps with ROCm)
-                new_tensor = super().new_empty(size, *args, **kwargs)
-                return ROCmGGMLTensor(
-                        new_tensor,
-                        tensor_type = getattr(self, "tensor_type", None),
-                        tensor_shape = size,
-                        patches = getattr(self, "patches", []).copy()
-                )
-
-            @property
-            def shape(self):
-                # CRITICAL: Return tensor_shape for model detection, not actual data shape
-                # This is what makes architecture detection work correctly
-                if not hasattr(self, "tensor_shape"):
-                    self.tensor_shape = self.size()
-                return self.tensor_shape
-            
-            # NOTE: City96's GGMLTensor doesn't override numel()
-            # We keep it for VRAM estimation, but it should use tensor_shape
-            def numel(self):
-                # Return numel based on tensor_shape (for VRAM estimation)
-                if hasattr(self, "tensor_shape"):
-                    result = 1
-                    for dim in self.tensor_shape:
-                        result *= dim
-                    return result
-                return super().numel()
-        
-        # Create the tensor exactly like City96 does
         return ROCmGGMLTensor(tensor, tensor_type=tensor_type, tensor_shape=tensor_shape)
     
     def load_gguf(self, gguf_name: str) -> Tuple:

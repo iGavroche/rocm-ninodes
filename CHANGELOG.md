@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.21] - 2026-10-13
+
+### Fixed
+- **GGUF sampling crash `no implementation found for 'torch.nn.functional.rms_norm'` (issue #8)**: on some torch builds (reported on 2.13 + ROCm 10, gfx1150) any `F.*` op receiving a `ROCmGGMLTensor` raised instead of treating it as a plain tensor, so Wan sampling died on the first attention RMSNorm. `ROCmGGMLTensor` now sets `__torch_function__ = torch._C._disabled_torch_function_impl`, which makes torch skip the subclass in dispatch on every version; the class is also now defined once at module level instead of per tensor, and the internal "is this a GGML tensor" checks use `isinstance` instead of the `tensor_type` attribute, which torch can strip when wrapping weights in `nn.Parameter`.
+
 ## [2.3.20] - 2026-10-13
 
 ### Changed
