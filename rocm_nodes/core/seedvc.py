@@ -236,7 +236,10 @@ def _match_air(wave: np.ndarray, source: np.ndarray, strength: float, sr: int,
 
     centers = np.sqrt(np.array(edges[:-1]) * np.array(edges[1:]))
     hop = n_fft // 2
-    win = np.hanning(n_fft)
+    # sqrt of the periodic Hann: squared windows sum to exactly 1 at this hop,
+    # so the overlap-add reconstructs perfectly. A symmetric np.hanning here
+    # sums 0.5..1.0 and stamps a 6 dB amplitude ripple on the output.
+    win = np.sqrt(np.hanning(n_fft + 1)[:-1])
     nseg = 1 + max(0, (n - n_fft) // hop)
     segs = np.lib.stride_tricks.as_strided(
         wave, (nseg, n_fft), (wave.strides[0] * hop, wave.strides[0])).copy()

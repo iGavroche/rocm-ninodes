@@ -35,6 +35,10 @@ After running:
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
+## 🚀 What's new in v2.3.24
+
+- **Fixed the choppy/robotic buzz in `air_transfer`**: the spectral match's STFT used a symmetric Hann window at 50% hop, which does not satisfy overlap-add reconstruction — it stamped a ±6 dB ripple at 21.5 Hz onto every converted note. The window is now the COLA-correct sqrt-periodic Hann; measured amplitude modulation of the output is now identical to not running the EQ at all, and the EQ no longer perturbs pitch at all (paired same-seed micro-pitch correlation identical on/off).
+
 ## 🚀 What's new in v2.3.23
 
 - **Seed-VC singing: the performance transfers, not just the notes.** Two new post-process knobs: `dynamics_transfer` re-applies the source's loudness shaping (crescendos, soft/belt contrast) that the diffusion flattens, and `air_transfer` matches the converted vocal's band balance (500 Hz … 16 kHz) to the source's, undoing the dullness copied from the reference. Both default to 1.0, F0 model only; 0 keeps the model's own output. Paired same-seed A/B: envelope std 20.8 → 21.2 (source 22.7), 8–16 kHz level −34.9 → −24.2 dB (source −18.6), no pitch movement.

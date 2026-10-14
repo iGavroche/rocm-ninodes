@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.24] - 2026-10-14
+
+### Fixed
+- **`air_transfer` stamped a 21.5 Hz amplitude ripple on the output (choppy/robotic feel)**: the spectral match's STFT overlap-add used a symmetric `np.hanning(2048)` at hop 1024, whose squared windows sum to 0.50…1.00 instead of a constant. The reconstruction was modulated by that ±6 dB ripple at `sr / n_fft` — a buzz unrelated to the singing, present on every converted note. The window is now the square root of the periodic Hann, which sums to exactly 1 at this hop: identity round-trip error −9.2 dB → −32.2 dB, near-Nyquist amplitude modulation −21.4 dB → −27.6 dB (identical to not running the EQ), and the micro-pitch correlation dip the EQ used to cause is gone (paired same-seed A/B: 0.821 with and without the post-process).
+
 ## [2.3.23] - 2026-10-14
 
 ### Added
