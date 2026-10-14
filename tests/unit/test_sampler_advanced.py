@@ -1,5 +1,5 @@
 """
-Unit tests for ROCMOptimizedKSamplerAdvanced
+Unit tests for ROCmKSamplerAdvanced
 """
 import types
 import pytest
@@ -9,10 +9,12 @@ import sys
 
 
 def _install_comfy_sample_mocks(monkeypatch, captured):
-    import comfy
+    import rocm_nodes.core.sampler as sampler_module
+    comfy = sampler_module.comfy
 
-    def fix_empty_latent_channels(model, x):
-        return x
+    def fix_empty_latent_channels(model, latent_image, downscale_ratio_spacial=None,
+                                   downscale_ratio_temporal=None):
+        return latent_image
 
     def prepare_noise(latent, seed, batch_inds=None):
         torch.manual_seed(seed % (2**31))
@@ -63,9 +65,9 @@ def _make_model(latent_channels=4):
     )
 
 
-class TestROCMOptimizedKSamplerAdvanced:
+class TestROCmKSamplerAdvanced:
     def test_add_noise_disabled_uses_latent_as_noise(self, monkeypatch, sample_conditioning):
-        from rocm_nodes.core.sampler import ROCMOptimizedKSamplerAdvanced
+        from rocm_nodes.core.sampler import ROCmKSamplerAdvanced
 
         import comfy
         comfy.utils.PROGRESS_BAR_ENABLED = False
@@ -78,7 +80,7 @@ class TestROCMOptimizedKSamplerAdvanced:
         captured = {}
         _install_comfy_sample_mocks(monkeypatch, captured)
 
-        node = ROCMOptimizedKSamplerAdvanced()
+        node = ROCmKSamplerAdvanced()
         latent = {"samples": torch.randn(1, 4, 32, 32)}
         model = _make_model()
 
@@ -96,7 +98,6 @@ class TestROCMOptimizedKSamplerAdvanced:
             start_at_step=0,
             end_at_step=10000,
             return_with_leftover_noise="disable",
-            precision_mode="auto",
             denoise=1.0,
             compatibility_mode=False,
         )
@@ -110,7 +111,7 @@ class TestROCMOptimizedKSamplerAdvanced:
         assert captured['last_step'] == 10000
 
     def test_step_bounds_normalization(self, monkeypatch, sample_conditioning):
-        from rocm_nodes.core.sampler import ROCMOptimizedKSamplerAdvanced
+        from rocm_nodes.core.sampler import ROCmKSamplerAdvanced
 
         import comfy
         comfy.utils.PROGRESS_BAR_ENABLED = False
@@ -121,7 +122,7 @@ class TestROCMOptimizedKSamplerAdvanced:
         captured = {}
         _install_comfy_sample_mocks(monkeypatch, captured)
 
-        node = ROCMOptimizedKSamplerAdvanced()
+        node = ROCmKSamplerAdvanced()
         latent = {"samples": torch.randn(1, 4, 16, 16)}
         model = _make_model()
 
@@ -139,7 +140,6 @@ class TestROCMOptimizedKSamplerAdvanced:
             start_at_step=-5,
             end_at_step=10,
             return_with_leftover_noise="disable",
-            precision_mode="auto",
             denoise=1.0,
             compatibility_mode=False,
         )
@@ -152,7 +152,7 @@ class TestROCMOptimizedKSamplerAdvanced:
 
     def test_model_detection_flow(self, monkeypatch, sample_conditioning):
         """Verify flow-matching model is detected and logged."""
-        from rocm_nodes.core.sampler import ROCMOptimizedKSampler
+        from rocm_nodes.core.sampler import ROCmKSampler
 
         import comfy
         comfy.utils.PROGRESS_BAR_ENABLED = False
@@ -163,7 +163,7 @@ class TestROCMOptimizedKSamplerAdvanced:
         captured = {}
         _install_comfy_sample_mocks(monkeypatch, captured)
 
-        node = ROCMOptimizedKSampler()
+        node = ROCmKSampler()
         latent = {"samples": torch.randn(1, 4, 32, 32)}
         model = _make_model(latent_channels=16)
 
@@ -186,7 +186,7 @@ class TestROCMOptimizedKSamplerAdvanced:
 
     def test_model_detection_pixel_space(self, monkeypatch, sample_conditioning):
         """Verify pixel-space model is detected correctly."""
-        from rocm_nodes.core.sampler import ROCMOptimizedKSampler
+        from rocm_nodes.core.sampler import ROCmKSampler
 
         import comfy
         comfy.utils.PROGRESS_BAR_ENABLED = False
@@ -197,7 +197,7 @@ class TestROCMOptimizedKSamplerAdvanced:
         captured = {}
         _install_comfy_sample_mocks(monkeypatch, captured)
 
-        node = ROCMOptimizedKSampler()
+        node = ROCmKSampler()
         latent = {"samples": torch.randn(1, 3, 64, 64)}
 
         lat_fmt = types.SimpleNamespace(

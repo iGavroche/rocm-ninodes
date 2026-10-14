@@ -7,10 +7,9 @@ import time
 import pytest
 
 try:
-    import comfy  # type: ignore
     import comfy.sample  # type: ignore
     import comfy.samplers  # type: ignore
-    HAS_COMFY = True
+    HAS_COMFY = hasattr(comfy.sample, "fix_empty_latent_channels")
 except Exception:
     HAS_COMFY = False
 
@@ -24,9 +23,9 @@ def _make_dummy_latent(h=64, w=64):
 
 
 def test_rocm_ksampler_stock_path_smoke():
-    from rocm_nodes.core.sampler import ROCMOptimizedKSampler
+    from rocm_nodes.core.sampler import ROCmKSampler
 
-    node = ROCMOptimizedKSampler()
+    node = ROCmKSampler()
     latent = _make_dummy_latent()
 
     t0 = time.time()
@@ -51,9 +50,9 @@ def test_rocm_ksampler_stock_path_smoke():
 
 
 def test_rocm_ksampler_advanced_stock_path_smoke():
-    from rocm_nodes.core.sampler import ROCMOptimizedKSamplerAdvanced
+    from rocm_nodes.core.sampler import ROCmKSamplerAdvanced
 
-    node = ROCMOptimizedKSamplerAdvanced()
+    node = ROCmKSamplerAdvanced()
     latent = _make_dummy_latent()
 
     t0 = time.time()

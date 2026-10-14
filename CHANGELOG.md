@@ -1,7 +1,28 @@
 # Changelog
 
-## [2.3.21] - 2026-10-13
+## [2.3.22] - 2026-10-14
 
+### Added
+- **`ROCmSamplerCustomAdvanced`: new advanced `attention_backend` input (`auto` / `pytorch` / `comfy_kitchen_int8` / `flash`)**: selects the dense attention implementation for that one sampling call. The override is installed on a clone of `guider.model_options` (via `create_model_options_clone`), so the shared `ModelPatcher` options — and every other node sampling from the same model — keep ComfyUI's default. It composes with nodes that install their own override each step (e.g. `VedaSparseAttention`): `wrap_attn` puts the later-installed override on top and chains down to this one as its dense backend. `comfy_kitchen_int8` also forwards its `container_function`, so `AttentionTensorContainer` inputs keep working. An unavailable backend logs a warning and falls back to PyTorch attention. Measured on gfx1151 with real DiT shapes: INT8 is 1.04-1.17x on long self-attention (4k-32k tokens) but 0.72x on short cross-attention, so it is a per-model choice, not a global default.
+
+### Removed
+- **Dead node inputs**: `precision_mode` (`ROCmKSampler`, `ROCmKSamplerAdvanced`, `ROCmVAEDecode`), `batch_optimization` (`ROCmVAEDecode`), `flash_attention` (`ROCmSamplerCustomAdvanced`), `test_steps` (`ROCmSamplerPerformanceMonitor`). None of them changed behaviour: `precision_mode` only computed an unused `use_bf16` flag, and `flash_attention` toggled `torch.backends.cuda.enable_*_sdp`, which ComfyUI's own SDPA wrapper overrides per call — its only real effect was forcing the slow math backend when `disable_flash` was set. Saved workflows that still carry these keys load unchanged; the values are ignored.
+- **`ROCmVAEDecode` VAE re-dtype machinery**: `getattr(vae.first_stage_model, "dtype", None)` is `None` for every VAE ComfyUI ships (`AutoencoderKL`, `WanVAE`, LTX `VideoVAE`), so every dtype-selection branch was unreachable and `precision_mode` never reached the model — ComfyUI's `VAE.decode` already casts the latent to `vae.vae_dtype`. The per-`id(first_stage_model)` weight cache, the quantized-dtype probe and the fp32 retry-on-failure path are gone; decode now runs in `vae.vae_dtype` and never mutates shared VAE weights. `ROCmVAEPerformanceMonitor` no longer reports the removed "Recommended precision" / "batch cap" lines.
+- **`batch_cap` from `detect_architecture()`** and the `*_BATCH_CAP` constants: the only reader was the deleted `batch_number` batching block.
+- **`select_precision()`** and the dead tail of `apply_rocm_backend_settings()` (an unused `supported_attention` list and a `hasattr(...): pass` branch).
+- **`ROCmSamplerCustomAdvancedBenchmark`** (and the `ROCMSamplerCustomAdvancedBenchmark` alias): it duplicated the whole sampler to time stock vs ROCm on identical inputs; `ROCmFluxBenchmark` remains for measured timings. Workflows using it must switch to `ROCmSamplerCustomAdvanced`.
+
+### Fixed
+- **`ROCmVAEDecode` ignored the ROCm version guard on fp16 accumulation**: it set `torch.backends.cuda.matmul.allow_fp16_accumulation = True` directly instead of calling `apply_rocm_backend_settings()`, re-enabling on pre-7.14 ROCm exactly the setting that causes numerical drift and `hipErrorIllegalAddress` on rdna3_5 (2.2.2 / 2.2.5).
+- **`fix_empty_latent_channels()` dropped the latent downscale ratios** in `ROCmKSampler` and `ROCmKSamplerAdvanced`; they now pass `downscale_ratio_spacial` / `downscale_ratio_temporal` like stock, so latents from VAEs with non-default compression get the right channel fix.
+- **`ROCmKSampler` / `ROCmKSamplerAdvanced` ignored `disable_pbar`**: the flag was computed but never forwarded to `comfy.sample.sample()`.
+- **`ROCmGGUFLoader` ignored the ROCm version guard on fp16 accumulation** and additionally forced `allow_tf32 = False` on every AMD device: it set both torch backend flags directly. `allow_tf32 = False` is the setting 2.2.6 removed from the sampler for causing a ~2x slowdown on LTX 2.3, and the fp16 flag bypassed the rdna3_5 / pre-7.14 guard. The loader now calls `apply_rocm_backend_settings()`.
+
+### Tests
+- `tests/conftest.py` stubs now cover `comfy.audio`, `comfy.model_patcher`, `comfy.ldm.modules.attention` and `folder_paths` resolvers, and `comfy.model_management.throw_exception_if_processing_interrupted`. This cleared 5 pre-existing collection errors and 3 real failures in the temporal-tiling path.
+
+
+## [2.3.21] - 2026-10-13
 ### Fixed
 - **GGUF sampling crash `no implementation found for 'torch.nn.functional.rms_norm'` (issue #8)**: on some torch builds (reported on 2.13 + ROCm 10, gfx1150) any `F.*` op receiving a `ROCmGGMLTensor` raised instead of treating it as a plain tensor, so Wan sampling died on the first attention RMSNorm. `ROCmGGMLTensor` now sets `__torch_function__ = torch._C._disabled_torch_function_impl`, which makes torch skip the subclass in dispatch on every version; the class is also now defined once at module level instead of per tensor, and the internal "is this a GGML tensor" checks use `isinstance` instead of the `tensor_type` attribute, which torch can strip when wrapping weights in `nn.Parameter`.
 

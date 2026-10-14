@@ -78,27 +78,8 @@ class TestROCmVAEDecode:
             assert isinstance(result[0], torch.Tensor)
             assert len(result[0].shape) == 4
 
-    def test_precision_modes(self, sample_vae, sample_latent):
-        """Test VAE decode with different precision modes"""
-        node = ROCmVAEDecodeInstrumented()
-
-        precision_modes = ["auto", "fp32", "fp16"]
-        for precision_mode in precision_modes:
-            result = node.decode(
-                vae=sample_vae,
-                samples=sample_latent,
-                tile_size=512,
-                overlap=64,
-                use_rocm_optimizations=True,
-                precision_mode=precision_mode
-            )
-
-            assert isinstance(result, tuple)
-            assert len(result) == 1
-            assert isinstance(result[0], torch.Tensor)
-
     def test_batch_processing(self, sample_vae):
-        """Test VAE decode with batch processing"""
+        """Test VAE decode with a batch of latents"""
         node = ROCmVAEDecodeInstrumented()
 
         batch_latent = {
@@ -110,8 +91,7 @@ class TestROCmVAEDecode:
             samples=batch_latent,
             tile_size=512,
             overlap=64,
-            use_rocm_optimizations=True,
-            batch_optimization=True
+            use_rocm_optimizations=True
         )
 
         assert isinstance(result, tuple)
@@ -274,7 +254,6 @@ class TestROCmVAEDecode:
             tile_size=1024,
             overlap=128,
             use_rocm_optimizations=True,
-            precision_mode="fp16",
         )
 
         assert isinstance(result, tuple)
@@ -331,7 +310,6 @@ class TestROCmVAEDecode:
             tile_size=1024,
             overlap=128,
             use_rocm_optimizations=True,
-            precision_mode="fp16",
         )
 
         assert isinstance(result, tuple)
@@ -370,7 +348,6 @@ class TestROCmVAEDecode:
             tile_size=1024,
             overlap=128,
             use_rocm_optimizations=True,
-            precision_mode="fp16",
             enable_temporal_tiling=True,
             temporal_chunk_size=16,
             temporal_overlap=2,
@@ -397,7 +374,6 @@ class TestROCmVAEDecode:
             tile_size=1024,
             overlap=128,
             use_rocm_optimizations=True,
-            precision_mode="fp16",
             enable_temporal_tiling=True,
             temporal_chunk_size=8,
             temporal_overlap=2,
@@ -427,7 +403,6 @@ class TestROCmVAEDecode:
             tile_size=1024,
             overlap=128,
             use_rocm_optimizations=True,
-            precision_mode="fp16",
             enable_temporal_tiling=True,
             temporal_chunk_size=chunk_size,
             temporal_overlap=2,
@@ -450,7 +425,6 @@ class TestROCmVAEDecode:
             tile_size=1024,
             overlap=128,
             use_rocm_optimizations=True,
-            precision_mode="fp16",
         )
 
         assert isinstance(result, tuple)

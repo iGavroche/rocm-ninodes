@@ -23,8 +23,7 @@ Stock-equivalent KSampler under the ROCm category. It calls `comfy.sample.sample
 | `latent_image` | LATENT | — | required | `samples` go through `comfy.sample.fix_empty_latent_channels()`; `batch_index` and `noise_mask` are honoured. |
 | `denoise` | FLOAT | `1.0` | 0.0 … 1.0, step 0.01 | Passed through. |
 | `optimize_for_video` | BOOLEAN | `False` | optional | Only takes effect when the latent is 5D with `shape[2] > 1`: then latent previews are not generated and the log line is labelled `Video`. |
-| `precision_mode` | combo | `auto` | optional: `auto`, `fp32`, `bf16` | Queries `torch.cuda.is_bf16_supported()` into a local flag; the flag is not used by the sampling call, so this is currently a no-op hint. |
-| `compatibility_mode` | BOOLEAN | `False` | optional | Skips `apply_rocm_backend_settings()`, the high-memory cleanup, the model-type logging, the video preview suppression and the bf16 check. |
+| `compatibility_mode` | BOOLEAN | `False` | optional | Skips `apply_rocm_backend_settings()`, the high-memory cleanup, the model-type logging and the video preview suppression. |
 
 `FUNCTION = sample`. `RETURN_TYPES = ("LATENT",)`.
 
@@ -40,7 +39,7 @@ Stock-equivalent KSampler under the ROCm category. It calls `comfy.sample.sample
 - TF32 is left at the ROCm default; forcing it off caused a ~2x slowdown on LTX 2.3 (fixed 2.2.6).
 - High-memory models (`memory_usage_factor > 5`, e.g. LTX 128ch, Ideogram4) get `emergency_memory_cleanup()` before sampling and `gentle_memory_cleanup()` after.
 - Previews are throttled to one update per 0.3 s and generated every 5th step; a previewer failure prints the exception type and retries next step instead of silently dropping previews.
-- `comfy.sample.sample()` is always called with `disable_pbar=False` so the callback runs (fixed 2.0.3).
+- The step callback always runs so the UI progress bar and the per-step timing line are produced; `disable_pbar` is only turned off for 5D video latents or when `comfy.utils.PROGRESS_BAR_ENABLED` is false.
 
 ## Typical wiring
 

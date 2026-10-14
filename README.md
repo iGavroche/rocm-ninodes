@@ -1,4 +1,4 @@
-# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.17)
+# ROCm Ninodes: ROCm-Optimized Nodes for ComfyUI (v2.3.22)
 
 **ROCm Ninodes** provides ComfyUI nodes tuned for AMD GPUs with ROCm (e.g. gfx1151 / Strix Halo): VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, **LTX2 prompt generation**, **SamplerCustomAdvanced drop-in**, **Veda sparse attention for MiniMax H3**, **Seed-VC voice conversion**, and performance/memory monitoring. Install via ComfyUI Manager, `comfy node install rocm-ninodes`, or clone into `custom_nodes`.
 
@@ -34,6 +34,12 @@ After running:
 [![ComfyUI](https://img.shields.io/badge/ComfyUI-Compatible-green.svg)](https://github.com/comfyanonymous/ComfyUI)
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
+
+## 🚀 What's new in v2.3.22
+
+- **Per-model attention backend** (`ROCmSamplerCustomAdvanced`): new advanced `attention_backend` input (`auto` / `pytorch` / `comfy_kitchen_int8` / `flash`) picks the dense attention implementation for that one sampling call. The override goes on a clone of the guider's model options, so the shared model and every other node using it keep ComfyUI's default. Unavailable backends fall back to PyTorch attention with a warning.
+- **Removed dead node inputs**: `precision_mode` (KSampler, KSamplerAdvanced, VAE Decode), `batch_optimization` (VAE Decode), `flash_attention` (SamplerCustomAdvanced) and `test_steps` (Sampler Performance Monitor) never changed behaviour. Saved workflows that still carry them load unchanged; the values are ignored.
+- **VAE decode simplified**: `ROCmVAEDecode` no longer attempts to re-dtype the VAE. Decode runs in the VAE's own dtype, which is what ComfyUI's `VAE.decode` already casts to, so shared VAE weights are never mutated.
 
 ## 🚀 What's new in v2.3.20
 
@@ -375,25 +381,19 @@ Our optimization approach focuses on three key areas:
 ### ROCMOptimizedKSampler
 - **Stock behavior** with ROCm-safe toggles
 - **optimize_for_video**: reduces host-device sync overhead on multi-frame latents
-- **precision_mode**: auto|fp32|bf16 (guarded; no forced casts)
 - **compatibility_mode**: revert to pure stock quickly
 
 ### ROCMOptimizedKSamplerAdvanced
 - 1:1 with ComfyUI KSampler (Advanced)
-- Same ROCm toggles as the basic sampler (video, precision, compatibility)
+- Same ROCm toggles as the basic sampler (video, compatibility)
 
 ### ROCMSamplerCustomAdvanced
 - Drop-in replacement for ComfyUI's V3 SamplerCustomAdvanced (same noise/guider/sampler/sigmas/latent_image interface)
 - ROCm backend tuning: architecture detection, fp16 accumulation, TF32 disabled on AMD
 - Emergency memory defrag for high-memory models (LTX Video 128ch, memory factor 5.5x)
 - Enhanced per-step callback with ETA, timing, and video-workflow optimization
-- `precision_mode`: auto|fp32|bf16
+- `attention_backend`: auto|pytorch|comfy_kitchen_int8|flash (per-sampling-call dense attention override)
 - `compatibility_mode`: pure stock fallback
-
-### ROCMSamplerCustomAdvancedBenchmark
-- A/B benchmark: runs stock then ROCm-optimized on identical inputs
-- Reports timing, peak memory, speedup %, model type, and GPU name
-- Outputs both LATENT (from ROCm run) and a BENCHMARK_REPORT string
 
 ### VedaSparseAttention
 **Speeds up MiniMax H3 video generation by skipping the attention that doesn't matter.**

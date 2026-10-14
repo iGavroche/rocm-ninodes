@@ -23,11 +23,11 @@ A pure analysis node: it inspects the VAE and the GPU and returns three text blo
 |---|---|---|
 | `DEVICE_INFO` | STRING | Device, VAE dtype, output device, VAE type, architecture family, APU mode, GPU name, arch string. |
 | `PERFORMANCE_TIPS` | STRING | Type-specific bullets (e.g. LTXV: fp16 recommended, tile 1024-2048, temporal tiling for > 200 frames; WAN: decode full videos to avoid jitter; standard: preferred precision and tile range). |
-| `OPTIMAL_SETTINGS` | STRING | Concrete `tile_size` / `overlap` / precision / `batch_optimization` values for `ROCmVAEDecode`. |
+| `OPTIMAL_SETTINGS` | STRING | Concrete `tile_size` / `overlap` / precision values for `ROCmVAEDecode`. |
 
 ## gfx1151 notes
 
-- `detect_architecture()` maps gfx1151/gfx1150 to family `rdna3_5`, `is_apu=True`, `tile_size_max=2048`, `batch_cap=8`, `preferred_precision=fp16`; the tips reflect those (APU lines: "batch capped to 8", "disable smart-memory for unified memory").
+- `detect_architecture()` maps gfx1151/gfx1150 to family `rdna3_5`, `is_apu=True`, `tile_size_max=2048`, `preferred_precision=fp16`; the tips reflect those (APU lines: "disable smart-memory for unified memory").
 - For a pixel-space VAE it reports that no decode configuration is needed (z-image / z-image-turbo passthrough).
 - The node is side-effect free and cheap; safe to leave wired into a workflow.
 
@@ -46,4 +46,4 @@ Outputs are plain strings; they need a text-display node to be visible.
 
 - Nothing visible on the canvas: the STRING outputs must be connected to a text display node.
 - `GPU: AMD (ROCm)` fallback line means `torch.cuda.get_device_name` / `gcnArchName` raised — the rest of the report is still valid.
-- Recommendations are generic guidance, not measurements; use `ROCmSamplerCustomAdvancedBenchmark` or `ROCmFluxBenchmark` for actual timings.
+- Recommendations are generic guidance, not measurements; use `ROCmFluxBenchmark` for actual timings.

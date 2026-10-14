@@ -65,38 +65,12 @@ For LTX-based workflows (like `LTX2.3-Director-App-Mariah.json`), the `latent_im
 
 Enable it via the node's advanced properties panel if you suspect the ROCm optimizations are causing issues. This returns the exact stock behavior for debugging.
 
-## Benchmark Node
-
-`ROCMSamplerCustomAdvancedBenchmark` (`ROCm Ninodes/Sampling > ROCm SamplerCustomAdvanced Benchmark`) runs both the stock and ROCm-optimized sampler in sequence on identical inputs and outputs a comparison string.
-
-**Inputs:** Same as SamplerCustomAdvanced (no extra params).
-
-**Outputs:**
-- `LATENT` — result from the ROCm-optimized run
-- `BENCHMARK_REPORT` — multiline string with timing and memory comparison
-
-Example output:
-
-```
-Benchmark Results
-──────────────────────────────────────────────────
-Stock:  42.35s, 5840MB peak
-ROCm:   41.12s, 5720MB peak
-Speed:  +3.0%
-Memory: +120MB delta
-Steps:  40
-Model:  flow (128ch, mem factor 5.5x)
-GPU:    AMD Radeon Graphics (gfx1151)
-──────────────────────────────────────────────────
-```
-
 ## Implementation Details
 
 See `rocm_nodes/core/sampler.py`:
 
 ```
 ROCMSamplerCustomAdvanced      (V3 io.ComfyNode, define_schema)
-ROCMSamplerCustomAdvancedBenchmark  (V1 legacy API, INPUT_TYPES)
 ```
 
 The node uses the ComfyUI V3 (ComfyNode) API via `comfy_api.latest.io`, which ComfyUI's execution system detects automatically from the class inheritance.

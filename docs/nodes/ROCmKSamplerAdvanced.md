@@ -26,7 +26,6 @@ The stock KSampler (Advanced) behaviour — step-range control, optional noise, 
 | `end_at_step` | INT | `10000` | 0 … 10000 | `last_step=`. |
 | `return_with_leftover_noise` | combo | `disable` | `disable`, `enable` | `enable` → `force_full_denoise=False`. |
 | `optimize_for_video` | BOOLEAN | `False` | optional | With a 5D latent (`shape[2] > 1`) suppresses latent previews and labels the log `Video`. |
-| `precision_mode` | combo | `auto` | optional: `auto`, `fp32`, `bf16` | Computes a local `use_bf16` flag from `torch.cuda.is_bf16_supported()`; the flag is unused, so currently a no-op hint. |
 | `compatibility_mode` | BOOLEAN | `False` | optional | Skips all ROCm backend tuning and cleanup. |
 
 `sample()` also accepts a `denoise` keyword defaulting to `1.0`, but it is not exposed in `INPUT_TYPES` (same as stock).

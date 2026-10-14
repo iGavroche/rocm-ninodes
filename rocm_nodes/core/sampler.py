@@ -14,6 +14,8 @@ from typing import Dict, Any, Tuple, Optional
 import torch
 import comfy.model_management as model_management
 import comfy.utils
+import comfy.model_patcher
+import comfy.ldm.modules.attention
 import comfy.sample
 import comfy.samplers
 import latent_preview
@@ -35,6 +37,35 @@ from ..utils.architecture import (
     detect_model_sampling_type,
     apply_rocm_backend_settings,
 )
+
+
+ATTENTION_BACKENDS = ["auto", "pytorch", "comfy_kitchen_int8", "flash"]
+
+
+def apply_attention_backend(guider, attention_backend):
+    """Select the dense attention implementation for one sampling call.
+
+    Writes through a clone of the guider's model options so the shared
+    ModelPatcher options stay untouched. Nodes that install their own override
+    and re-install it every step (block-sparse attention) end up on top of this
+    one and chain down to it as their dense backend.
+    """
+    attention_function = comfy.ldm.modules.attention.get_attention_function(attention_backend, None)
+    if attention_function is None:
+        logging.warning("Attention backend '%s' is unavailable; using PyTorch attention.", attention_backend)
+        attention_function = comfy.ldm.modules.attention.get_attention_function("pytorch")
+
+    guider.model_options = comfy.model_patcher.create_model_options_clone(guider.model_options)
+    transformer_options = guider.model_options.setdefault("transformer_options", {})
+
+    def attention_override(func, *args, **kwargs):
+        return attention_function(*args, **kwargs)
+
+    if hasattr(attention_function, "container_function") and attention_function.container_function is not None:
+        attention_override.container_function = attention_function.container_function
+
+    transformer_options["optimized_attention_override"] = attention_override
+    print(f"🧠 Attention backend: {attention_backend}", flush=True)
 
 
 class ROCmKSampler:
@@ -87,7 +118,6 @@ class ROCmKSampler:
             },
             "optional": {
                 "optimize_for_video": ("BOOLEAN", {"default": False, "tooltip": "Disable previews/progress for multi-frame latents"}),
-                "precision_mode": (["auto", "fp32", "bf16"], {"default": "auto", "tooltip": "ROCm precision hint (no-op on CUDA/CPU)"}),
                 "compatibility_mode": ("BOOLEAN", {"default": False, "tooltip": "Force pure stock behavior"})
             }
         }
@@ -99,11 +129,10 @@ class ROCmKSampler:
     DESCRIPTION = "KSampler with auto-detected architecture and model optimizations"
 
     def sample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative,
-               latent_image, denoise=1.0, optimize_for_video=False, precision_mode="auto", compatibility_mode=False):
+               latent_image, denoise=1.0, optimize_for_video=False, compatibility_mode=False):
         # ── Auto-detect architecture and model type ──────────────────────────
         arch_info = detect_architecture()
         model_info = detect_model_sampling_type(model)
-        is_rocm = bool(getattr(torch.version, 'hip', None))
 
         if not compatibility_mode:
             apply_rocm_backend_settings(arch_info)
@@ -121,16 +150,13 @@ class ROCmKSampler:
             elif model_info["has_high_memory"]:
                 print(f"🔋 Large model detected — memory management enabled")
 
-        use_bf16 = False
-        if not compatibility_mode and precision_mode == "bf16" and is_rocm and torch.cuda.is_available():
-            try:
-                is_supported = getattr(torch.cuda, 'is_bf16_supported', lambda: False)()
-                use_bf16 = bool(is_supported)
-            except Exception:
-                use_bf16 = False
         latent = latent_image
         latent_image_tensor = latent["samples"]
-        latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+        latent_image_tensor = comfy.sample.fix_empty_latent_channels(
+            model, latent_image_tensor,
+            latent.get("downscale_ratio_spacial", None),
+            latent.get("downscale_ratio_temporal", None)
+        )
 
         batch_inds = latent["batch_index"] if "batch_index" in latent else None
         noise = comfy.sample.prepare_noise(latent_image_tensor, seed, batch_inds)
@@ -191,7 +217,7 @@ class ROCmKSampler:
 
         print(f"🚀 Starting sampling: {steps} steps, CFG {cfg}, {sampler_name} ({scheduler})", flush=True)
         samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image_tensor,
-                                      denoise=denoise, noise_mask=noise_mask, callback=callback, disable_pbar=False, seed=seed)
+                                      denoise=denoise, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=seed)
         print(f"✅ Sampling completed", flush=True)
 
         # Gentle cleanup after sampling (if model was large)
@@ -230,7 +256,6 @@ class ROCmKSamplerAdvanced:
                      },
                 "optional": {
                     "optimize_for_video": ("BOOLEAN", {"default": False, "tooltip": "Disable previews/progress for multi-frame latents"}),
-                    "precision_mode": (["auto", "fp32", "bf16"], {"default": "auto", "tooltip": "ROCm precision hint (no-op on CUDA/CPU)"}),
                     "compatibility_mode": ("BOOLEAN", {"default": False, "tooltip": "Force pure stock behavior"})
                 }
                 }
@@ -240,10 +265,9 @@ class ROCmKSamplerAdvanced:
     CATEGORY = "ROCm Ninodes/Sampling"
     DESCRIPTION = "Advanced KSampler with step control (stock ComfyUI implementation)"
 
-    def sample(self, model, add_noise, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, return_with_leftover_noise, denoise=1.0, optimize_for_video=False, precision_mode="auto", compatibility_mode=False):
+    def sample(self, model, add_noise, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, return_with_leftover_noise, denoise=1.0, optimize_for_video=False, compatibility_mode=False):
         arch_info = detect_architecture()
         model_info = detect_model_sampling_type(model)
-        is_rocm = bool(getattr(torch.version, 'hip', None))
 
         if not compatibility_mode:
             apply_rocm_backend_settings(arch_info)
@@ -257,13 +281,6 @@ class ROCmKSamplerAdvanced:
             elif model_info["is_pixel_space"]:
                 print(f"📷 Pixel-space model detected — no VAE decode needed downstream")
 
-        use_bf16 = False
-        if not compatibility_mode and precision_mode == "bf16" and is_rocm and torch.cuda.is_available():
-            try:
-                is_supported = getattr(torch.cuda, 'is_bf16_supported', lambda: False)()
-                use_bf16 = bool(is_supported)
-            except Exception:
-                use_bf16 = False
         force_full_denoise = True
         if return_with_leftover_noise == "enable":
             force_full_denoise = False
@@ -273,7 +290,11 @@ class ROCmKSamplerAdvanced:
 
         latent = latent_image
         latent_image_tensor = latent["samples"]
-        latent_image_tensor = comfy.sample.fix_empty_latent_channels(model, latent_image_tensor)
+        latent_image_tensor = comfy.sample.fix_empty_latent_channels(
+            model, latent_image_tensor,
+            latent.get("downscale_ratio_spacial", None),
+            latent.get("downscale_ratio_temporal", None)
+        )
 
         if disable_noise:
             noise = torch.zeros(latent_image_tensor.size(), dtype=latent_image_tensor.dtype, layout=latent_image_tensor.layout, device="cpu")
@@ -337,7 +358,7 @@ class ROCmKSamplerAdvanced:
         print(f"🚀 Starting advanced sampling: {steps} steps (range: {start_at_step}-{end_at_step}), CFG {cfg}, {sampler_name} ({scheduler})", flush=True)
         samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_image_tensor,
                                       denoise=denoise, disable_noise=disable_noise, start_step=start_at_step, last_step=end_at_step,
-                                      force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback, disable_pbar=False, seed=noise_seed)
+                                      force_full_denoise=force_full_denoise, noise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar, seed=noise_seed)
         print(f"✅ Advanced sampling completed", flush=True)
 
         if model_info["has_high_memory"]:
@@ -356,12 +377,6 @@ class ROCmSamplerPerformanceMonitor:
         return {
             "required": {
                 "model": ("MODEL", {"tooltip": "Model to analyze"}),
-                "test_steps": ("INT", {
-                    "default": 20,
-                    "min": 1,
-                    "max": 100,
-                    "tooltip": "Number of test steps for benchmarking"
-                })
             }
         }
 
@@ -371,7 +386,7 @@ class ROCmSamplerPerformanceMonitor:
     CATEGORY = "ROCm Ninodes/Sampling"
     DESCRIPTION = "Analyze sampler performance and provide optimization recommendations"
 
-    def analyze(self, model, test_steps=20):
+    def analyze(self, model):
         arch_info = detect_architecture()
         model_info = detect_model_sampling_type(model)
 
@@ -452,7 +467,7 @@ class ROCmSamplerCustomAdvanced(io.ComfyNode):
     - Auto-detects AMD GPU architecture and applies optimal backend settings
     - Emergency memory defrag for high-memory models (128ch latents)
     - Enhanced callback with ETA and per-step timing
-    - Video workflow auto-detection (5D latent → no previews)
+    - Per-model dense attention backend selection (Comfy Kitchen INT8, PyTorch, flash)
     - Gentle post-sample memory cleanup
     """
 
@@ -471,9 +486,8 @@ class ROCmSamplerCustomAdvanced(io.ComfyNode):
                 io.Latent.Input("latent_image"),
                 io.Boolean.Input("compatibility_mode", optional=True, default=False, advanced=True,
                     tooltip="Skip all ROCm optimizations, force pure stock behavior"),
-                io.Combo.Input("flash_attention", options=["auto", "disable_flash", "force_flash"],
-                    optional=True, default="auto", advanced=True,
-                    tooltip="Override flash attention behavior. 'auto' = use ComfyUI defaults, 'disable_flash' = use math/efficient SDP (fixes illegal memory access on some ROCm models), 'force_flash' = prefer flash SDP with math/efficient fallback"),
+                io.Combo.Input("attention_backend", options=ATTENTION_BACKENDS, optional=True, default="auto", advanced=True,
+                    tooltip="Dense attention implementation for this sampling call. 'auto' keeps the ComfyUI default. Comfy Kitchen INT8 is the fastest on long self-attention but slower on short cross-attention; unavailable backends fall back to PyTorch attention."),
             ],
             outputs=[
                 io.Latent.Output(display_name="output"),
@@ -483,37 +497,15 @@ class ROCmSamplerCustomAdvanced(io.ComfyNode):
 
     @classmethod
     def execute(cls, noise, guider, sampler, sigmas, latent_image,
-                compatibility_mode=False, flash_attention="auto") -> io.NodeOutput:
+                compatibility_mode=False, attention_backend="auto") -> io.NodeOutput:
         model = guider.model_patcher
         arch_info = detect_architecture()
         is_rocm = bool(getattr(torch.version, 'hip', None))
         model_info = detect_model_sampling_type(model)
 
-        # ── Flash attention override ──────────────────────────────────
-        _flash_restore = None
-        if flash_attention != "auto" and torch.cuda.is_available():
-            try:
-                _flash_restore = {
-                    "flash": torch.backends.cuda.flash_sdp_enabled(),
-                    "math": torch.backends.cuda.math_sdp_enabled(),
-                    "efficient": torch.backends.cuda.mem_efficient_sdp_enabled(),
-                }
-                if flash_attention == "disable_flash":
-                    torch.backends.cuda.enable_flash_sdp(False)
-                    torch.backends.cuda.enable_math_sdp(True)
-                    torch.backends.cuda.enable_mem_efficient_sdp(True)
-                    print("⚠️  Flash attention disabled for this node (using math/efficient SDP)", flush=True)
-                elif flash_attention == "force_flash":
-                    torch.backends.cuda.enable_flash_sdp(True)
-                    # Don't disable math/mem_efficient — they serve as fallback
-                    # if flash SDP fails on this ROCm config
-                    if not torch.backends.cuda.math_sdp_enabled():
-                        torch.backends.cuda.enable_math_sdp(True)
-                    if not torch.backends.cuda.mem_efficient_sdp_enabled():
-                        torch.backends.cuda.enable_mem_efficient_sdp(True)
-                    print("⚡ Flash attention preferred (fallback backends kept available)", flush=True)
-            except Exception:
-                _flash_restore = None
+        # ── Attention backend ─────────────────────────────────────────
+        if attention_backend != "auto":
+            apply_attention_backend(guider, attention_backend)
 
         # ── ROCm info logging + backend tuning ────────────────────────
         if not compatibility_mode:
@@ -610,7 +602,7 @@ class ROCmSamplerCustomAdvanced(io.ComfyNode):
                           f"({avg:.2f}s/step)", flush=True)
 
         callback = enhanced_callback
-        disable_pbar = is_video
+        disable_pbar = is_video or not comfy.utils.PROGRESS_BAR_ENABLED
 
         # ── VRAM safety check ──────────────────────────────────────────
         if not compatibility_mode and torch.cuda.is_available():
@@ -630,7 +622,7 @@ class ROCmSamplerCustomAdvanced(io.ComfyNode):
                             f"{model_info.get('memory_usage_factor', '?')}x). "
                             f"OOM / illegal memory access likely. "
                             f"Try: disable CacheDiT, remove --reserve-vram, "
-                            f"reduce frame count, or use --use-pytorch-attention",
+                            f"reduce frame count, or use --use-pytorch-cross-attention",
                             flush=True
                         )
             except Exception:
@@ -639,20 +631,11 @@ class ROCmSamplerCustomAdvanced(io.ComfyNode):
         # ── Sampling ────────────────────────────────────────────────────
         print(f"🚀 ROCm SamplerCustomAdvanced: {total_steps} steps"
               f"{' (video mode)' if is_video else ''}", flush=True)
-        try:
-            samples = guider.sample(
-                noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
-                denoise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar,
-                seed=noise.seed
-            )
-        finally:
-            if _flash_restore is not None:
-                try:
-                    torch.backends.cuda.enable_flash_sdp(_flash_restore["flash"])
-                    torch.backends.cuda.enable_math_sdp(_flash_restore["math"])
-                    torch.backends.cuda.enable_mem_efficient_sdp(_flash_restore["efficient"])
-                except Exception:
-                    pass
+        samples = guider.sample(
+            noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
+            denoise_mask=noise_mask, callback=callback, disable_pbar=disable_pbar,
+            seed=noise.seed
+        )
 
         samples = samples.to(comfy.model_management.intermediate_device())
         elapsed = time.time() - start_time
@@ -678,146 +661,3 @@ class ROCmSamplerCustomAdvanced(io.ComfyNode):
             out_denoised = out
 
         return io.NodeOutput(out, out_denoised)
-
-
-class ROCmSamplerCustomAdvancedBenchmark:
-    """
-    Benchmark node that compares stock SamplerCustomAdvanced vs ROCmSamplerCustomAdvanced.
-
-    Runs both samplers with identical inputs and reports timing/memory differences.
-    Connect this to the same sub-components as SamplerCustomAdvanced.
-    The node runs stock first, then ROCm-optimized, and outputs a comparison string.
-    """
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "noise": ("NOISE",),
-                "guider": ("GUIDER",),
-                "sampler": ("SAMPLER",),
-                "sigmas": ("SIGMAS",),
-                "latent_image": ("LATENT",),
-            }
-        }
-
-    RETURN_TYPES = ("LATENT", "STRING")
-    RETURN_NAMES = ("LATENT", "BENCHMARK_REPORT")
-    FUNCTION = "run"
-    CATEGORY = "ROCm Ninodes/Sampling"
-    DESCRIPTION = "Compare stock vs ROCm-optimized custom sampler performance"
-
-    def run(self, noise, guider, sampler, sigmas, latent_image):
-        import time as time_module
-        import gc
-
-        latent = latent_image
-        latent_image_tensor = latent["samples"]
-        latent = latent.copy()
-
-        noise_mask = None
-        if "noise_mask" in latent:
-            noise_mask = latent["noise_mask"]
-
-        results = {}
-
-        # ── Phase 1: Stock behavior ──
-        print("═══ Phase 1: Stock SamplerCustomAdvanced ═══", flush=True)
-        torch.cuda.empty_cache()
-        gc.collect()
-        mem_before = torch.cuda.memory_allocated(0) if torch.cuda.is_available() else 0
-
-        t0 = time_module.time()
-        stock_samples = guider.sample(
-            noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
-            denoise_mask=noise_mask, disable_pbar=False, seed=noise.seed
-        )
-        stock_samples = stock_samples.to(comfy.model_management.intermediate_device())
-        t1 = time_module.time()
-
-        mem_after = torch.cuda.memory_allocated(0) if torch.cuda.is_available() else 0
-        stock_time = t1 - t0
-        stock_mem = mem_after - mem_before
-
-        results["stock"] = {
-            "time": stock_time,
-            "mem_delta": stock_mem,
-        }
-        print(f"  Stock: {stock_time:.2f}s, memory delta: {stock_mem / 1024**2:.0f}MB", flush=True)
-
-        # ── Phase 2: ROCm-optimized ──
-        print("═══ Phase 2: ROCm SamplerCustomAdvanced ═══", flush=True)
-        torch.cuda.empty_cache()
-        gc.collect()
-        arch_info = detect_architecture()
-        model = guider.model_patcher
-        model_info = detect_model_sampling_type(model)
-        apply_rocm_backend_settings(arch_info)
-
-        if model_info["has_high_memory"]:
-            emergency_memory_cleanup()
-
-        is_video = latent_image_tensor.ndim == 5 and latent_image_tensor.shape[2] > 1
-
-        mem_before_rocm = torch.cuda.memory_allocated(0) if torch.cuda.is_available() else 0
-
-        total_steps = sigmas.shape[-1] - 1
-        pbar = comfy.utils.ProgressBar(total_steps)
-        last_update = [time_module.time()]
-        x0_output = {}
-
-        def rocm_callback(step, x0, x, total_steps):
-            comfy.model_management.throw_exception_if_processing_interrupted()
-            if x0 is not None:
-                x0_output["x0"] = x0
-            now = time_module.time()
-            if now - last_update[0] >= 0.3 or step == total_steps - 1:
-                try:
-                    pbar.update_absolute(step + 1, total_steps)
-                except Exception:
-                    pass
-                last_update[0] = now
-
-        t2 = time_module.time()
-        rocm_samples = guider.sample(
-            noise.generate_noise(latent), latent_image_tensor, sampler, sigmas,
-            denoise_mask=noise_mask, callback=rocm_callback,
-            disable_pbar=is_video, seed=noise.seed
-        )
-        rocm_samples = rocm_samples.to(comfy.model_management.intermediate_device())
-        t3 = time_module.time()
-
-        mem_after_rocm = torch.cuda.memory_allocated(0) if torch.cuda.is_available() else 0
-        rocm_time = t3 - t2
-        rocm_mem = mem_after_rocm - mem_before_rocm
-
-        results["rocm"] = {
-            "time": rocm_time,
-            "mem_delta": rocm_mem,
-        }
-
-        if model_info["has_high_memory"]:
-            gentle_memory_cleanup()
-
-        print(f"  ROCm: {rocm_time:.2f}s, memory delta: {rocm_mem / 1024**2:.0f}MB", flush=True)
-
-        # ── Build report ──
-        time_speedup = (stock_time / rocm_time * 100) - 100 if rocm_time > 0 else 0
-        mem_diff = stock_mem - rocm_mem
-
-        report = (
-            f"Benchmark Results\n"
-            f"{'─' * 50}\n"
-            f"Stock:  {stock_time:.2f}s, {stock_mem / 1024**2:.0f}MB peak\n"
-            f"ROCm:   {rocm_time:.2f}s, {rocm_mem / 1024**2:.0f}MB peak\n"
-            f"Speed:  {'+' if time_speedup >= 0 else ''}{time_speedup:.1f}%\n"
-            f"Memory: {mem_diff / 1024**2:+.0f}MB delta\n"
-            f"Steps:  {total_steps}\n"
-            f"Model:  {model_info['model_type']} ({model_info['latent_channels']}ch, mem factor {model_info['memory_usage_factor']}x)\n"
-            f"GPU:    {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'}\n"
-            f"{'─' * 50}\n"
-        )
-
-        out = latent.copy()
-        out["samples"] = rocm_samples
-        return (out, report)

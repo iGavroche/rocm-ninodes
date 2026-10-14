@@ -9,11 +9,11 @@ import torch
 
 from ..constants import (
     MAX_TILE_SIZE,
-    GFX1151_TILE_SIZE_RANGE, GFX1151_BATCH_CAP, GFX1151_IS_APU,
-    GFX1100_TILE_SIZE_RANGE, GFX1100_BATCH_CAP, GFX1100_IS_APU,
-    GFX1030_TILE_SIZE_RANGE, GFX1030_BATCH_CAP, GFX1030_IS_APU,
-    CDNA_TILE_SIZE_RANGE, CDNA_BATCH_CAP, CDNA_IS_APU,
-    DEFAULT_AMD_TILE_SIZE_RANGE, DEFAULT_AMD_BATCH_CAP, DEFAULT_AMD_IS_APU,
+    GFX1151_TILE_SIZE_RANGE, GFX1151_IS_APU,
+    GFX1100_TILE_SIZE_RANGE, GFX1100_IS_APU,
+    GFX1030_TILE_SIZE_RANGE, GFX1030_IS_APU,
+    CDNA_TILE_SIZE_RANGE, CDNA_IS_APU,
+    DEFAULT_AMD_TILE_SIZE_RANGE, DEFAULT_AMD_IS_APU,
 )
 from .memory import detect_rocm_version
 
@@ -27,7 +27,6 @@ def detect_architecture():
             - family: "rdna3_5" | "rdna3" | "rdna2" | "cdna" | "generic_amd" | "cpu"
             - is_apu: bool (unified memory, e.g. Strix Halo)
             - tile_size_max: recommended upper tile bound
-            - batch_cap: max batch for tiled operations
             - preferred_precision: "fp16" | "bf16" | "fp32"
             - rocm_version: (major, minor, patch) tuple or None
             - is_rocm_7_14_plus: bool
@@ -37,7 +36,6 @@ def detect_architecture():
     if not torch.cuda.is_available():
         return {
             "arch_name": None, "family": "cpu", "is_apu": False,
-            "tile_size_max": 2048, "batch_cap": 4,
             "preferred_precision": "fp32",
             "rocm_version": rocm_ver,
             "is_rocm_7_14_plus": rocm_ver is not None and rocm_ver >= (7, 14, 0),
@@ -57,7 +55,6 @@ def detect_architecture():
         base.update({
             "arch_name": arch_name, "family": "rdna3_5", "is_apu": GFX1151_IS_APU,
             "tile_size_max": GFX1151_TILE_SIZE_RANGE[1],
-            "batch_cap": GFX1151_BATCH_CAP,
             "preferred_precision": "fp16",
         })
         return base
@@ -65,7 +62,6 @@ def detect_architecture():
         base.update({
             "arch_name": arch_name, "family": "rdna3", "is_apu": GFX1100_IS_APU,
             "tile_size_max": GFX1100_TILE_SIZE_RANGE[1],
-            "batch_cap": GFX1100_BATCH_CAP,
             "preferred_precision": "fp16",
         })
         return base
@@ -73,7 +69,6 @@ def detect_architecture():
         base.update({
             "arch_name": arch_name, "family": "rdna2", "is_apu": GFX1030_IS_APU,
             "tile_size_max": GFX1030_TILE_SIZE_RANGE[1],
-            "batch_cap": GFX1030_BATCH_CAP,
             "preferred_precision": "fp16",
         })
         return base
@@ -81,7 +76,6 @@ def detect_architecture():
         base.update({
             "arch_name": arch_name, "family": "cdna", "is_apu": CDNA_IS_APU,
             "tile_size_max": CDNA_TILE_SIZE_RANGE[1],
-            "batch_cap": CDNA_BATCH_CAP,
             "preferred_precision": "bf16",
         })
         return base
@@ -89,7 +83,6 @@ def detect_architecture():
         base.update({
             "arch_name": arch_name, "family": "generic_amd", "is_apu": DEFAULT_AMD_IS_APU,
             "tile_size_max": DEFAULT_AMD_TILE_SIZE_RANGE[1],
-            "batch_cap": DEFAULT_AMD_BATCH_CAP,
             "preferred_precision": "fp16",
         })
         return base
@@ -176,30 +169,6 @@ def detect_model_sampling_type(model) -> dict:
     return result
 
 
-def select_precision(precision_mode: str, is_quantized: bool, arch_info: dict) -> torch.dtype:
-    """Select optimal compute precision based on user setting, model type, and architecture.
-
-    For the sampler: simpler than VAE's version since there's no VAE model dtype to preserve.
-    """
-    if is_quantized:
-        return None
-
-    if precision_mode != "auto":
-        dtype_map = {
-            "fp32": torch.float32,
-            "fp16": torch.float16,
-            "bf16": torch.bfloat16,
-        }
-        return dtype_map[precision_mode]
-
-    if arch_info["family"] != "cpu":
-        pref = arch_info.get("preferred_precision", "fp16")
-        dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
-        return dtype_map.get(pref, torch.float16)
-
-    return None
-
-
 def _check_blas_prefer_hipblaslt(arch_info: dict):
     """Warn if matmuls are not routed through hipBLASLt on gfx1151.
 
@@ -226,20 +195,14 @@ def apply_rocm_backend_settings(arch_info: dict):
     if arch_info["family"] == "cpu":
         return
 
-    is_amd = arch_info["family"] != "cpu"
-    if not is_amd:
-        return
-
     # allow_fp16_accumulation:
     # - On ROCm < 7.14: disabled on rdna3_5 (gfx1151) — causes numerical drift
     #   / illegal memory access in bf16 flow-matching models (LTX, etc.)
     # - On ROCm 7.14+: re-enabled since AMD may have fixed the issue
-    is_rdna3_5 = arch_info.get("family") == "rdna3_5"
-    is_rocm_7_14_plus = arch_info.get("is_rocm_7_14_plus", False)
-
-    if not is_rdna3_5 or (is_rdna3_5 and is_rocm_7_14_plus):
+    is_rdna3_5 = arch_info["family"] == "rdna3_5"
+    if not is_rdna3_5 or arch_info["is_rocm_7_14_plus"]:
         torch.backends.cuda.matmul.allow_fp16_accumulation = True
-        if is_rdna3_5 and is_rocm_7_14_plus:
+        if is_rdna3_5:
             print(
                 f"  ROCm 7.14+ detected — re-enabling fp16 accumulation "
                 f"on rdna3_5 (was disabled on older ROCm due to numerical drift)"
@@ -252,7 +215,3 @@ def apply_rocm_backend_settings(arch_info: dict):
     if not has_hip:
         return
 
-    supported_attention = ["gfx90a", "gfx942", "gfx950", "gfx1100", "gfx1101", "gfx1150", "gfx1151"]
-    if arch_info.get("arch_name") and any(a in arch_info["arch_name"] for a in supported_attention):
-        if hasattr(torch.backends.cuda, 'sdpa_kernel'):
-            pass  # PyTorch SDPA is available; let it route to HIP SDPA internally

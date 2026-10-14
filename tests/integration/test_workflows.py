@@ -10,7 +10,7 @@ import json
 # Add the custom nodes directory to path
 sys.path.insert(0, '/home/nino/ComfyUI/custom_nodes/rocm_ninodes')
 
-from nodes import ROCmVAEDecodeInstrumented
+from rocm_nodes.core.vae import ROCmVAEDecode as ROCmVAEDecodeInstrumented
 
 class TestWorkflowIntegration:
     """Integration tests for ROCM workflows"""
@@ -29,9 +29,7 @@ class TestWorkflowIntegration:
             samples=flux_latent,
             tile_size=768,
             overlap=96,
-            use_rocm_optimizations=True,
-            precision_mode="auto",
-            batch_optimization=True
+            use_rocm_optimizations=True
         )
         
         assert isinstance(result, tuple)
@@ -75,8 +73,7 @@ class TestWorkflowIntegration:
             samples=high_res_latent,
             tile_size=1024,
             overlap=128,
-            use_rocm_optimizations=True,
-            adaptive_tiling=True
+            use_rocm_optimizations=True
         )
         
         assert isinstance(result, tuple)
@@ -97,8 +94,7 @@ class TestWorkflowIntegration:
             samples=batch_latent,
             tile_size=512,
             overlap=64,
-            use_rocm_optimizations=True,
-            batch_optimization=True
+            use_rocm_optimizations=True
         )
         
         assert isinstance(result, tuple)
@@ -120,32 +116,12 @@ class TestWorkflowIntegration:
             samples=memory_latent,
             tile_size=512,
             overlap=64,
-            use_rocm_optimizations=True,
-            adaptive_tiling=True
+            use_rocm_optimizations=True
         )
         
         assert isinstance(result, tuple)
         assert len(result) == 1
         assert isinstance(result[0], torch.Tensor)
-    
-    def test_precision_workflow_simulation(self, sample_vae):
-        """Test different precision modes in workflow context"""
-        node = ROCmVAEDecodeInstrumented()
-        
-        precision_modes = ["auto", "fp32", "fp16"]
-        for precision_mode in precision_modes:
-            result = node.decode(
-                vae=sample_vae,
-                samples={"samples": torch.randn(1, 4, 32, 32)},
-                tile_size=512,
-                overlap=64,
-                use_rocm_optimizations=True,
-                precision_mode=precision_mode
-            )
-            
-            assert isinstance(result, tuple)
-            assert len(result) == 1
-            assert isinstance(result[0], torch.Tensor)
     
     def test_workflow_consistency(self, sample_vae):
         """Test workflow consistency across multiple runs"""

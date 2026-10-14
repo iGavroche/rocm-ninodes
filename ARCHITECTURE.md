@@ -6,14 +6,14 @@
 - **Platform**: GMTek Evo-X2 Strix Halo
 - **GPU**: AMD gfx1151 (RDNA 3.5 architecture)
 - **Memory**: 128GB Unified RAM (shared between CPU and GPU)
-- **OS**: Manjaro Linux (kernel 6.17.1-1-MANJARO)
+- **OS**: Manjaro Linux (kernel 7.3.0-rc6)
 - **Shell**: Zsh (/usr/bin/zsh)
 
 ## Software Stack
 
 ### Core Dependencies
-- **ROCm**: 7.10.0a (latest development build)
-- **PyTorch**: 2.10.0a0+rocm7.10.0a20251011 (nightly build)
+- **ROCm**: 7.16 (HIP 7.16.26332)
+- **PyTorch**: 2.15.0a0+rocm10.1.0 (nightly build)
 - **Python**: 3.11+ (ComfyUI requirement)
 - **ComfyUI**: Latest main branch with custom optimizations
 
@@ -21,16 +21,15 @@
 
 #### ComfyUI Launch Flags
 ```bash
---use-pytorch-cross-attention    # Enable PyTorch cross-attention for better performance
---highvram                       # Optimize for high VRAM systems
---cache-none                     # Disable caching to prevent memory issues
+--use-flash-attention            # Flash attention backend (see Benchmarks.md: tradeoff is shape-dependent)
 ```
 
 #### Environment Variables
 ```bash
-# ROCm-specific optimizations
-TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # Enable experimental AOTRITON features
-PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True  # Enable expandable memory segments
+TORCH_ROCM_AOTRITON_ENABLE=1              # Enable AOTRITON
+FLASH_ATTENTION_TRITON_AMD_ENABLE=1       # flash-attn on ROCm runs the Triton-AMD kernels
+HSA_XNACK=1                               # Page migration on unified-memory APUs
+PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8
 
 # Optional debugging
 ROCM_NINODES_DEBUG=0  # Set to 1 to enable data capture for testing
@@ -141,13 +140,12 @@ The VAE decode node dynamically detects GPU architecture and adjusts settings:
 2. **ROCMOptimizedKSampler**: Basic sampling with ROCm tuning
 3. **ROCMOptimizedKSamplerAdvanced**: Advanced sampling with step control
 4. **ROCMSamplerCustomAdvanced**: V3 drop-in for SamplerCustomAdvanced with ROCm optimizations and enhanced progress tracking
-5. **ROCMSamplerCustomAdvancedBenchmark**: A/B benchmark comparing stock vs ROCm-optimized custom sampler
-6. **ROCMOptimizedVAEDecode**: VAE decode with video support
-7. **ROCMOptimizedVAEDecodeTiled**: Tiled VAE decode for large images
-8. **ROCMVAEPerformanceMonitor**: VAE performance metrics
-9. **ROCMSamplerPerformanceMonitor**: Sampler performance metrics
-10. **ROCMFluxBenchmark**: Flux workflow benchmarking
-11. **ROCMMemoryOptimizer**: Memory management helper
+5. **ROCMOptimizedVAEDecode**: VAE decode with video support
+6. **ROCMOptimizedVAEDecodeTiled**: Tiled VAE decode for large images
+7. **ROCMVAEPerformanceMonitor**: VAE performance metrics
+8. **ROCMSamplerPerformanceMonitor**: Sampler performance metrics
+9. **ROCMFluxBenchmark**: Flux workflow benchmarking
+10. **ROCMMemoryOptimizer**: Memory management helper
 
 ### Data Flow
 ```

@@ -24,6 +24,7 @@ import comfy.model_management
 import comfy.lora
 import folder_paths
 from ..utils.memory import simple_memory_cleanup
+from ..utils.architecture import detect_architecture, apply_rocm_backend_settings
 
 # Try to import required libraries - provide helpful errors if not available
 try:
@@ -1087,28 +1088,14 @@ class ROCmGGUFLoader:
                 "custom_operations": ops
             }
             
-            # ROCm optimizations: Configure backend settings before loading
-            is_amd = False
-            is_gfx1151 = False
-            try:
-                if torch.cuda.is_available():
-                    device_name = torch.cuda.get_device_name(0)
-                    is_amd = "AMD" in device_name or "Radeon" in device_name
-                    if is_amd:
-                        # GENERAL ROCM OPTIMIZATIONS (apply to all AMD GPUs)
-                        torch.backends.cuda.matmul.allow_tf32 = False  # TF32 not supported on AMD
-                        torch.backends.cuda.matmul.allow_fp16_accumulation = True  # Better performance on AMD
-                        
-                        # Detect gfx1151 for architecture-specific optimizations
-                        try:
-                            arch = torch.cuda.get_device_properties(0).gcnArchName
-                            if 'gfx1151' in arch:
-                                is_gfx1151 = True
-                                print("[CONFIG] gfx1151 architecture detected")
-                        except:
-                            pass
-            except Exception:
-                pass
+            # ROCm backend settings (architecture-aware: fp16 accumulation is
+            # skipped on rdna3_5 below ROCm 7.14, where it causes drift)
+            arch_info = detect_architecture()
+            is_amd = arch_info["family"] != "cpu"
+            if is_amd:
+                apply_rocm_backend_settings(arch_info)
+                if arch_info["arch_name"] and 'gfx1151' in arch_info["arch_name"]:
+                    print("[CONFIG] gfx1151 architecture detected")
             
             # CRITICAL: Use load_diffusion_model_state_dict() instead of load_diffusion_model()
             # This matches City96's UnetLoaderGGUF.load_unet() exactly

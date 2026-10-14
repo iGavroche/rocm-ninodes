@@ -48,7 +48,6 @@ from ..utils.debug import (
     capture_timing,
     capture_memory_usage,
 )
-from ..utils.quantization import detect_model_quantization
 from ..utils.architecture import detect_architecture, apply_rocm_backend_settings
 from ..constants import (
     DEFAULT_TILE_SIZE, DEFAULT_TILE_OVERLAP,
@@ -106,33 +105,6 @@ def _detect_vae_type(vae) -> str:
     return "standard"
 
 
-def _select_precision(precision_mode: str, vae_type: str, vae, is_quantized: bool, vae_model_dtype, arch_info: dict) -> torch.dtype:
-    """Select optimal compute precision based on user setting, VAE type, and architecture."""
-    if is_quantized:
-        return vae_model_dtype
-
-    if precision_mode != "auto":
-        dtype_map = {
-            "fp32": torch.float32,
-            "fp16": torch.float16,
-            "bf16": torch.bfloat16,
-        }
-        return dtype_map[precision_mode]
-
-    if is_quantized:
-        return vae_model_dtype
-
-    if vae_model_dtype is not None:
-        return vae_model_dtype
-
-    if arch_info["family"] != "cpu":
-        pref = arch_info.get("preferred_precision", "fp16")
-        dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
-        return dtype_map.get(pref, torch.float16)
-
-    return vae.vae_dtype
-
-
 class ROCmVAEDecode:
     """
     ROCM-optimized VAE Decode node specifically tuned for gfx1151 architecture.
@@ -144,8 +116,6 @@ class ROCmVAEDecode:
     - Intelligent tiled vs direct decode decision
     - Optimized tile sizes for gfx1151
     """
-
-    _vae_model_cache = {}
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -171,14 +141,6 @@ class ROCmVAEDecode:
                     "default": True,
                     "tooltip": "Enable ROCm-specific optimizations for AMD GPUs"
                 }),
-                "precision_mode": (["auto", "fp32", "fp16", "bf16"], {
-                    "default": "auto",
-                    "tooltip": "Precision mode. 'auto' selects optimal for your GPU."
-                }),
-                "batch_optimization": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable batch processing optimizations"
-                })
             },
             "optional": {
                 "compatibility_mode": ("BOOLEAN", {
@@ -217,11 +179,10 @@ class ROCmVAEDecode:
     DESCRIPTION = "ROCM-optimized VAE Decode for AMD GPUs"
 
     def decode(self, vae, samples, tile_size=768, overlap=96, use_rocm_optimizations=True,
-               precision_mode="auto", batch_optimization=True, compatibility_mode=False,
-               enable_temporal_tiling="auto", temporal_chunk_size=16,
-               temporal_overlap=2, last_frame_fix=False):
+               compatibility_mode=False, enable_temporal_tiling="auto",
+               temporal_chunk_size=16, temporal_overlap=2, last_frame_fix=False):
         """
-        Optimized VAE decode for ROCm/AMD GPUs with video support and quantized model compatibility
+        Optimized VAE decode for ROCm/AMD GPUs with video support.
         """
         start_time = time.time()
         log_debug(f"ROCmVAEDecode.decode started with samples shape: {samples['samples'].shape}")
@@ -244,23 +205,10 @@ class ROCmVAEDecode:
         vae_type = _detect_vae_type(vae)
         log_debug(f"Detected VAE type: {vae_type} on arch: {arch_info['family']}")
 
-        # ── Quantized model detection ───────────────────────────────────────
-        is_quantized_model = False
-        vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
-        if vae_model_dtype is not None:
-            quantized_dtypes = [torch.float8_e4m3fn, torch.float8_e5m2, torch.int8, torch.int4]
-            if vae_model_dtype in quantized_dtypes:
-                is_quantized_model = True
-                print(f"🔍 Detected quantized VAE model (dtype: {vae_model_dtype})")
-            elif hasattr(vae_model_dtype, '__name__') and 'int' in str(vae_model_dtype):
-                is_quantized_model = True
-                print(f"🔍 Detected quantized VAE model (dtype: {vae_model_dtype})")
-
         # Compatibility mode
-        if compatibility_mode or is_quantized_model:
+        if compatibility_mode:
             print("🛡️ Compatibility mode enabled - using stock ComfyUI behavior")
             use_rocm_optimizations = False
-            batch_optimization = False
 
         # ═══════════════════════════════════════════════════════════════════
         # PIXEL-SPACE VAE PASSTHROUGH (z-image, z-image-turbo, ChromaRadiance)
@@ -280,7 +228,7 @@ class ROCmVAEDecode:
 
         # ── ROCm backend settings ───────────────────────────────────────────
         if use_rocm_optimizations and is_amd:
-            torch.backends.cuda.matmul.allow_fp16_accumulation = True
+            apply_rocm_backend_settings(arch_info)
 
         # ── Debug capture ───────────────────────────────────────────────────
         if DEBUG_MODE:
@@ -289,8 +237,6 @@ class ROCmVAEDecode:
                 'tile_size': tile_size,
                 'overlap': overlap,
                 'use_rocm_optimizations': use_rocm_optimizations,
-                'precision_mode': precision_mode,
-                'batch_optimization': batch_optimization,
                 'vae_type': vae_type,
                 'arch_family': arch_info['family'],
             })
@@ -337,35 +283,10 @@ class ROCmVAEDecode:
             else:
                 tiling_enabled = (enable_temporal_tiling == "enable")
 
-            # ── Convert model + input to efficient dtype for video ───────────
-            video_dtype = None
-            if use_rocm_optimizations and not is_quantized_model:
-                video_dtype = _select_precision(
-                    precision_mode, vae_type, vae, is_quantized_model,
-                    vae_model_dtype, arch_info
-                )
-                working_dtypes = getattr(vae, 'working_dtypes', None)
-                if working_dtypes and video_dtype not in working_dtypes:
-                    video_dtype = working_dtypes[0]
-
-                current_dtype = getattr(vae.first_stage_model, 'dtype', None)
-                if current_dtype is not None and current_dtype != video_dtype:
-                    # Causal video VAEs (LTX, WAN) need full precision for
-                    # temporal state propagation — keep model weights native
-                    if vae_type in ("ltxv_vae", "wan_vae") and video_dtype != current_dtype:
-                        print(f"🔄 Causal VAE detected — keeping model in {current_dtype}, "
-                              f"input in {video_dtype}", flush=True)
-                    else:
-                        try:
-                            vae.first_stage_model = vae.first_stage_model.to(video_dtype)
-                            print(f"💾 Converted VAE model from {current_dtype} to {video_dtype}", flush=True)
-                        except Exception as e:
-                            print(f"⚠️ Model dtype conversion skipped: {e}", flush=True)
-
-                samples_processed = samples_tensor.to(device).to(video_dtype)
-                print(f"🎯 Video input: {video_dtype}")
-            else:
-                samples_processed = samples_tensor
+            # vae.decode() casts the latent to vae.vae_dtype on the VAE device
+            # itself, so the input only needs to be on that device here.
+            samples_processed = samples_tensor.to(device)
+            video_dtype = vae.vae_dtype
 
             # ── Load VAE model + offload diffusion model ─────────────────────
             # The video path must explicitly request model loading so that
@@ -400,7 +321,7 @@ class ROCmVAEDecode:
                 print(f"🧩 Temporal tiling enabled: chunk_size={temporal_chunk_size}, overlap={temporal_overlap}")
                 result = self._decode_video_temporal_tiled(
                     vae, samples_processed, vae_type, temporal_chunk_size,
-                    temporal_overlap, last_frame_fix, device, video_dtype or torch.float32
+                    temporal_overlap, last_frame_fix, device, video_dtype
                 )
             else:
                 # ── Direct decode path — keep LTX chunked_io on so the model
@@ -412,18 +333,7 @@ class ROCmVAEDecode:
                     with torch.no_grad():
                         result = vae.decode(samples_processed)
                 except Exception as e:
-                    if use_rocm_optimizations and video_dtype is not None and video_dtype != torch.float32:
-                        print(f"⚠️ Video decode failed with {video_dtype}: {e}")
-                        print(f"🔄 Retrying in fp32...")
-                        torch.cuda.empty_cache()
-                        try:
-                            vae.first_stage_model = vae.first_stage_model.to(torch.float32)
-                        except Exception:
-                            pass
-                        samples_retry = samples_tensor.to(device).to(torch.float32)
-                        with torch.no_grad():
-                            result = vae.decode(samples_retry)
-                    elif vae_type in ("ltxv_vae",) and out_frames > 200:
+                    if vae_type in ("ltxv_vae",) and out_frames > 200:
                         raise RuntimeError(
                             f"Video VAE decode failed for {out_frames} frames at "
                             f"{out_h}x{out_w}. Try enabling temporal tiling "
@@ -463,17 +373,7 @@ class ROCmVAEDecode:
         # IMAGE PATH (4D tensor: B, C, H, W)
         # ═══════════════════════════════════════════════════════════════════
 
-        # ── Precision selection ──────────────────────────────────────────────
-        optimal_dtype = _select_precision(
-            precision_mode, vae_type, vae, is_quantized_model, vae_model_dtype, arch_info
-        )
-
-        # ── Weight dtype mismatch fix ────────────────────────────────────────
-        if not is_quantized_model:
-            if vae_model_dtype == torch.bfloat16 and optimal_dtype == torch.float32:
-                logging.warning("VAE model has BFloat16 weights but input is Float32 — converting")
-                vae.first_stage_model = vae.first_stage_model.to(torch.float32)
-                optimal_dtype = torch.float32
+        optimal_dtype = vae.vae_dtype
 
         # ── ROCm memory cleanup ─────────────────────────────────────────────
         if use_rocm_optimizations and is_amd:
@@ -492,7 +392,7 @@ class ROCmVAEDecode:
         num_elements = 1
         for dim in samples_tensor.shape:
             num_elements *= dim
-        bytes_per_element = 4 if optimal_dtype in (torch.float32,) else 2
+        bytes_per_element = 4 if optimal_dtype == torch.float32 else 2
         estimated_memory = num_elements * bytes_per_element * 2
 
         estimated_memory_gb = estimated_memory / (1024**3)
@@ -517,28 +417,9 @@ class ROCmVAEDecode:
             else:
                 raise e
 
-        # ── Batch number (capped for APU) ────────────────────────────────────
         free_memory = model_management.get_free_memory(device)
-        if batch_optimization and is_amd:
-            batch_number = max(1, int(free_memory / (estimated_memory * 1.2)))
-        else:
-            batch_number = max(1, int(free_memory / estimated_memory))
-        if arch_info.get("batch_cap") is not None:
-            batch_number = min(batch_number, arch_info["batch_cap"])
-
         # ── Prepare samples ──────────────────────────────────────────────────
         samples_processed = samples_tensor.to(device).to(optimal_dtype)
-
-        # ── Model dtype cache ────────────────────────────────────────────────
-        vae_id = id(vae.first_stage_model)
-        cache_key = f"{vae_id}_{optimal_dtype}"
-        if cache_key not in self._vae_model_cache:
-            if not is_quantized_model:
-                current_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
-                if current_model_dtype is not None and current_model_dtype != optimal_dtype:
-                    logging.info(f"Converting VAE model from {current_model_dtype} to {optimal_dtype}")
-                    vae.first_stage_model = vae.first_stage_model.to(optimal_dtype)
-            self._vae_model_cache[cache_key] = True
 
         # ── Decide direct vs tiled ──────────────────────────────────────────
         image_size = samples_tensor.shape[2] * samples_tensor.shape[3]
@@ -561,7 +442,7 @@ class ROCmVAEDecode:
 
         if use_tiled:
             pixel_samples = self._decode_tiled_optimized(
-                vae, samples_tensor, tile_size, overlap, optimal_dtype, batch_number
+                vae, samples_tensor, tile_size, overlap
             )
 
         if len(pixel_samples.shape) == 5:
@@ -574,46 +455,22 @@ class ROCmVAEDecode:
 
         return (pixel_samples,)
 
-    def _decode_tiled_optimized(self, vae, samples, tile_size, overlap, dtype, batch_number):
+    def _decode_tiled_optimized(self, vae, samples, tile_size, overlap):
         """Optimized tiled decoding for ROCm with high-compression VAE support"""
         compression = vae.spacial_compression_decode()
 
         tile_latent = max(MIN_LATENT_TILE_SIZE, tile_size // compression)
         overlap_latent = max(MIN_LATENT_OVERLAP, overlap // compression)
 
-        is_quantized_model = False
-        vae_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
-        if vae_model_dtype is not None:
-            quantized_dtypes = [torch.float8_e4m3fn, torch.float8_e5m2, torch.int8, torch.int4]
-            if vae_model_dtype in quantized_dtypes:
-                is_quantized_model = True
-            elif hasattr(vae_model_dtype, '__name__') and 'int' in str(vae_model_dtype):
-                is_quantized_model = True
-
-        vae_id = id(vae.first_stage_model)
-        cache_key = f"{vae_id}_{dtype}"
-        if cache_key not in self._vae_model_cache:
-            if not is_quantized_model:
-                current_model_dtype = getattr(vae.first_stage_model, 'dtype', None)
-                if current_model_dtype is not None and current_model_dtype != dtype:
-                    logging.info(f"Tiled decode: Converting VAE model from {current_model_dtype} to {dtype}")
-                    vae.first_stage_model = vae.first_stage_model.to(dtype)
-            self._vae_model_cache[cache_key] = True
-
+        # vae.decode() casts each tile to vae.vae_dtype on the VAE device.
         def decode_fn(samples_tile):
             model_management.throw_exception_if_processing_interrupted()
-            samples_tile = samples_tile.to(vae.device).to(dtype)
             result = vae.decode(samples_tile)
             if isinstance(result, tuple):
                 result = result[0]
             return result
 
-        device = vae.device if hasattr(vae, 'device') else (
-            samples.device if hasattr(samples, 'device') else (
-                torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-            )
-        )
-
+        device = vae.device
         result = comfy.utils.tiled_scale(
             samples,
             decode_fn,
@@ -990,34 +847,22 @@ class ROCmVAEPerformanceMonitor:
             tips.append("• Use tile_size 1024-2048 for reasonable tile sizes in latent space")
             tips.append("• Process full videos at once — causal decode chain")
             tips.append("• For videos >200 frames, enable temporal tiling (chunk_size=16, overlap=2)")
-            if arch_info["is_apu"]:
-                tips.append("• APU mode: batch capped to 8 to prevent over-allocation")
             settings.append(f"Recommended tile_size: {min(2048, test_resolution * 2)}")
             settings.append(f"Recommended overlap: {min(128, test_resolution // 4)}")
-            settings.append(f"Recommended precision: fp16")
-            settings.append(f"Recommended batch_optimization: True")
             settings.append(f"Temporal tiling available: enable_temporal_tiling=True, chunk_size=16")
-            if arch_info["is_apu"]:
-                settings.append("APU batch cap: 8")
         elif vae_type == "wan_vae":
             tips.append("• WAN VAE detected (causal temporal decoding)")
             tips.append("• Process full videos at once to avoid frame jitter")
             tips.append("• fp16 available for this VAE type")
             settings.append(f"Recommended tile_size: {min(1024, test_resolution)}")
             settings.append(f"Recommended overlap: {min(128, test_resolution // 8)}")
-            settings.append(f"Recommended precision: {arch_info.get('preferred_precision', 'fp16')}")
-            settings.append(f"Recommended batch_optimization: True")
         else:
             tips.append(f"• Standard VAE ({vae.latent_channels} channels)")
             tips.append(f"• {arch_info['preferred_precision'].upper()} recommended for {arch_info['family']}")
             tips.append(f"• Tile size {arch_info['tile_size_max'] // 2}-{arch_info['tile_size_max']} works well")
             tips.append("• Enable ROCm optimizations for best results")
-            if arch_info["is_apu"]:
-                tips.append("• APU mode: batch capped to 8")
             settings.append(f"Recommended tile_size: {min(arch_info['tile_size_max'], test_resolution)}")
             settings.append(f"Recommended overlap: {min(128, test_resolution // 8)}")
-            settings.append(f"Recommended precision: {arch_info.get('preferred_precision', 'fp16')}")
-            settings.append(f"Recommended batch_optimization: True")
 
         if arch_info["is_apu"]:
             tips.append("• Unified memory detected: disable smart-memory for best results")

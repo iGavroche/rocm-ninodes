@@ -137,43 +137,28 @@ Test Case: Batch Processing (256x256, batch=4)
 ## Architecture-Specific Optimizations
 
 ### gfx1151 Optimizations
-- **Preferred Precision**: fp32 for small tensors, mixed for large tensors
-- **Optimal Tile Sizes**: 768-1024 for most workloads
-- **Memory Alignment**: 16-byte alignment for optimal performance
-- **Conservative Batching**: Reduced memory modifier for stability
+- **Preferred Precision**: fp16 (`preferred_precision` reported by `ROCmVAEPerformanceMonitor` / `ROCmSamplerPerformanceMonitor`)
+- **Optimal Tile Sizes**: 768-1024 for most workloads (`tile_size_max` 2048)
+- **Temporal tiling**: `temporal_chunk_size` capped to 8 to avoid HIP allocator fragmentation in the unified pool
+- **fp16 matmul accumulation**: enabled only on ROCm ≥ 7.14; on older ROCm it caused numerical drift and `hipErrorIllegalAddress` on bf16 flow-matching models
+- **TF32**: left at the ROCm default; forcing it off caused a ~2x slowdown on LTX 2.3
 
-### ROCm 6.4+ Optimizations
-- **Disabled TF32**: Prevents precision loss
-- **Enabled fp16 Accumulation**: Where beneficial
-- **Flash Attention**: Optimized attention patterns
-- **Memory Prefetching**: GPU memory optimization
+### Attention backends
+`ROCmSamplerCustomAdvanced.attention_backend` selects the dense attention implementation per sampling call. Measured on gfx1151 with real DiT shapes (bf16):
+
+| shape (seq len) | PyTorch SDPA | comfy_kitchen_int8 | flash |
+|---|---|---|---|
+| flux 1024 (4608) | 12.60 ms | 12.09 ms · 1.04x | 10.26 ms · 1.23x |
+| qwen-image (8704) | 45.87 ms | 42.09 ms · 1.09x | 45.24 ms · 1.01x |
+| wan 480p (16384) | 277.90 ms | 237.97 ms · 1.17x | 264.57 ms · 1.05x |
+| ltx 720p (32768) | 726.07 ms | 685.49 ms · 1.06x | 924.39 ms · 0.79x |
+| cross-attn (1024, hd=64) | 0.31 ms | 0.43 ms · 0.72x | 0.43 ms · 0.73x |
+
+No backend wins everywhere: INT8 helps long self-attention and loses on short cross-attention, and flash regresses badly at 32k tokens. End-to-end on flux-2-klein-4b-fp8 at 1024² (seq 4096, 6 steps, order-rotated, median of 3) the backends land within 6% of each other — auto 57.99 s, pytorch 55.66 s, comfy_kitchen_int8 55.42 s, flash 54.94 s — which is the same size as the run-to-run spread (up to 9%), so attention is not the bottleneck at that shape. Treat the selector as a per-model tuning knob, not a default change.
 
 ## Performance Monitoring
 
-### Real-time Metrics
-- Execution time tracking
-- Memory usage monitoring
-- Cache hit rate analysis
-- Precision optimization effectiveness
-- Batch processing efficiency
-
-### Performance Statistics Available
-```python
-# Available performance metrics
-{
-    'average_execution_time': float,
-    'total_executions': int,
-    'cache_hit_rate': float,
-    'memory_efficiency': float,
-    'precision_efficiency': float,
-    'batch_efficiency': float,
-    'prefetch_efficiency': float,
-    'total_memory_saves': int,
-    'total_precision_optimizations': int,
-    'total_batch_optimizations': int,
-    'total_prefetch_hits': int
-}
-```
+`ROCmVAEPerformanceMonitor` and `ROCmSamplerPerformanceMonitor` are analysis-only: they return `DEVICE_INFO`, `PERFORMANCE_TIPS` and `OPTIMAL_SETTINGS` text blocks derived from the live VAE/model and `detect_architecture()`. They keep no counters between executions. For measured timings use `ROCmFluxBenchmark`.
 
 ## Validation Results
 
@@ -199,18 +184,15 @@ Test Case: Batch Processing (256x256, batch=4)
 
 ### Optimal Settings for gfx1151
 ```python
-# Recommended Phase 2 settings
+# ROCmVAEDecode
 {
-    "precision_mode": "auto",           # Adaptive precision selection
-    "batch_optimization": True,         # Enable batch processing
-    "memory_prefetching": True,         # Enable memory prefetching
-    "adaptive_precision": True,         # Enable adaptive precision
-    "tensor_layout_optimization": True, # Enable layout optimization
-    "advanced_caching": True,           # Enable advanced caching
-    "tile_size": 768,                  # Optimal for gfx1151
-    "overlap": 96                      # Optimal overlap
+    "tile_size": 768,                   # Optimal for gfx1151
+    "overlap": 96,                      # Optimal overlap
+    "use_rocm_optimizations": True,
+    "temporal_chunk_size": 8,           # Capped to 8 on rdna3_5
 }
 ```
+Decode dtype is always the VAE's own `vae_dtype`; there is no precision input to choose.
 
 ### Performance Tuning Tips
 1. **Small Images (≤512px)**: Use fp32 precision for best quality

@@ -6,14 +6,13 @@ Source: `rocm_nodes/core/sampler.py`
 
 ## What it does
 
-Analysis-only node: it inspects the model and the GPU and returns three text blocks. No sampling happens — `test_steps` is accepted but never used. It reports architecture family, APU mode, model device and dtype, GPU name, detected sampling type (`flow` / `eps` / `v_prediction` / `unknown`), latent channels and the model's memory usage factor, then derives tips and recommended settings from those.
+Analysis-only node: it inspects the model and the GPU and returns three text blocks. No sampling happens. It reports architecture family, APU mode, model device and dtype, GPU name, detected sampling type (`flow` / `eps` / `v_prediction` / `unknown`), latent channels and the model's memory usage factor, then derives tips and recommended settings from those.
 
 ## Inputs
 
 | Name | Type | Default | Range / options | Notes |
 |---|---|---|---|---|
 | `model` | MODEL | — | required | Read via `detect_model_sampling_type(model)` plus `model.model_dtype()` and `model_management.get_torch_device()`. |
-| `test_steps` | INT | `20` | 1 … 100 | Unused by `analyze()`; documentation-only. |
 
 `FUNCTION = analyze`. `RETURN_TYPES = ("STRING", "STRING", "STRING")`.
 
@@ -45,4 +44,4 @@ ROCmCheckpointLoader.MODEL -> ROCmSamplerPerformanceMonitor
 
 - Nothing visible: STRING outputs need a text display node.
 - `Model info unavailable` means `model.model_dtype()` or `get_torch_device()` raised; the model-type lines below it are still produced.
-- These are recommendations, not measurements. For measured numbers use `ROCmSamplerCustomAdvancedBenchmark` or `ROCmFluxBenchmark`.
+- These are recommendations, not measurements. For measured numbers use `ROCmFluxBenchmark`.

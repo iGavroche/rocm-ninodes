@@ -17,8 +17,7 @@ All nodes shipped by ROCm Ninodes (`rocm_nodes/nodes.py` `NODE_CLASS_MAPPINGS` p
 |---|---|---|---|---|
 | `ROCmKSampler` | ROCm KSampler | ROCm Ninodes/Sampling | Stock KSampler plus ROCm backend tuning, high-memory cleanup and timed progress. | [ROCmKSampler.md](ROCmKSampler.md) |
 | `ROCmKSamplerAdvanced` | ROCm KSampler Advanced | ROCm Ninodes/Sampling | Stock KSampler (Advanced) with step ranges, plus the same ROCm layer. | [ROCmKSamplerAdvanced.md](ROCmKSamplerAdvanced.md) |
-| `ROCmSamplerCustomAdvanced` | ROCmSamplerCustomAdvanced | ROCm Ninodes/Sampling | Drop-in `SamplerCustomAdvanced` with memory management, VRAM precheck, flash-attention override and `x0` output. | [ROCmSamplerCustomAdvanced.md](ROCmSamplerCustomAdvanced.md) |
-| `ROCmSamplerCustomAdvancedBenchmark` | ROCmSamplerCustomAdvanced Benchmark | ROCm Ninodes/Sampling | Runs stock then ROCm sampling on identical inputs and reports time/memory deltas. | [ROCmSamplerCustomAdvancedBenchmark.md](ROCmSamplerCustomAdvancedBenchmark.md) |
+| `ROCmSamplerCustomAdvanced` | ROCmSamplerCustomAdvanced | ROCm Ninodes/Sampling | Drop-in `SamplerCustomAdvanced` with memory management, VRAM precheck, `attention_backend` override and `x0` output. | [ROCmSamplerCustomAdvanced.md](ROCmSamplerCustomAdvanced.md) |
 | `ROCmSamplerPerformanceMonitor` | ROCm Sampler Performance Monitor | ROCm Ninodes/Sampling | Reports model type, latent format and architecture; recommends samplers/schedulers. No measurement. | [ROCmSamplerPerformanceMonitor.md](ROCmSamplerPerformanceMonitor.md) |
 
 ## VAE
@@ -70,13 +69,12 @@ Old workflow keys still registered in `NODE_CLASS_MAPPINGS` (all resolve to the 
 | `ROCMOptimizedKSamplerAdvanced` | `ROCmKSamplerAdvanced` |
 | `ROCMSamplerCustomAdvanced` | `ROCmSamplerCustomAdvanced` |
 | `ROCMSamplerPerformanceMonitor` | `ROCmSamplerPerformanceMonitor` |
-| `ROCMSamplerCustomAdvancedBenchmark` | `ROCmSamplerCustomAdvancedBenchmark` |
 | `ROCMFluxBenchmark` | `ROCmFluxBenchmark` |
 | `ROCMMemoryOptimizer` | `ROCmMemoryOptimizer` |
 | `ROCMLoRALoader` | `ROCmLoRALoader` |
 
 Notes:
 
-- `ROCmSamplerCustomAdvanced` and `ROCmSamplerCustomAdvancedBenchmark` are also given display names inside their `io.Schema` (`ROCm SamplerCustomAdvanced`, and the schema description for the benchmark); the values in the tables above are the `NODE_DISPLAY_NAME_MAPPINGS` entries.
+- `ROCmSamplerCustomAdvanced` is also given a display name inside its `io.Schema` (`ROCm SamplerCustomAdvanced`); the value in the table above is the `NODE_DISPLAY_NAME_MAPPINGS` entry.
 - `ROCmH3EasyCache` is registered only when the installed ComfyUI provides `comfy_extras.nodes_easycache`; on older ComfyUI the import is skipped with a console message and the other nodes still load.
 - `VedaSparseAttention` is registered only when `veda_comfy` imports; the package ships inside `custom_nodes/rocm-ninodes/veda_comfy/`.

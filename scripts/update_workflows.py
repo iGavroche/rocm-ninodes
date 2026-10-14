@@ -26,7 +26,6 @@ MAPPINGS = {
     "ROCMOptimizedKSamplerAdvanced":    "ROCmKSamplerAdvanced",
     "ROCMSamplerCustomAdvanced":        "ROCmSamplerCustomAdvanced",
     "ROCMSamplerPerformanceMonitor":    "ROCmSamplerPerformanceMonitor",
-    "ROCMSamplerCustomAdvancedBenchmark":"ROCmSamplerCustomAdvancedBenchmark",
     "ROCMFluxBenchmark":                "ROCmFluxBenchmark",
     "ROCMMemoryOptimizer":              "ROCmMemoryOptimizer",
     "ROCMLoRALoader":                   "ROCmLoRALoader",

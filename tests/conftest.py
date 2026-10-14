@@ -21,10 +21,12 @@ comfy.utils = types.ModuleType('comfy.utils')
 comfy.sd = types.ModuleType('comfy.sd')
 comfy.samplers = types.ModuleType('comfy.samplers')
 comfy.sample = types.ModuleType('comfy.sample')
+comfy.audio = types.ModuleType('comfy.audio')
 
 # Mock comfy.cli_args and latent_preview so rocm_nodes.core.vae can be imported
 comfy.cli_args = types.ModuleType('comfy.cli_args')
-comfy.cli_args.args = type('Args', (), {'preview_method': None, 'base_directory': None})()
+comfy.cli_args.args = type('Args', (), {'preview_method': None, 'base_directory': None,
+                                         'max_upload_size': 32, 'disable_assets': True})()
 comfy.cli_args.LatentPreviewMethod = type('LatentPreviewMethod', (), {})
 latent_preview = types.ModuleType('latent_preview')
 latent_preview.get_previewer = lambda *args, **kwargs: None
@@ -55,6 +57,7 @@ comfy.ldm.lightricks.vae.causal_video_autoencoder.VideoVAE = MockVideoVAE
 
 # Add modules to sys.modules BEFORE any imports
 sys.modules['comfy'] = comfy
+sys.modules['comfy.audio'] = comfy.audio
 sys.modules['comfy.model_management'] = comfy.model_management
 sys.modules['comfy.utils'] = comfy.utils
 sys.modules['comfy.sd'] = comfy.sd
@@ -70,12 +73,24 @@ sys.modules['comfy.ldm.lightricks'] = comfy.ldm.lightricks
 sys.modules['comfy.ldm.lightricks.vae'] = comfy.ldm.lightricks.vae
 sys.modules['comfy.ldm.lightricks.vae.causal_video_autoencoder'] = comfy.ldm.lightricks.vae.causal_video_autoencoder
 
+comfy.model_patcher = types.ModuleType('comfy.model_patcher')
+comfy.model_patcher.create_model_options_clone = lambda opts: {k: (dict(v) if isinstance(v, dict) else v)
+                                                               for k, v in opts.items()}
+sys.modules['comfy.model_patcher'] = comfy.model_patcher
+
+comfy.ldm.modules = types.ModuleType('comfy.ldm.modules')
+comfy.ldm.modules.attention = types.ModuleType('comfy.ldm.modules.attention')
+comfy.ldm.modules.attention.get_attention_function = lambda name, default=None: (lambda *a, **k: None)
+sys.modules['comfy.ldm.modules'] = comfy.ldm.modules
+sys.modules['comfy.ldm.modules.attention'] = comfy.ldm.modules.attention
+
 # Mock functions
 comfy.model_management.load_models_gpu = lambda *args, **kwargs: None
 comfy.sd.load_checkpoint_guess_config = lambda *args, **kwargs: (Mock(), Mock(), Mock())
 comfy.model_management.get_free_memory = lambda *args, **kwargs: 16 * 1024**3
 comfy.model_management.minimum_inference_memory = lambda *args, **kwargs: 8 * 1024**3
 comfy.model_management.extra_reserved_memory = lambda *args, **kwargs: 0
+comfy.model_management.throw_exception_if_processing_interrupted = lambda: None
 comfy.utils.tiled_scale = lambda *args, **kwargs: (torch.randn(1, 3, 512, 512), 512, 512)
 
 class MockProgressBar:
@@ -91,6 +106,9 @@ comfy.utils.ProgressBar = MockProgressBar
 
 # Need to mock folder_paths for constants import
 folder_paths = types.ModuleType('folder_paths')
+folder_paths.get_full_path_or_raise = lambda folder, name: os.path.join('/fake', folder, name)
+folder_paths.get_filename_list = lambda folder: []
+folder_paths.get_folder_paths = lambda folder: ['/fake/' + folder]
 sys.modules['folder_paths'] = folder_paths
 
 
