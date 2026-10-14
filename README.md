@@ -35,6 +35,10 @@ After running:
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
+## 🚀 What's new in v2.3.23
+
+- **Seed-VC singing: the performance transfers, not just the notes.** Two new post-process knobs: `dynamics_transfer` re-applies the source's loudness shaping (crescendos, soft/belt contrast) that the diffusion flattens, and `air_transfer` matches the converted vocal's band balance (500 Hz … 16 kHz) to the source's, undoing the dullness copied from the reference. Both default to 1.0, F0 model only; 0 keeps the model's own output. Paired same-seed A/B: envelope std 20.8 → 21.2 (source 22.7), 8–16 kHz level −34.9 → −24.2 dB (source −18.6), no pitch movement.
+
 ## 🚀 What's new in v2.3.22
 
 - **Per-model attention backend** (`ROCmSamplerCustomAdvanced`): new advanced `attention_backend` input (`auto` / `pytorch` / `comfy_kitchen_int8` / `flash`) picks the dense attention implementation for that one sampling call. The override goes on a clone of the guider's model options, so the shared model and every other node using it keep ComfyUI's default. Unavailable backends fall back to PyTorch attention with a warning.

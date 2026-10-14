@@ -47,6 +47,8 @@ With `separate_source=True` the node also needs the `audio-separator` package an
 | `auto_f0_adjust` | BOOLEAN | `True` | — | Median-match source pitch to the reference. F0 model only. |
 | `pitch_shift` | INT | `0` | -24 … 24 | Extra semitone shift on voiced frames. F0 model only. |
 | `vibrato_transfer` | FLOAT | `1.0` | 0.0 … 1.0 | Copy the source's vibrato and note glides onto the converted vocal (time-warp by the f0-residual ratio, ±6% clamp, duration preserved). 0 keeps the raw model output. F0 model only. |
+| `dynamics_transfer` | FLOAT | `1.0` | 0.0 … 1.0 | Re-apply the source's loudness envelope (crescendos, soft/belt contrast) that the diffusion flattens. Zero-mean log-envelope gain, ±12 dB clamp, ~250 ms window; overall level is kept. 0 keeps the model's own dynamics. F0 model only. |
+| `air_transfer` | FLOAT | `1.0` | 0.0 … 1.0 | Match the converted vocal's band energies (500 Hz … 16 kHz, five bands, ±12 dB clamp) to the source's, undoing the HF rolloff copied from the reference. 0 keeps the model's own tone. F0 model only. |
 | `precision` | combo | `fp16` | `fp16`, `fp32` | fp16 runs BigVGAN at half precision — ~6x faster vocoding, ~2x faster end to end on gfx1151. Falls back to fp32 on non-CUDA devices. |
 | `unload_model` | BOOLEAN | `False` | — | Frees the model set after the run; reloading costs ~30 s. |
 | `separate_source` | BOOLEAN | `False` | — | Split the source into vocal + instrumental first (mel-band roformer karaoke). Converts the vocal; the instrumental appears on `accompaniment`. Adds ~13 s per 30 s of audio. |
@@ -68,6 +70,7 @@ With `separate_source=True` the node also needs the `audio-separator` package an
 - `vibrato_transfer` post-process: the diffusion reproduces note centers (global f0 corr ~0.995) but its micro-pitch wobble is only ~0.84 correlated with the source's; the warp raises that to ~0.88–0.93 with no duration or note-center change. Costs one extra RMVPE pass (~1 s per 35 s).
 - The `vibrato_transfer` warp ramps in over 100 ms after each detected note onset: the residual skeleton straddles note transitions, so without the ramp the warp transferred the source's attack transient as fast jitter at the note hit (attack wobble speed 31.4/s → 28.5/s with the ramp, matching the no-warp baseline).
 - Fast note runs (>2.5 note onsets/s, fading out by 5/s) are stepped in the conditioning f0 (median-filtered contour) and the `vibrato_transfer` warp fades there: the model sings exactly the contour it is given, so a glissando source would otherwise come out as fast glides. Inter-onset CV in fast runs 0.47 → 0.32; note centers unchanged.
+- `dynamics_transfer` / `air_transfer` post-processes run after the vibrato warp: envelope matching first (time-domain gain), then the five-band spectral match, then RMS restore to the pre-processing level and a peak limit at 1.0. The spectral match moves no pitch (raw f0 corr 0.999 off-vs-on); the small micro-pitch-correlation dip it causes is RMVPE estimation noise from the changed spectrum, not pitch movement.
 - Checkpoint keys that the built model does not contain (`estimator.input_pos`, the opposite stage's f0/wavenet layers) are skipped silently; a shape clash on a module the model does build still prints a warning.
 - Vendored code drops the `einops`, `munch`, and `audiotools` dependencies of upstream Seed-VC.
 

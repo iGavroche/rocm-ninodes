@@ -188,6 +188,68 @@ def _apply_micro_pitch(wave: np.ndarray, ratio: np.ndarray, frame_len: int) -> n
     return map_coordinates(wave, [phase], order=3, mode="nearest").astype(np.float32)
 
 
+def _match_dynamics(wave: np.ndarray, source: np.ndarray, strength: float,
+                    frame: int = 2205, smooth: int = 5) -> np.ndarray:
+    """Re-apply the source's loudness envelope to the converted vocal.
+
+    The diffusion flattens the performance; the gain curve is the zero-mean
+    log-envelope difference, so the model's overall level is kept and only
+    the phrase shaping is restored.
+    """
+    n = min(wave.size, source.size) // frame * frame
+    if n < 4 * frame:
+        return wave
+
+    def log_env(x):
+        rms = np.sqrt((x[:n].reshape(-1, frame) ** 2).mean(1) + 1e-8)
+        return uniform_filter1d(20 * np.log10(rms + 1e-4), smooth)
+
+    gain_db = log_env(source) - log_env(wave)
+    gain_db -= gain_db.mean()
+    gain_db = np.clip(gain_db, -12.0, 12.0)
+    gain = np.interp(np.arange(wave.size), np.arange(gain_db.size) * frame + frame / 2,
+                     10 ** (strength * gain_db / 20)).astype(np.float32)
+    return wave * gain
+
+
+def _match_air(wave: np.ndarray, source: np.ndarray, strength: float, sr: int,
+               n_fft: int = 2048) -> np.ndarray:
+    """Match the converted vocal's band energies to the source's with a smooth
+    five-band EQ (500 Hz … 16 kHz, interpolated in log-frequency).
+
+    The vocoder copies the reference's HF rolloff; this restores the source's
+    spectral balance (air, consonants) without touching formant detail.
+    Per-band correction is clamped to +/-12 dB.
+    """
+    n = min(wave.size, source.size)
+    edges = [500, 1000, 2000, 4000, 8000, 16000]
+
+    def band_log_power(x):
+        X = np.abs(np.fft.rfft(x[:n] * np.hanning(n))) ** 2
+        f = np.fft.rfftfreq(n, 1 / sr)
+        return np.array([10 * np.log10(X[(f >= lo) & (f < hi)].mean() + 1e-9)
+                         for lo, hi in zip(edges[:-1], edges[1:])])
+
+    gain_db = np.clip(strength * (band_log_power(source) - band_log_power(wave)), -12.0, 12.0)
+    if np.abs(gain_db).max() < 0.5:
+        return wave
+
+    centers = np.sqrt(np.array(edges[:-1]) * np.array(edges[1:]))
+    hop = n_fft // 2
+    win = np.hanning(n_fft)
+    nseg = 1 + max(0, (n - n_fft) // hop)
+    segs = np.lib.stride_tricks.as_strided(
+        wave, (nseg, n_fft), (wave.strides[0] * hop, wave.strides[0])).copy()
+    segs *= win
+    S = np.fft.rfft(segs, axis=1)
+    f = np.fft.rfftfreq(n_fft, 1 / sr)
+    S *= 10 ** (np.interp(np.log10(np.clip(f, centers[0], centers[-1])),
+                          np.log10(centers), gain_db) / 20)
+    out = np.zeros(n + n_fft)
+    for i in range(nseg):
+        out[i * hop:i * hop + n_fft] += np.fft.irfft(S[i]) * win
+    return out[:n].astype(np.float32)
+
 FAST_RUN_FADE_HZ = (2.5, 5.0)
 ATTACK_RAMP_FRAMES = 10
 
@@ -351,7 +413,7 @@ class SeedVCWrapper:
     def convert(self, source_wave, source_sr, ref_wave, ref_sr,
                 diffusion_steps=30, length_adjust=1.0, inference_cfg_rate=0.7,
                 f0_condition=False, auto_f0_adjust=True, pitch_shift=0, prompt_length=10.0,
-                vibrato_transfer=1.0, progress_cb=None):
+                vibrato_transfer=1.0, dynamics_transfer=1.0, air_transfer=1.0, progress_cb=None):
         """Convert source timbre to the reference voice. Returns (float32 numpy, sr).
 
         progress_cb(done_frames, total_frames) is called once per chunk window.
@@ -469,6 +531,17 @@ class SeedVCWrapper:
             ratio = _micro_pitch_ratio(F0_alt, out_f0, vibrato_transfer)
             if ratio is not None:
                 wave = _apply_micro_pitch(wave, ratio, sr // 100)
+        if f0_condition and (dynamics_transfer > 0 or air_transfer > 0):
+            rms0 = float(np.sqrt(np.mean(wave ** 2)) + 1e-8)
+            src_np = source_audio[0].float().cpu().numpy()
+            if dynamics_transfer > 0:
+                wave = _match_dynamics(wave, src_np, dynamics_transfer)
+            if air_transfer > 0:
+                wave = _match_air(wave, src_np, air_transfer, sr)
+            wave *= rms0 / float(np.sqrt(np.mean(wave ** 2)) + 1e-8)
+            peak = float(np.abs(wave).max())
+            if peak > 1.0:
+                wave /= peak
         return wave, sr
 
 
@@ -505,6 +578,10 @@ class ROCmSeedVoiceConversion:
                                         "tooltip": "Extra semitone shift on the source pitch. F0 model only."}),
                 "vibrato_transfer": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
                                                "tooltip": "Copy the source's vibrato and note glides onto the converted vocal. 0 keeps the raw model output; lower for a more literal pitch. F0 model only."}),
+                "dynamics_transfer": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                                                 "tooltip": "Restore the source's loudness shaping (crescendos, soft/belt contrast) that the model flattens. 0 keeps the model's own dynamics. F0 model only."}),
+                "air_transfer": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
+                                            "tooltip": "Match the converted vocal's high-frequency balance to the source's, undoing the reference's dullness. 0 keeps the model's own tone. F0 model only."}),
                 "precision": (["fp16", "fp32"], {"default": "fp16",
                                                  "tooltip": "fp16 runs the BigVGAN vocoder at half precision; ~6x faster on gfx1151."}),
                 "unload_model": ("BOOLEAN", {"default": False,
@@ -522,7 +599,8 @@ class ROCmSeedVoiceConversion:
 
     def convert(self, source_audio, reference_audio, steps, speed, inference_cfg_rate,
                 f0_condition, auto_f0_adjust, pitch_shift, precision, unload_model, separate_source,
-                prompt_length=10.0, vibrato_transfer=1.0):
+                prompt_length=10.0, vibrato_transfer=1.0,
+                dynamics_transfer=1.0, air_transfer=1.0):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         half_vocoder = precision == "fp16" and device.type == "cuda"
 
@@ -556,6 +634,7 @@ class ROCmSeedVoiceConversion:
                 inference_cfg_rate=inference_cfg_rate, f0_condition=f0_condition,
                 auto_f0_adjust=auto_f0_adjust, pitch_shift=pitch_shift,
                 prompt_length=prompt_length, vibrato_transfer=vibrato_transfer,
+                dynamics_transfer=dynamics_transfer, air_transfer=air_transfer,
                 progress_cb=progress,
             )
         finally:

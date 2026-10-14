@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.23] - 2026-10-14
+
+### Added
+- **`ROCmSeedVoiceConversion`: `dynamics_transfer` input (default 1.0)**: re-applies the source's loudness envelope (crescendos, soft/belt contrast) that the diffusion flattens. Zero-mean log-envelope gain with a ±12 dB clamp on a ~250 ms window, so the model's overall level is kept and only the phrase shaping is restored. Paired same-seed A/B on a 35 s singing clip: envelope std 20.8 → 21.2 (source 22.7), micro-pitch correlation 0.853 → 0.883.
+- **`ROCmSeedVoiceConversion`: `air_transfer` input (default 1.0)**: matches the converted vocal's band energies (500 Hz … 16 kHz, five bands, ±12 dB clamp, interpolated in log-frequency) to the source's, undoing the HF rolloff the vocoder copies from the reference. Paired A/B: 8–16 kHz level −34.9 → −24.2 dB (source −18.6) with no pitch movement (raw f0 corr 0.999).
+
+Both post-processes run after the vibrato warp, only in F0 (singing) mode, restore the pre-processing RMS, and peak-limit to 1.0. Set either to 0 to keep the model's own output.
+
 ## [2.3.22] - 2026-10-14
 
 ### Added
