@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.3.25] - 2026-10-15
+
+### Added
+- **Veda R2VA predictor support**: `VedaSparseAttention` loads `minimax_h3_r2va_veda_preview_fp8.safetensors` ([Veda-Sparse/MiniMax-H3-R2VA-Veda-Preview](https://huggingface.co/Veda-Sparse/MiniMax-H3-R2VA-Veda-Preview)), which records per-stream tile budgets (`target_budget_*` / `ref_budget_*`) instead of a single `keep_ratio`; the old loader rejected it as "incomplete metadata". Synced `veda_comfy`'s bundle/settings layer with upstream Veda-on-ComfyUI's canonical budget handling (`generated`/`reference` budgets, both metadata schemas). The R2VA predictor is registered in the `predictor` combo and the shipped R2VA template now fetches and uses it.
+- **`"trained"` sparsity keyword**: `generated_sparsity` / `reference_sparsity` accept `trained`, which takes the budget the chosen predictor declares (`90%` for T2VA, `32` tiles for R2VA).
+
+### Changed
+- **`generated_sparsity` / `reference_sparsity` default `90%` → `32` tiles** (upstream's `DEFAULT_BUDGET`): an absolute tile count does not move with the video size, so two-stage workflows keep a stable budget on their small first pass instead of collapsing to ~5 tiles and flickering. **Backward compatible**: saved workflows keep their stored values — a workflow that recorded `90%` still runs at 90%; only new node instances get the new default. `"90%"` and every previous input grammar still parse unchanged.
+
 ## [2.3.24] - 2026-10-14
 
 ### Fixed

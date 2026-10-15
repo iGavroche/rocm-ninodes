@@ -19,6 +19,7 @@ import torch
 from safetensors import safe_open
 
 from . import plans as veda_plans
+from . import selection
 
 FORMAT = 'miowtion-veda-predictor-v1'
 _SCALE_SUFFIX = '.__scale'
@@ -41,7 +42,10 @@ class PredictorBundle:
         num_layers: Predictor layers (= DiT blocks it scores).
         num_heads: Heads per layer.
         head_dim: Head dimension D.
-        keep_ratio: Keep ratio the predictor was trained with.
+        generated: Budget the predictor was trained with on the generated
+            video, and `reference` the one for the reference spans. Older
+            bundles state a single `keep_ratio` for both; newer ones state
+            a kind and a value per stream (R2VA trains at 32 tiles).
         plans: Tile plans the predictor was trained against.
         proj_q: Per layer [H, 3D, D] bf16 host tensors.
         proj_k: Per layer [H, 3D, D] bf16 host tensors.
@@ -52,7 +56,8 @@ class PredictorBundle:
     num_layers: int
     num_heads: int
     head_dim: int
-    keep_ratio: float
+    generated: selection.Budget
+    reference: selection.Budget
     plans: veda_plans.PlanTable
     proj_q: list[torch.Tensor]
     proj_k: list[torch.Tensor]
@@ -60,10 +65,48 @@ class PredictorBundle:
 
     def describe(self) -> str:
         step = self.metadata.get('step', '?')
+        trained = describe_budget(self.generated)
+        if self.reference != self.generated:
+            trained += f' / reference {describe_budget(self.reference)}'
         return (f'{os.path.basename(self.path)} · {self.num_layers} layers x '
-                f'{self.num_heads} heads · trained keep '
-                f'{self.keep_ratio:g} · step {step} · plans: '
-                f'{self.plans.summary()}')
+                f'{self.num_heads} heads · trained {trained} · step {step} '
+                f'· plans: {self.plans.summary()}')
+
+
+def describe_budget(budget: selection.Budget) -> str:
+    """How a trained budget reads on the node, in the same words the
+    sparsity inputs take, so the user can type it back."""
+    if budget.tiles is not None:
+        return f'{budget.tiles:g} tiles'
+    return f'{100.0 * (1.0 - budget.ratio):g}% sparse'
+
+
+def _budget(metadata: dict, prefix: str,
+            fallback: selection.Budget | None) -> selection.Budget:
+    """The budget a bundle declares for one stream.
+
+    Bundles before the R2VA release state one `keep_ratio` for both
+    streams; newer ones state `<prefix>_budget_kind` ('ratio' or 'tiles')
+    and `<prefix>_budget_value`.
+
+    Raises:
+        BundleError: If the pair is present but unreadable.
+    """
+    kind = metadata.get(f'{prefix}_budget_kind')
+    if kind is None:
+        if fallback is None:
+            raise KeyError(f'{prefix}_budget_kind')
+        return fallback
+    try:
+        value = float(metadata[f'{prefix}_budget_value'])
+        if kind == 'tiles':
+            return selection.Budget(tiles=value)
+        if kind == 'ratio':
+            return selection.Budget(ratio=value)
+    except (KeyError, ValueError) as error:
+        raise BundleError(f'{prefix}_budget_value: {error}') from error
+    raise BundleError(f'{prefix}_budget_kind: unknown budget kind {kind!r}; '
+                      "expected 'ratio' or 'tiles'")
 
 
 def read_metadata(path: str) -> dict[str, str]:
@@ -97,7 +140,11 @@ def load_bundle(path: str) -> PredictorBundle:
         num_layers = int(metadata['num_layers'])
         num_heads = int(metadata['num_heads'])
         head_dim = int(metadata['head_dim'])
-        keep_ratio = float(metadata['keep_ratio'])
+        keep = metadata.get('keep_ratio')
+        default = (selection.Budget(ratio=float(keep))
+                   if keep is not None else None)
+        generated = _budget(metadata, 'target', default)
+        reference = _budget(metadata, 'ref', generated)
         plan_json = json.loads(metadata['plans'])
     except (KeyError, ValueError) as error:
         raise BundleError(f'{os.path.basename(path)}: incomplete metadata '
@@ -137,5 +184,6 @@ def load_bundle(path: str) -> PredictorBundle:
                               f'predictor is {num_layers}x{num_heads}')
     return PredictorBundle(path=path, num_layers=num_layers,
                            num_heads=num_heads, head_dim=head_dim,
-                           keep_ratio=keep_ratio, plans=table, proj_q=proj_q,
+                           generated=generated, reference=reference,
+                           plans=table, proj_q=proj_q,
                            proj_k=proj_k, metadata=metadata)

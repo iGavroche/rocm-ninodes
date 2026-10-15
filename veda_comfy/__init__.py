@@ -9,4 +9,4 @@ Layout:
   nodes.py, comfy_patch.py, status.py  the ComfyUI side
 """
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'

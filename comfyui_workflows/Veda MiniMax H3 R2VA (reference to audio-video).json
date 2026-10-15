@@ -1424,16 +1424,16 @@
     "Node name for S&R": "VedaSparseAttention",
     "models": [
      {
-      "name": "minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors",
-      "url": "https://huggingface.co/Veda-Sparse/Minimax-H3-T2VA-Veda-8NFE-600Step-Preview/resolve/9a1fd3a41b4a754a7886e64e82edbddf599fd1bd/minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors",
+      "name": "minimax_h3_r2va_veda_preview_fp8.safetensors",
+      "url": "https://huggingface.co/Veda-Sparse/Minimax-H3-R2VA-Veda-Preview/resolve/1598b407905b7c0af85aa0c13acdfa6f01ff2982/minimax_h3_r2va_veda_preview_fp8.safetensors",
       "directory": "veda"
      }
     ]
    },
    "widgets_values": [
-    "minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors",
-    "90%",
-    "90%",
+    "minimax_h3_r2va_veda_preview_fp8.safetensors",
+    "32",
+    "32",
     "",
     "",
     false

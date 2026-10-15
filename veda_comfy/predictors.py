@@ -64,6 +64,13 @@ KNOWN_PREDICTORS = {
             sha256='2a8d8845c5342756a2781e8e69563940e4bb573c9a40ebb534915ff8fd'
                    '76573a',
             size=275415648),
+        KnownPredictor(
+            filename='minimax_h3_r2va_veda_preview_fp8.safetensors',
+            repo='Veda-Sparse/Minimax-H3-R2VA-Veda-Preview',
+            revision='1598b407905b7c0af85aa0c13acdfa6f01ff2982',
+            sha256='23edace948693772be33d5cc945d302d2b037a29bd44bd57071bfbdd8b'
+                   '02517d',
+            size=275415752),
     ]
 }
 

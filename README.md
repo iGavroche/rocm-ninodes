@@ -35,6 +35,12 @@ After running:
 
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
+
+## 🚀 What's new in v2.3.25
+
+- **Veda R2VA predictor support**: `VedaSparseAttention` now loads the new `minimax_h3_r2va_veda_preview_fp8.safetensors` predictor ([download](https://huggingface.co/Veda-Sparse/MiniMax-H3-R2VA-Veda-Preview)), which records per-stream tile budgets instead of a single keep ratio — the old loader rejected it as "incomplete metadata". Both predictors now appear in the `predictor` combo and the shipped R2VA template uses the R2VA predictor. Synced with upstream Veda-on-ComfyUI's canonical budget handling.
+- **`generated_sparsity` / `reference_sparsity` default is now `32` tiles** (was `90%`): an absolute tile count does not move with the video size, which is what two-stage workflows need (a percentage collapses on their small first pass and flickers). `"trained"` takes whatever the chosen predictor was trained at (`90%` for T2VA, `32` for R2VA); `"90%"` and plain tile counts keep working exactly as before. **Existing workflows are untouched** — saved widget values always win over defaults, so a workflow that stored `90%` still runs at 90%.
+
 ## 🚀 What's new in v2.3.24
 
 - **Fixed the choppy/robotic buzz in `air_transfer`**: the spectral match's STFT used a symmetric Hann window at 50% hop, which does not satisfy overlap-add reconstruction — it stamped a ±6 dB ripple at 21.5 Hz onto every converted note. The window is now the COLA-correct sqrt-periodic Hann; measured amplitude modulation of the output is now identical to not running the EQ at all, and the EQ no longer perturbs pitch at all (paired same-seed micro-pitch correlation identical on/off).
@@ -414,9 +420,9 @@ Our optimization approach focuses on three key areas:
 
 - **Works with**: MiniMax H3 (T2VA / FL2VA / R2VA), including quantized checkpoints and the PDMD 4-step LoRA.
 
-- **Predictor file**: `models/veda/minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors` ([download](https://huggingface.co/Veda-Sparse/Minimax-H3-T2VA-Veda-8NFE-600Step-Preview)) — opening a Veda template lets ComfyUI's missing-model dialog fetch it, or place it by hand. Upstream project: https://github.com/veda-sparse/Veda-on-ComfyUI · https://veda-sparse.github.io/
+- **Predictor files** in `models/veda`: T2VA `minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors` ([download](https://huggingface.co/Veda-Sparse/Minimax-H3-T2VA-Veda-8NFE-600Step-Preview)) and R2VA `minimax_h3_r2va_veda_preview_fp8.safetensors` ([download](https://huggingface.co/Veda-Sparse/Minimax-H3-R2VA-Veda-Preview)) — opening a Veda template lets ComfyUI's missing-model dialog fetch the right one, or place it by hand. Upstream project: https://github.com/veda-sparse/Veda-on-ComfyUI · https://veda-sparse.github.io/
 
-- **Inputs**: `generated_sparsity` / `reference_sparsity` (default `90%`: skip 90% of key tiles; lower is closer to full attention), `full_attention_layers` / `full_attention_steps` (e.g. keep the first step dense), `verbose` for per-run diagnostics on the node.
+- **Inputs**: `generated_sparsity` / `reference_sparsity` (default `32` key tiles per query tile; `"trained"` takes the predictor's own budget, `"90%"` skips 90% of key tiles; lower is closer to full attention), `full_attention_layers` / `full_attention_steps` (e.g. keep the first step dense), `verbose` for per-run diagnostics on the node.
 
 - **Self-reporting**: the node shows live status on itself — backend, tile plan, and how much attention it actually computed (e.g. "26.8% of full attention, 73.2% skipped").
 

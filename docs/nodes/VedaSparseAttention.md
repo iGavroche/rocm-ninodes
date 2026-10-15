@@ -11,7 +11,7 @@ NODE_CLASS_MAPPINGS['VedaSparseAttention'] = VedaSparseAttention
 NODE_DISPLAY_NAME_MAPPINGS['VedaSparseAttention'] = 'Veda Sparse Attention (MiniMax H3)'
 ```
 
-`veda_comfy` is **not** installed in `/home/nino/ComfyUI/.venv314/lib/python3.14/site-packages/` — the package lives inside this custom-node directory (version `0.3.0` in `veda_comfy/__init__.py`), so everything below is read from that local source. If the import fails, the console prints `Veda sparse attention unavailable: <error>` and the node is simply absent.
+`veda_comfy` is **not** installed in `/home/nino/ComfyUI/.venv314/lib/python3.14/site-packages/` — the package lives inside this custom-node directory (version `0.3.1` in `veda_comfy/__init__.py`), so everything below is read from that local source. If the import fails, the console prints `Veda sparse attention unavailable: <error>` and the node is simply absent.
 
 ## What it does
 
@@ -22,9 +22,9 @@ Installs learned block-sparse attention for MiniMax-H3. A small trained predicto
 | Name | Type | Default | Range / options | Notes |
 |---|---|---|---|---|
 | `model` | MODEL | — | required | Must wrap a `MiniMaxH3Model` diffusion model; otherwise a bilingual `ValueError` naming the actual class. |
-| `predictor` | combo | `predictors.DEFAULT_PREDICTOR` = `minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors` | files in `models/veda` (`.safetensors` only) plus the known released bundles | Bundles are cached in-process keyed by `(mtime, size)`, and the cache holds one bundle at a time (~0.5 GB host memory). A missing file raises with the Hugging Face URL and target folder; the node never downloads. |
-| `generated_sparsity` | STRING (advanced) | `90%` | `"NN%"` (0 ≤ NN < 100) or a positive integer | Sparsity of the generated video's attention. `"24"` instead keeps exactly 24 key tiles of 128 tokens per query tile. `100%` or higher is rejected. |
-| `reference_sparsity` | STRING (advanced) | `90%` | same grammar | Same budget for references: first/last frames, guide frames, reference images and videos. `"0%"` keeps full attention to and from them. |
+| `predictor` | combo | `predictors.DEFAULT_PREDICTOR` = `minimax_h3_t2va_veda_8nfe_600step_preview_fp8.safetensors` | files in `models/veda` (`.safetensors` only) plus the known released bundles (T2VA and R2VA previews) | Bundles are cached in-process keyed by `(mtime, size)`, and the cache holds one bundle at a time (~0.5 GB host memory). A missing file raises with the Hugging Face URL and target folder; the node never downloads. |
+| `generated_sparsity` | STRING (advanced) | `32` | `"NN%"` (0 ≤ NN < 100), a positive integer, or `"trained"` | Key tiles of 128 tokens each query tile keeps. A whole number keeps that many whatever the video size (what two-stage workflows need; a percentage collapses on their small first pass). `"trained"` takes the budget the chosen predictor declares: `90%` for T2VA, `32` tiles for R2VA. `100%` or higher is rejected. |
+| `reference_sparsity` | STRING (advanced) | `32` | same grammar | Same budget for references: first/last frames, guide frames, reference images and videos. `"0%"` keeps full attention to and from them. |
 | `full_attention_layers` | STRING (advanced) | `""` | 0-based indices and ranges, e.g. `0, 1, 47-49` | DiT blocks that keep full attention. Empty = all sparse. Indices ≥ the model's block count raise, naming the valid `0..N-1` range. Separators: ASCII/full-width commas, semicolons, spaces; dashes `- ~ – —`. |
 | `full_attention_steps` | STRING (advanced) | `""` | same grammar | 0-based sampling steps that keep full attention (e.g. `0` for the first step). Empty = all sparse. |
 | `verbose` | BOOLEAN (advanced) | `False` | — | Timing and diagnostics on the node, per-backend availability list, predictor description, and which attention forward the sparse layers use. |
@@ -63,4 +63,4 @@ For MiniMax H3 audio-video, `ROCmH3EasyCache` also sits on the MODEL wire; the s
 - Status line `... ; using full attention` means no backend resolved for the device (missing Triton, failed self-test). On CUDA the node suggests `pip install triton` (`triton-windows` on Windows).
 - Warning that ComfyUI's own "Model Sparse Attention" node is also applied: on H3 it replaces the attention blocks, so Veda would not run — remove one of the two.
 - `full_attention_layers: this model has blocks 0-N; <x> do not exist` — index out of range.
-- Sparsity strings must be `"NN%"` (< 100) or a positive integer; anything else raises with the accepted grammar.
+- Sparsity strings must be `"trained"`, `"NN%"` (< 100), or a positive integer; anything else raises with the accepted grammar.

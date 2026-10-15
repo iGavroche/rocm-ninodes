@@ -10,6 +10,7 @@ from veda_comfy import settings
 from veda_comfy.backends import base
 from reference_backend import ReferenceBackend
 from veda_comfy.core import reference
+from veda_comfy.core import selection
 
 
 @pytest.mark.parametrize('text,want', [
@@ -28,6 +29,15 @@ def test_parse_sparsity(text, ratio, tiles):
     assert budget.tiles == tiles
     if ratio is not None:
         assert budget.ratio == pytest.approx(ratio)
+
+
+def test_trained_takes_the_predictor_budget():
+    trained = selection.Budget(tiles=32.0)
+    assert settings.parse_sparsity('trained', 'x', trained) == trained
+    assert settings.parse_sparsity(' TRAINED ', 'x', trained) == trained
+    # A predictor that declares no budget cannot answer 'trained'.
+    with pytest.raises(ValueError, match='generated_sparsity'):
+        settings.parse_sparsity('trained', 'generated_sparsity')
 
 
 @pytest.mark.parametrize('text', ['100%', '0', '0.9', 'ninety', '', '-5%'])
