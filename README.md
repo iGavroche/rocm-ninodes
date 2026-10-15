@@ -36,6 +36,10 @@ After running:
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
 
+## 🚀 What's new in v2.3.26
+
+- **No more duplicate "ROCm VAE Decode" in the node search**: the legacy `ROCMOptimizedVAEDecodeV2Phase3` alias showed up with the same display name as the canonical node, so the palette listed it twice. All legacy `ROCMOptimized*` / `ROCM*` names are now marked deprecated: old workflows still load them, but only the canonical `ROCm*` nodes appear in the search (enable "Show deprecated nodes" in ComfyUI settings to see the old names again).
+
 ## 🚀 What's new in v2.3.25
 
 - **Veda R2VA predictor support**: `VedaSparseAttention` now loads the new `minimax_h3_r2va_veda_preview_fp8.safetensors` predictor ([download](https://huggingface.co/Veda-Sparse/MiniMax-H3-R2VA-Veda-Preview)), which records per-stream tile budgets instead of a single keep ratio — the old loader rejected it as "incomplete metadata". Both predictors now appear in the `predictor` combo and the shipped R2VA template uses the R2VA predictor. Synced with upstream Veda-on-ComfyUI's canonical budget handling.

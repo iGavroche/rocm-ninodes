@@ -90,9 +90,9 @@
       "adaptive_optimization": true,
       "performance_monitoring": true
     },
-    "class_type": "ROCMOptimizedVAEDecodeV2Phase3",
+    "class_type": "ROCmVAEDecode",
     "_meta": {
-      "title": "ROCM Optimized VAE Decode (Phase 3) - Video"
+      "title": "ROCm VAE Decode - Video"
     }
   },
   "7": {

@@ -58,11 +58,31 @@ except ImportError as e:
     ROCmSeedVoiceConversion = None
     _HAS_SEEDVC = False
 
+# Legacy v1 names (ROCMOptimized*) are kept so workflows saved with the old
+# naming still load. Each alias gets its own subclass flagged DEPRECATED: the
+# node search then only offers the canonical ROCm* names, while old workflows
+# keep resolving the alias to the same implementation.
+def _legacy_alias(cls):
+    return type(cls.__name__ + "Legacy", (cls,), {"DEPRECATED": True})
+
+_LEGACY_ALIASES = {
+    "ROCMOptimizedCheckpointLoader": ROCmCheckpointLoader,
+    "ROCMOptimizedVAEDecode": ROCmVAEDecode,
+    "ROCMOptimizedVAEDecodeV2Phase3": ROCmVAEDecode,
+    "ROCMOptimizedVAEDecodeTiled": ROCmVAEDecodeTiled,
+    "ROCMVAEPerformanceMonitor": ROCmVAEPerformanceMonitor,
+    "ROCMOptimizedKSampler": ROCmKSampler,
+    "ROCMOptimizedKSamplerAdvanced": ROCmKSamplerAdvanced,
+    "ROCMSamplerPerformanceMonitor": ROCmSamplerPerformanceMonitor,
+    "ROCMSamplerCustomAdvanced": ROCmSamplerCustomAdvanced,
+    "ROCMFluxBenchmark": ROCmFluxBenchmark,
+    "ROCMMemoryOptimizer": ROCmMemoryOptimizer,
+    "ROCMLoRALoader": ROCmLoRALoader,
+}
+
 # Define node class mappings for ComfyUI.
-# Old keys (ROCMOptimized*) are kept as backward-compatible aliases so that
-# existing workflows saved with the old naming still load correctly.
 NODE_CLASS_MAPPINGS = {
-    # --- New canonical names (ROCm prefix) ---
+    # --- Canonical names (ROCm prefix) ---
     "ROCmCheckpointLoader": ROCmCheckpointLoader,
     "ROCmDiffusionLoader": ROCmDiffusionLoader,
     "ROCmGGUFLoader": ROCmGGUFLoader,
@@ -80,19 +100,8 @@ NODE_CLASS_MAPPINGS = {
     **({"ROCmH3EasyCache": ROCmH3EasyCache} if _HAS_H3_EASYCACHE else {}),
     **({"ROCmSeedVoiceConversion": ROCmSeedVoiceConversion} if _HAS_SEEDVC else {}),
 
-    # --- Legacy aliases (backward compat) ---
-    "ROCMOptimizedCheckpointLoader": ROCmCheckpointLoader,
-    "ROCMOptimizedVAEDecode": ROCmVAEDecode,
-    "ROCMOptimizedVAEDecodeV2Phase3": ROCmVAEDecode,
-    "ROCMOptimizedVAEDecodeTiled": ROCmVAEDecodeTiled,
-    "ROCMVAEPerformanceMonitor": ROCmVAEPerformanceMonitor,
-    "ROCMOptimizedKSampler": ROCmKSampler,
-    "ROCMOptimizedKSamplerAdvanced": ROCmKSamplerAdvanced,
-    "ROCMSamplerPerformanceMonitor": ROCmSamplerPerformanceMonitor,
-    "ROCMSamplerCustomAdvanced": ROCmSamplerCustomAdvanced,
-    "ROCMFluxBenchmark": ROCmFluxBenchmark,
-    "ROCMMemoryOptimizer": ROCmMemoryOptimizer,
-    "ROCMLoRALoader": ROCmLoRALoader,
+    # --- Legacy aliases (deprecated, hidden from node search) ---
+    **{name: _legacy_alias(cls) for name, cls in _LEGACY_ALIASES.items()},
 }
 
 # Define display name mappings for ComfyUI

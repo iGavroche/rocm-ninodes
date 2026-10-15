@@ -1,5 +1,11 @@
 # Changelog
 
+
+## [2.3.26] - 2026-10-15
+
+### Fixed
+- **Duplicate "ROCm VAE Decode" entries in the node search**: the legacy `ROCMOptimizedVAEDecodeV2Phase3` alias shared the canonical class and its display name, so the palette listed the same node twice (and all 12 legacy `ROCMOptimized*` / `ROCM*` aliases were searchable under their raw class names). Each legacy name now resolves through its own `DEPRECATED` subclass: old workflows still load unchanged, but the node search only offers the canonical `ROCm*` names (deprecated nodes are hidden unless "Show deprecated nodes" is enabled).
+
 ## [2.3.25] - 2026-10-15
 
 ### Added

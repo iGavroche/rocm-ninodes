@@ -91,9 +91,9 @@
       "tensor_layout_optimization": true,
       "advanced_caching": true
     },
-    "class_type": "ROCMOptimizedVAEDecodeV2Phase3",
+    "class_type": "ROCmVAEDecode",
     "_meta": {
-      "title": "ROCM Optimized VAE Decode (Phase 3) - Batch"
+      "title": "ROCm VAE Decode - Batch"
     }
   },
   "7": {

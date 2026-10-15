@@ -86,9 +86,9 @@
         2
       ]
     },
-    "class_type": "ROCMOptimizedVAEDecodeV2Phase3",
+    "class_type": "ROCmVAEDecode",
     "_meta": {
-      "title": "ROCM Optimized VAE Decode (Phase 3)"
+      "title": "ROCm VAE Decode"
     }
   },
   "7": {
