@@ -32,7 +32,7 @@ All nodes shipped by ROCm Ninodes (`rocm_nodes/nodes.py` `NODE_CLASS_MAPPINGS` p
 
 | Class | Display name | Category | Purpose | Doc |
 |---|---|---|---|---|
-| `ROCmSeedVoiceConversion` | ROCm Seed Voice Conversion | 🎛 ROCm/audio | Seed-VC zero-shot voice conversion (speech 22 kHz / singing 44 kHz) with an fp16 BigVGAN vocoder tuned for gfx1151. | [ROCmSeedVoiceConversion.md](ROCmSeedVoiceConversion.md) |
+| `ROCmSeedVoiceConversion` | ROCm Seed Voice Conversion | ROCm Ninodes/Audio | Seed-VC zero-shot voice conversion (speech 22 kHz / singing 44 kHz) with an fp16 BigVGAN vocoder tuned for gfx1151. | [ROCmSeedVoiceConversion.md](ROCmSeedVoiceConversion.md) |
 
 ## Monitors and benchmark
 

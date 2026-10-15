@@ -1,6 +1,6 @@
 # ROCmSeedVoiceConversion
 
-Display name: `ROCm Seed Voice Conversion` · Category: `🎛 ROCm/audio` · Introduced: 2.3.15
+Display name: `ROCm Seed Voice Conversion` · Category: `ROCm Ninodes/Audio` · Introduced: 2.3.15
 
 Source: `rocm_nodes/core/seedvc.py`, vendored model code in `rocm_nodes/seedvc/`
 

@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [2.3.27] - 2026-10-15
+
+### Fixed
+- **Audio node category**: `ROCmSeedVoiceConversion` was listed under `🎛 ROCm/audio` instead of the package-wide `ROCm Ninodes/...` category tree, so it appeared in a separate menu branch. It now lives under `ROCm Ninodes/Audio`.
+
 ## [2.3.26] - 2026-10-15
 
 ### Fixed

@@ -36,6 +36,10 @@ After running:
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
 
+## 🚀 What's new in v2.3.27
+
+- **Audio node moved into the package category tree**: `ROCmSeedVoiceConversion` now lives under `ROCm Ninodes/Audio` instead of the stray `🎛 ROCm/audio` menu branch.
+
 ## 🚀 What's new in v2.3.26
 
 - **No more duplicate "ROCm VAE Decode" in the node search**: the legacy `ROCMOptimizedVAEDecodeV2Phase3` alias showed up with the same display name as the canonical node, so the palette listed it twice. All legacy `ROCMOptimized*` / `ROCM*` names are now marked deprecated: old workflows still load them, but only the canonical `ROCm*` nodes appear in the search (enable "Show deprecated nodes" in ComfyUI settings to see the old names again).
@@ -448,7 +452,7 @@ Our optimization approach focuses on three key areas:
 - **fp16 BigVGAN vocoder by default**: ~6x faster vocoding on gfx1151, ~2x end to end; `precision=fp32` available for max fidelity
 - **Full-song covers**: `separate_source=True` splits the source into vocal + instrumental (mel-band roformer karaoke), converts the vocal and outputs the instrumental on the `accompaniment` socket — merge with the core AudioMerge node
 - **Models**: Seed-VC checkpoints + whisper-small + BigVGAN folders under `models/TTS/` — see [docs/nodes/ROCmSeedVoiceConversion.md](docs/nodes/ROCmSeedVoiceConversion.md)
-- **Where to find it**: `🎛 ROCm/audio` → **ROCm Seed Voice Conversion**
+- **Where to find it**: `ROCm Ninodes/Audio` → **ROCm Seed Voice Conversion**
 
 ### ROCmVAEPerformanceMonitor
 - **Device analysis**: Shows your GPU information and current settings

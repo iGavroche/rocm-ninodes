@@ -594,7 +594,7 @@ class ROCmSeedVoiceConversion:
             },
         }
 
-    CATEGORY = "🎛 ROCm/audio"
+    CATEGORY = "ROCm Ninodes/Audio"
     RETURN_TYPES = ("AUDIO", "AUDIO")
     RETURN_NAMES = ("audio", "accompaniment")
     FUNCTION = "convert"
