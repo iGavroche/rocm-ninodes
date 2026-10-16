@@ -14,6 +14,8 @@ def _install_comfy_sample_mocks(monkeypatch, captured):
 
     def fix_empty_latent_channels(model, latent_image, downscale_ratio_spacial=None,
                                    downscale_ratio_temporal=None):
+        captured['downscale_ratio_spacial'] = downscale_ratio_spacial
+        captured['downscale_ratio_temporal'] = downscale_ratio_temporal
         return latent_image
 
     def prepare_noise(latent, seed, batch_inds=None):
@@ -231,3 +233,50 @@ class TestROCmKSamplerAdvanced:
 
         assert isinstance(out, dict)
         assert 'samples' in out
+
+
+class TestDownscaleRatioForwarding:
+    """EmptyLatentImage tags latents with downscale_ratio_spacial; the KSamplers
+    must forward it to fix_empty_latent_channels and strip it from the output,
+    like stock common_ksampler (non-8x models sample at the wrong size without it)."""
+
+    def _run(self, monkeypatch, sample_conditioning, node_cls, **kwargs):
+        import comfy
+        import sys
+        import types
+        import latent_preview
+        comfy.utils.PROGRESS_BAR_ENABLED = False
+        sys.modules.setdefault('latent_preview', types.ModuleType('latent_preview'))
+        setattr(latent_preview, 'prepare_callback', lambda model, steps: None)
+
+        captured = {}
+        _install_comfy_sample_mocks(monkeypatch, captured)
+
+        latent = {"samples": torch.zeros(1, 4, 32, 32),
+                  "downscale_ratio_spacial": 8}
+        out, = node_cls().sample(
+            model=_make_model(),
+            latent_image=latent,
+            positive=sample_conditioning,
+            negative=sample_conditioning,
+            **kwargs,
+        )
+        return captured, out
+
+    def test_ksampler_forwards_and_strips(self, monkeypatch, sample_conditioning):
+        from rocm_nodes.core.sampler import ROCmKSampler
+        captured, out = self._run(monkeypatch, sample_conditioning, ROCmKSampler,
+                                  seed=0, steps=4, cfg=1.0, sampler_name='euler',
+                                  scheduler='simple', denoise=1.0)
+        assert captured['downscale_ratio_spacial'] == 8
+        assert 'downscale_ratio_spacial' not in out
+
+    def test_ksampler_advanced_forwards_and_strips(self, monkeypatch, sample_conditioning):
+        from rocm_nodes.core.sampler import ROCmKSamplerAdvanced
+        captured, out = self._run(monkeypatch, sample_conditioning, ROCmKSamplerAdvanced,
+                                  add_noise="enable", noise_seed=0, steps=4, cfg=1.0,
+                                  sampler_name='euler', scheduler='simple',
+                                  start_at_step=0, end_at_step=10000,
+                                  return_with_leftover_noise="disable", denoise=1.0)
+        assert captured['downscale_ratio_spacial'] == 8
+        assert 'downscale_ratio_spacial' not in out

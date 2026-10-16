@@ -225,6 +225,8 @@ class ROCmKSampler:
             gentle_memory_cleanup()
 
         out = latent.copy()
+        out.pop("downscale_ratio_spacial", None)
+        out.pop("downscale_ratio_temporal", None)
         out["samples"] = samples
         return (out,)
 
@@ -365,6 +367,8 @@ class ROCmKSamplerAdvanced:
             gentle_memory_cleanup()
 
         out = latent.copy()
+        out.pop("downscale_ratio_spacial", None)
+        out.pop("downscale_ratio_temporal", None)
         out["samples"] = samples
         return (out,)
 

@@ -1,6 +1,12 @@
 # Changelog
 
 
+
+## [2.3.28] - 2026-10-16
+
+### Fixed
+- **Stale `downscale_ratio` tag on sampled latents**: `ROCmKSampler` and `ROCmKSamplerAdvanced` now pop `downscale_ratio_spacial` / `downscale_ratio_temporal` from the output latent, matching stock `common_ksampler`. The forwarding of those tags into `fix_empty_latent_channels` already landed in 2.3.22, but the sampled latent kept the input's stale tag (e.g. `8` from `EmptyLatentImage`) after being rescaled to the model's native compression, so a downstream sampler could rescale it a second time. Tests now assert both KSamplers forward the tag and strip it from the output. Thanks to @Nynxz (#9).
+
 ## [2.3.27] - 2026-10-15
 
 ### Fixed
