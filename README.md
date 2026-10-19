@@ -36,6 +36,10 @@ After running:
 **ROCm Ninodes** is a custom node collection tuned for AMD GPUs with ROCm (especially gfx1151). It includes optimized VAE decode, KSampler, checkpoint/diffusion/GGUF/LoRA loaders, LTX2 prompt generation, SamplerCustomAdvanced drop-in, and monitoring nodes to maximize performance on AMD hardware with mature ROCm drivers.
 
 
+## 🚀 What's new in v2.3.29
+
+- **Seed-VC singing no longer buzzes on consonants**: the f0 gap bridge was giving a pitch to most consonants and breaths between notes, so the converted vocal sang them as a voiced buzz. Only tonal tracker dropouts inside notes are bridged now.
+
 ## 🚀 What's new in v2.3.27
 
 - **Audio node moved into the package category tree**: `ROCmSeedVoiceConversion` now lives under `ROCm Ninodes/Audio` instead of the stray `🎛 ROCm/audio` menu branch.

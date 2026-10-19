@@ -2,6 +2,11 @@
 
 
 
+## [2.3.29] - 2026-10-19
+
+### Fixed
+- **`ROCmSeedVoiceConversion`: consonants sung as pitched buzz in singing mode**: the f0 gap bridge (2.3.18) filled every unvoiced gap of up to 10 frames (100 ms), but most of those gaps are consonants and breaths between notes, not tracker dropouts. On the 35 s SongCover test stem, 29 of the 33 bridged gaps were noise-like (spectral flatness 0.03-0.28, zero-crossing rate ~0.42) and only 4 were real dropouts inside vowels (flatness <=0.006). Each consonant got a pitch in the conditioning, and the converted vocal came out voiced in 67% of those frames, so every "s", "t" and breath was rendered as a buzz, about once a second through the song. A gap is now bridged only when its audio is tonal (mean spectral flatness <=0.02): 4 gaps / 15 frames are bridged on that stem instead of 33 / 190, and the reference prompt goes from 11 bridged gaps to 2. Real dropouts inside sustained notes are still bridged, so note continuity is unchanged.
+
 ## [2.3.28] - 2026-10-16
 
 ### Fixed
