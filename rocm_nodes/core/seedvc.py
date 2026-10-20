@@ -120,10 +120,30 @@ def _load_stage(config_path: str, checkpoint_path: str, device: torch.device):
     return model, to_mel
 
 F0_GAP_BRIDGE_FRAMES = 10
+# Spectral flatness above which an unvoiced gap is a consonant or breath, not a
+# tracker dropout. On the SongCover stem the 4 real dropouts measure <=0.006 and
+# the 29 consonant gaps 0.03-0.28; voiced frames have a median of 0.006.
+F0_GAP_MAX_FLATNESS = 0.02
 
 
-def _bridge_f0_gaps(f0: torch.Tensor, max_gap: int) -> torch.Tensor:
-    """Linear-interpolate short unvoiced dropouts so sustained notes stay continuous."""
+def _spectral_flatness_16k(wave_16k: torch.Tensor) -> np.ndarray:
+    """Per-frame spectral flatness on RMVPE's 10 ms frame grid (hop 160, centered)."""
+    x = wave_16k.reshape(-1).float()
+    window = torch.hann_window(1024, device=x.device)
+    power = torch.stft(x, 1024, hop_length=160, window=window, center=True,
+                       return_complex=True).abs().pow(2).clamp_min(1e-10)
+    flatness = torch.exp(power.log().mean(dim=0)) / power.mean(dim=0)
+    return flatness.cpu().numpy()
+
+
+def _bridge_f0_gaps(f0: torch.Tensor, max_gap: int,
+                    flatness: Optional[np.ndarray] = None) -> torch.Tensor:
+    """Linear-interpolate short unvoiced dropouts so sustained notes stay continuous.
+
+    With `flatness`, a gap is only bridged when the audio under it is tonal:
+    most short gaps between notes are consonants and breaths, and giving those
+    a pitch makes the model sing them as a buzz.
+    """
     flat = f0.reshape(-1)
     voiced = flat > 1
     if voiced.sum() < 2:
@@ -138,8 +158,13 @@ def _bridge_f0_gaps(f0: torch.Tensor, max_gap: int) -> torch.Tensor:
     for s in starts:
         after = [e for e in ends if e > s]
         e = after[0] if after else flat.numel() - 1
-        if 0 < e - s <= max_gap:
-            out[s + 1:e + 1] = filled[s + 1:e + 1]
+        if not 0 < e - s <= max_gap:
+            continue
+        if flatness is not None:
+            gap = flatness[s + 1:min(e + 1, flatness.size)]
+            if gap.size == 0 or gap.mean() > F0_GAP_MAX_FLATNESS:
+                continue
+        out[s + 1:e + 1] = filled[s + 1:e + 1]
     return out.reshape(f0.shape)
 
 
@@ -471,9 +496,11 @@ class SeedVCWrapper:
                 shifted_f0_alt[voiced_mask] = torch.exp(log_alt - log_alt.median() + log_ori.median())
             if pitch_shift != 0:
                 shifted_f0_alt[voiced_mask] *= 2 ** (pitch_shift / 12)
-            shifted_f0_alt = _bridge_f0_gaps(shifted_f0_alt, F0_GAP_BRIDGE_FRAMES)
+            shifted_f0_alt = _bridge_f0_gaps(shifted_f0_alt, F0_GAP_BRIDGE_FRAMES,
+                                             _spectral_flatness_16k(converted_waves_16k))
             shifted_f0_alt = _quantize_fast_runs(shifted_f0_alt)
-            F0_ori = _bridge_f0_gaps(F0_ori, F0_GAP_BRIDGE_FRAMES)
+            F0_ori = _bridge_f0_gaps(F0_ori, F0_GAP_BRIDGE_FRAMES,
+                                     _spectral_flatness_16k(prompt_waves_16k))
         else:
             F0_ori = shifted_f0_alt = None
 
